@@ -1,0 +1,778 @@
+{
+  "school_year": "2026-27",
+  "class_level": 6,
+  "cycles": [
+    {
+      "name": "LC1",
+      "start": "2026-04-01",
+      "end": "2026-05-22",
+      "topics_by_subject": {
+        "English": [
+          "Wonder by R.J Palacio (Novel)",
+          "Daffodils by William Wordsworth (Poem)",
+          "A Friend's prayer (Poem - Poorvi)",
+          "Snake Trouble by Ruskin Bond (Short story - Modern Indian Stories)",
+          "Rama to the Rescue (Short story - Poorvi)",
+          "Listening Skills",
+          "Recitation",
+          "Impromptu",
+          "Reading Comprehension",
+          "Prompt based Creative Writing",
+          "Paragraph Writing",
+          "Summary Writing",
+          "Literary and poetic devices",
+          "Revision of Parts of speech",
+          "Kinds of Noun",
+          "Adjectives",
+          "Vocabulary Assessment",
+          "Spelling Assessment",
+          "Idiomatic Expressions and Proverbs"
+        ],
+        "Hindi": [
+          "मातृभूमि (कविता)",
+          "हार की जीत",
+          "चतुर सुनार",
+          "अली का गधा",
+          "भाषा,मलवि और व्याकरण",
+          "िणण-विच्छेद",
+          "ितणनी शोधन",
+          "तत्सम तद्भि शब्द (1-30)",
+          "विलोम शब्द (1-30)",
+          "अिठित गद्याांश",
+          "अनुच्छेद लेखन",
+          "सार लेखन"
+        ],
+        "Sanskrit": [
+          "स्िर ि उसक े तीन भेद",
+          "व्यांजन ि उनक े िगण, सांयुकत ाक्षर",
+          "िणण विन्यास ि िणण विच्छ ेद (ियां िणणमाला ििाम : प्रथम: िाि:)",
+          "मलांग िररचय - अकारान्त(िुल्ल ांग) , आकारान्त शब्द (स्िीमलांग) और अकाराांत (निुांसक मल ांग)",
+          "श्लोक िाचन (प्रिि)"
+        ],
+        "Mathematics": [
+          "Representation of fractions on the number line",
+          "Proper and improper fractions, conversion to mixed fractions",
+          "Equivalent fractions",
+          "Like and unlike fractions and their comparison",
+          "Fractions in their lowest form",
+          "Addition and subtraction of fractions along with word problems.",
+          "Multiplication and Division of Fractions.",
+          "Conversion of decimals into fractions and vice versa",
+          "Place value of decimals.",
+          "Representation of decimals on the number line",
+          "Conversions in length, weight and volume using decimals.",
+          "Addition and subtraction of decimals along with word problems.",
+          "Multiplication and Division of Decimals."
+        ],
+        "Science": [
+          "The wonderful world of Science",
+          "Materials around us",
+          "Methods of separation in everyday life"
+        ],
+        "Social Science": [
+          "India and the World: Land and the People",
+          "Locating Places on the Earth: Maps and its components, Mapping the Earth: Understanding Coordinates, Latitudes and Longitudes, Understanding time zones",
+          "Oceans and Continents: Distribution of water and land on the Earth, Oceans and disasters, oceans and life, Continents",
+          "Landforms and Life: Mountains: mountain environments, life in the mountains, Plateaus, Plains: life in the plains"
+        ],
+        "Applied Art Specialisation": [
+          "Geometric Measurable Designs",
+          "Introduction to Geometric Tools"
+        ],
+        "Painting Specialisation": [
+          "Drawing skills, Line drawing shading, Tonal variations- Light, middle tone, Shadow and Depth",
+          "Explore various linear patterns.",
+          "Still life - Arrange a bottle, a cloth, a wine, etc.",
+          "Demonstrate a still life drawing to provide an idea of the technical aspects of drawing and shading.",
+          "Composition with lines and textures.",
+          "Tonal variation",
+          "Create a tonal chart with lead pencil"
+        ],
+        "Pottery Specialisation": [
+          "Introduction to the material and the process of Pottery- (Presentation, Clay)",
+          "Introduction to Pinched Pottery- Simple shapes with your hand (Clay)",
+          "From a ball to a Bowl (Clay)"
+        ],
+        "Sculpture Specialisation": [
+          "Experiment with lines (Drawing)",
+          "Experiment with lines (Clay)",
+          "Signs and Symbols- Devanagari and Roman (Clay)"
+        ],
+        "Indian Dance": [
+          "Viniyoga (Usages of hasta mudras)",
+          "Surya namaskar",
+          "Continuing with Alaripu",
+          "Dance sequences used in Alaripu",
+          "Start making notes of all steps taught"
+        ],
+        "Creative Dance": [
+          "Revision of techniques learnt",
+          "Roll downs",
+          "Spotting",
+          "High arch, Isolations",
+          "Body coordination",
+          "Arm positions",
+          "Plié",
+          "Flexibility",
+          "Opposition technique",
+          "Spatial awareness",
+          "Pivot turns",
+          "Pick and Place",
+          "Cross open",
+          "Bus stop",
+          "Flick and place",
+          "Relevé",
+          "Pencil turn",
+          "Pirouette preparations and turns",
+          "Cross ball change",
+          "Contraction",
+          "Flexed and pointed toes",
+          "Jazz walk",
+          "Jazz square",
+          "Chassé",
+          "Hitch kick",
+          "Grapevine"
+        ],
+        "Hindustani Vocal Music Specialisation": [
+          "To be able to understand the basic notes (Swar)of Hindustani music.",
+          "Practice it with the help of the instrument (Harmonium or Tanpura)",
+          "Knowledge of shudh swar and vikrit swar.",
+          "Students will now relate between swar and saptak.",
+          "The remaining 7 shudh notes and 5 vikrit notes.",
+          "Simple swarmalika and simple compositions on Teentaal in Ragas."
+        ],
+        "Sitar Specialisation": [
+          "Basic lesson for movement of fingers.",
+          "Simple lessons for right and left hand and then gradually shifting to right and left hand combination movements.",
+          "Palta/Bol and Alankar practice",
+          "Patriotic song (Vande matram)",
+          "Raga Yaman with short alaaps, small taans and small jhala.",
+          "Making of paltas, vistar and alaaps.",
+          "Sthaai and Antra of any Raga with vistaar and taan.",
+          "Aalapchaari and bandish with jhala."
+        ],
+        "Western Music Specialisation (Guitar)": [
+          "What is art?",
+          "What are its objectives?",
+          "The two basic categories of art.",
+          "What is music?"
+        ],
+        "Drums Specialisation": [
+          "Setting Up and Playing Your Drum Kit - Playing the Bass and Snare",
+          "Playing the Bass Drum",
+          "Setting Up the Snare Drum",
+          "Basic Rebound Strokes",
+          "Ablility to know the fundamental of music and, and to know right way of playing drums",
+          "Different Component of Drums",
+          "To know the different part of drums and its use, to know how to hold the stick in right way",
+          "By asking the student to record and send the exercises",
+          "Ability to wrist work and footwork applied on drums, and to play 4/4 beat"
+        ],
+        "Tabla Specialisation": [
+          "Individual bols for right hand/left hand and Simple tabla lessons and Kaida with simple paltas and Tihai.",
+          "Basic knowledge of Tabla and its parts.",
+          "Playing the taught lessons and simple Kaidas with at least 5 paltas and Tihai.",
+          "Able to play simple tukras in Teentaal.",
+          "Learning thekas of Teentaal, Kehrwa and Dadra."
+        ],
+        "Western Violin Specialisation": [
+          "Posture, holding the violin, parts of the violin",
+          "Finger placement",
+          "Time signature",
+          "Key Signature",
+          "Bowing technique"
+        ],
+        "Drama Specialisation": [
+          "Students will be acquainted with Post-Modernist Plays, a form of literature which is marked, both stylistically and ideologically, by a reliance on such literary conventions as fragmentation, paradox, unreliable narrators, often unrealistic and downright impossible plots, games, parody, paranoia, dark humor and authorial self-reference.",
+          "Critically analysing the inter house Drama Festival, the aspects that worked, what didn't; along with their reasons for the same",
+          "The students will be assessed in their ability to understand the different themes and use that understanding in improvisations.",
+          "The ability to build on existing material, openness to new ideas; learning to work within a framework; learning to assess their own work."
+        ],
+        "Physical Education": [
+          "Basketball: Fundamentals of Dribbling, Passing, and Shooting",
+          "Football: Passing, Receiving, Dribbling",
+          "Gymnastics: Cardio-Vascular Endurance & Flexibility",
+          "Badminton: Discipline, Warm-Up, Forehand Grip, Stance, Backhand Grip, Rules",
+          "Cricket: Fundamentals of Bowling and Fielding",
+          "Table Tennis: Objective of the Game, How To Score, Grip Types, Spin, Basic Strokes",
+          "Athletics: Fitness, Crouch start, Sprint races, Relay Races",
+          "Hockey: Introduction to hockey equipment, Basic rules and safety, Correct grip and body posture"
+        ],
+        "Technology": [
+          "Glide (No-Code App Design)",
+          "Apple Freeform",
+          "Artificial Intelligence Awareness",
+          "Digital Media Literacy"
+        ]
+      }
+    },
+    {
+      "name": "LC2",
+      "start": "2026-07-06",
+      "end": "2026-09-25",
+      "topics_by_subject": {
+        "English": [
+          "Wonder by R.J Palacio (Novel)",
+          "Silver by Walter De La Mare (Poem)",
+          "The Kites (Poem - Poorvi)",
+          "Shadow by Paro Anand (Short story - Modern Indian Stories)",
+          "Dal Delight by Subhadra Sengupta (Short story - Modern Indian Stories)",
+          "Swami and Friends by R.K Narayan (Short story - Modern Indian Stories)",
+          "Listening Skills",
+          "Recitation",
+          "Debate Rendition",
+          "Reading Comprehension",
+          "Debate Writing",
+          "Diary Writing",
+          "Film Review",
+          "Verbs",
+          "Tenses",
+          "Vocabulary Assessment",
+          "Spelling Assessment"
+        ],
+        "Hindi": [
+          "िहली बूूँद",
+          "गोल",
+          "चेतक की िीरता",
+          "ठहन्द महासागर में छोटा सा ठहांदुस्त ान",
+          "जादुई ढोल",
+          "गोिाल का इलाज",
+          "राजा और अांधा",
+          "अिठित गद्याांश / काव्याांश",
+          "सांज्ञा ि उसक े भेद",
+          "मलांग, िचन ि कारक चचह्न",
+          "ियाणयिाची शब्द (1-30)",
+          "िाकयाांश के मलए एक शब्द (1-30)",
+          "विराम चचह्न",
+          "कविता लेखन",
+          "सार लेखन",
+          "िाद-वििाद लेखन"
+        ],
+        "Sanskrit": [
+          "िचन िररचय - तीनों िचन (सिणनाम)",
+          "दैतनक प्रयोग में आने िाले िुल्ल ांग, स्िीमलांग ि निुांसक मल ांग सांज्ञा शब्दों तथा तीनों िचन में उनका रूि",
+          "धात ु िररचय ( के िल िठ्, चल ्, हस ्, खाद्, मलख ्,िीड्,धात ुएूँ)",
+          "कताण के तीनों िुरु ष लट् लकार से सम्बलन्धत सरल िाकय (बुद्चध: सिाणथणसाचधका अष्टम: िाि:)"
+        ],
+        "Mathematics": [
+          "Understanding prime numbers and their significance",
+          "Prime Factorization",
+          "Applications of prime numbers in cryptography",
+          "Factors and multiples, Prime and composite numbers",
+          "Divisibility Rules",
+          "Common Factors, Multiples, and their uses",
+          "HCF and LCM along with word problems.",
+          "Understanding Percentages",
+          "Basic Percentage Calculation",
+          "Introduction. Representation of numbers with a positive and a negative sign",
+          "Representation of integers on the number line",
+          "Predecessor and successor of integers",
+          "Comparison of integers",
+          "Addition and subtraction of integers",
+          "Multiplication and Division of Integers.",
+          "Naming and identifying lines, line segments, rays, and points.",
+          "Angles and their classification",
+          "Properties of intersecting and parallel lines"
+        ],
+        "Science": [
+          "Mindful eating: a path to a healthy body",
+          "Measurement of length and motion",
+          "Temperature and its measurement"
+        ],
+        "Social Science": [
+          "Timeline and Sources of History : How do we learn about the past? How is time measured in History? What are the sources of History? The beginnings of human History? The first crops.",
+          "India, That Is Bharat : How Indians names India, How the world named India",
+          "The Beginnings of Indian Civilisation",
+          "Our Cultural Heritage and Knowledge Traditions: India's Cultural Roots, Vedas and Vedic Culture, Buddhism, Jainism, Folk and Tribal Roots"
+        ],
+        "Applied Art Specialisation": [
+          "Colour Wheel - Primary, Secondary, Tertiary and Neutral Colours",
+          "Introduction to Poster Colours"
+        ],
+        "Painting Specialisation": [
+          "Shapes 2D Circle triangle, square, rectangle, oval, ellipse.",
+          "Forms-3D- Cube, rhombus, cone, sphere. (Occupying volume, height and width, occupy and exist within space)",
+          "Perspective-Single point, Multi point, Linear, Aerial",
+          "Still life - Arranging different objects and materials-to learns about scale, proportion.",
+          "A Composition with shapes in black and white."
+        ],
+        "Pottery Specialisation": [
+          "Introduction to Coiled Pottery (Presentation, Demonstration and Drawing)",
+          "Coil rolling techniques and Tool Utilization (Clay)",
+          "Creating a Coiled pot (Clay)"
+        ],
+        "Sculpture Specialisation": [
+          "Home Décor- Decorative Pot (Drawing)",
+          "Home Décor- Decorative Pot (Clay)",
+          "Musical Instruments (Clay/ Mixed Media)"
+        ],
+        "Indian Dance": [
+          "Tri pataka Hasta Viniyoga (Usage of Tri pataka Hasta)",
+          "Ardha Pataka Hasta viniyoga (Usages of Ardha Pataka)",
+          "Introduction of jumps used in dance",
+          "Dance exercises",
+          "Breathing exercises",
+          "Balancing exercises",
+          "Continue with Alaripu",
+          "Preparing notes of steps learnt"
+        ],
+        "Creative Dance": [
+          "Brushes",
+          "Forced arch"
+        ],
+        "Hindustani Vocal Music Specialisation": [
+          "To be able to understand notes ( 7 notes -Sa are Ga Ma Pa Dha Ni) through Alankars.",
+          "Introduction of swar ( Aaroh and Avroh).",
+          "Knowledge of shudh swar and vikrit swar.",
+          "Students will now relate between swar and saptak.",
+          "The remaining 7 shudh notes and 5 vikrit notes.",
+          "Simple swarmalika and simple compositions on Teentaal in Ragas."
+        ],
+        "Sitar Specialisation": [
+          "Basic palta for movement of fingers.",
+          "Little advanced lessons for right and left hand and then gradually shifting to right and left hand combination movements with Bol of sitar Da Ra",
+          "Advances Palta/Bol and Alankar practice",
+          "Dhun based on Kahrwa taal",
+          "Raga Yaman (Alaap, Vistar, simple Taan) and Raga Kafi with bandish",
+          "Teen Taal",
+          "Making of paltas, vistar and alaaps.",
+          "Sthaai and Antra of any Raga with vistaar and taan",
+          "Aalapchaari and bandish with jhala"
+        ],
+        "Western Music Specialisation (Guitar)": [
+          "What is sound?",
+          "How is it produced?",
+          "What is a musical note?"
+        ],
+        "Drums Specialisation": [
+          "Rock Beat - Playing using the saw movement.",
+          "The Money Beat - Rock syncopation of the bass drum",
+          "2 Bars Beats - with the obstinate of hi hat",
+          "Early Rock Beats and the snare drum.",
+          "Swiss Rudiments - Playing all the Rudiments in a Strokes - relaxed, fluid way.",
+          "Paradiddles - Playing the rudiments with precision",
+          "Flam - Playing the rudiment with feeling",
+          "Ruffs and Drags and emotions."
+        ],
+        "Tabla Specialisation": [
+          "Little advance tabla lessons for improvement in hand posture and strengthening the hand.",
+          "Complete knowledge of different parts of tabla and its uses.",
+          "Playing all the taught Kaidas smoothly with all the paltas and tihai without stopping in between.",
+          "Play little advance tukdas in dhrut Teentaal.",
+          "Play simple elaborations and proper theka of teentaal."
+        ],
+        "Western Violin Specialisation": [
+          "Reading staff notation",
+          "Notes value",
+          "Technical exercises: scales, arpeggios.",
+          "Pieces"
+        ],
+        "Drama Specialisation": [
+          "Exercises for recalling senses, exercise of creating situations",
+          "Individual and group exercises using imaginary objects as well as handling real objects and then substituted",
+          "Developing the basic movements of the hand, body and head. Foot work and bodily movements to create new movement patterns",
+          "Study of animal behaviour and its exact imitation"
+        ],
+        "Physical Education": [
+          "Basketball: Fundamentals of Defense, Rebounding, and Layup Shot",
+          "Football: Hitting Long Balls More Accurately, Individual Skills, Heading",
+          "Gymnastics: Shoulder and Leg Strength (Muscular Strength)",
+          "Badminton: Forehand Clear, Fitness, Basic Net Shot, Basic Serve",
+          "Cricket: Fundamentals of Batting",
+          "Table Tennis: Advanced Strokes, Advanced Service Techniques",
+          "Athletics: Fitness, Horizontal Jump Long jump, Relay races",
+          "Hockey: Hit pass technique, Stopping/trapping the ball, Dribbling with speed"
+        ],
+        "Technology": [
+          "MIT App Inventor",
+          "Apple Keynote (App Interface Planning)",
+          "Block-Based Programming Concepts",
+          "AI-Enabled Components"
+        ]
+      }
+    },
+    {
+      "name": "LC3",
+      "start": "2026-09-28",
+      "end": "2026-12-23",
+      "topics_by_subject": {
+        "English": [
+          "The Village by the Sea by Anita Desai (Novel)",
+          "Don't take your Troubles to Bed by Edmund Vance Cooke (Poem)",
+          "Life Doesn't Frighten Me by Maya Angelou (Poem)",
+          "The Unlikely Best Friends (Short Story - Poorvi)",
+          "The Hungry Septopus by Satyajit Ray (Short story - Modern Indian Stories)",
+          "Ila Sachani: Embroidering Dreams with her Feet (Informative text - Poorvi)",
+          "Festival of Eid by Premchand (Short story - Modern Indian Stories)",
+          "Listening Skills",
+          "Speech Rendition",
+          "Recitation",
+          "Reading Comprehension",
+          "Poetry Writing",
+          "Speech Writing",
+          "Informal Letter",
+          "Adverbs",
+          "Prepositions",
+          "Voice – Active and Passive",
+          "Idiomatic Expressions and Proverbs"
+        ],
+        "Hindi": [
+          "मेरी माूँ",
+          "रहीम के दोहे",
+          "िेड़ की बात",
+          "सत्रिया और बीहू नृत्य ( ििन एिां गततविचध )",
+          "फ ै सला",
+          "प्रथम िुरु ष",
+          "सिणनाम",
+          "विशेषण",
+          "श्रुतत सम मभन्नाथणक शब्द (1-20)",
+          "अिठित गद्याांश / काव्याांश",
+          "म ुहािर े(1-30)",
+          "अनुच्छेद लेखन",
+          "सांिाद लेखन",
+          "िि लेखन (अनौिचाररक)"
+        ],
+        "Sanskrit": [
+          "सांख्या- 1 से 30, सांख्या शब्दों का िाकय में प्रयोग (सांख्यागणना ननु सरला ियोदश: िाि:)",
+          "अकाराांत और आकारान्त शब्द रूि ि कारक सूच ी के सम्बन्ध का ज्ञान",
+          "कताण के तीनों िुरु ष ल ृट् लकार से सम्बलन्धत सरल िाकय (िुनर ािृवि)"
+        ],
+        "Mathematics": [
+          "Polygons and their classification",
+          "Triangles and their classification",
+          "Types of quadrilaterals and their properties",
+          "Parts of circles and their characteristics",
+          "3-Dimensional shapes and their properties",
+          "Representing mathematical statements in terms of algebraic expressions",
+          "Finding the value of an expression",
+          "Solving simple equations",
+          "Pattern in numbers",
+          "Calculating ratios between two given quantities, Equivalent ratios.",
+          "Proportion: finding the unknown term",
+          "Unitary method",
+          "Identifying symmetrical objects in real life",
+          "Lines of symmetry and rotational symmetry",
+          "Exploring symmetrical patterns in nature and architecture"
+        ],
+        "Science": [
+          "Diversity in the living world",
+          "Living creatures: exploring their characteristics",
+          "Nature's treasures",
+          "Beginning of the project for Science Day"
+        ],
+        "Social Science": [
+          "Project work",
+          "Unity in Diversity, or 'Many in the One' : Rich diversity, Food, Textiles and Clothing, Festivals, An epic spread",
+          "Family and Community: Family, Roles and Responsibilities, Community",
+          "Governance and Democracy- Part 1: What is democracy? Three organs of Government, Three Levels of Government"
+        ],
+        "Applied Art Specialisation": [
+          "Positive & Negative Space",
+          "Foreground, Middle ground & Background."
+        ],
+        "Painting Specialisation": [
+          "Explore various textures and patterns, Positive & Negative Space, Foreground, Middle ground & Background."
+        ],
+        "Pottery Specialisation": [
+          "Introduction to Slab Pottery (Presentation, Demonstration and Drawing)",
+          "Making slabs and Tool Utilization (Clay)",
+          "Introduction of textures on slabs. Making textured tiles. (Clay)"
+        ],
+        "Sculpture Specialisation": [
+          "Mural Making- Day to day objects (Drawing)",
+          "Mural Making- Day to day objects (Clay)",
+          "Folk and Traditional Designs (Drawing & Clay)"
+        ],
+        "Indian Dance": [
+          "Kartari Hasta Viniyoga (Usage of Kartari Hasta)",
+          "Suryanamaskar",
+          "Concentration and Focusing Skills",
+          "Breathing (Pranayam)",
+          "Korvai (Dance sequences) of Jatiswaram"
+        ],
+        "Creative Dance": [
+          "Hitch kick",
+          "Retiré or passé",
+          "Spatial awareness",
+          "Understanding rhythm"
+        ],
+        "Hindustani Vocal Music Specialisation": [
+          "Ability to perform confidently",
+          "Regular feedback",
+          "Performing."
+        ],
+        "Sitar Specialisation": [
+          "Advance Bol Palta",
+          "Alankaar",
+          "Playing meend",
+          "Raga Kafi Mastikhani Gat in teen taal sthai antra, vistar and short alapchaari",
+          "Short taan of 8 beat and 16 beat with tehai",
+          "Madhya laya teen taal raga kafi, introduction of one new raga",
+          "Making of paltas",
+          "Making of vistar",
+          "Making of alapchari",
+          "Playing in rhythm and maintaining taal"
+        ],
+        "Western Music Specialisation (Guitar)": [
+          "Introduction of a scale (c major scale)",
+          "Melody (simple melody from Major scale)"
+        ],
+        "Drums Specialisation": [
+          "Single Stroke Rolls - Playing fluid single strokes rolls slow and fast",
+          "Closed Rolls",
+          "Drumming Techniques - Playing the various stroke rolls",
+          "Open Rolls - accurately with the proper accents.",
+          "Blues & Shuffle - Understanding the Shuffle",
+          "12/8 Blues - Playing basic shuffle beat and Boss a Nova variations."
+        ],
+        "Tabla Specialisation": [
+          "Complex bols for right hand/left hand and little advance tabla lessons and Kaida with longer paltas and Tihai.",
+          "Knowledge about different components of Tabla and what they are made of.",
+          "Playing the taught lessons and Kaidas with at least 7 paltas and Tihai.",
+          "Able to play simple Chakkardars in Teentaal.",
+          "Learning variations in thekas of Teentaal, Kehrwa and Dadra"
+        ],
+        "Western Violin Specialisation": [
+          "Scales separate bows or slurred in pairs with along tonic; arpeggios separate bows only",
+          "Listen to the melody once , describe the dynamics, which will vary during the melody and identify the articulation as legato or staccato",
+          "Identify where the changes occurs",
+          "Identify the change as rhythm or pitch.",
+          "Performance",
+          "Reading slur bowing music",
+          "Technical exercises",
+          "Musical Knowledge",
+          "Aural Tests",
+          "Sight reading",
+          "Rhythmic pattern exercises.",
+          "Listening to different genres of music.",
+          "Scales and arpeggio in two octaves",
+          "Minor Scales",
+          "Dominant 7th scale Diminished scales",
+          "Broken slur bowing technique"
+        ],
+        "Drama Specialisation": [
+          "Free Modern Movement",
+          "Study of body anatomy, Traditional movement and mime work",
+          "Basic movements, rheumatic patterns with footwork",
+          "Traditional and Modern Mime"
+        ],
+        "Physical Education": [
+          "Basketball: Fundamentals of Advanced Passing, Layup Shot, and Advance Dribbling",
+          "Football: Defence, Tackling, Individual Skills",
+          "Gymnastics: Abdominal and Back Strength",
+          "Badminton: Split Step, Back Court Movement, Side defence Movement",
+          "Cricket: Understanding Length",
+          "Table Tennis: The Forehand Counter hit, The Backhand Counter hit",
+          "Athletics: Fitness, Vertical Jump, High jump",
+          "Hockey: Team positions, Simple formations, Attacking strategies, Defensive positioning"
+        ],
+        "Technology": [
+          "Google Vids",
+          "Digital Storytelling",
+          "Cloud Computing (Google Drive)"
+        ]
+      }
+    },
+    {
+      "name": "LC4",
+      "start": "2027-01-11",
+      "end": "2027-03-19",
+      "topics_by_subject": {
+        "English": [
+          "The Village by the Sea by Anita Desai (Novel)",
+          "My Shadow by R. L Stevenson (Poem)",
+          "The Charge of the Light Brigade by Lord Alfred Tennyson (Poem)",
+          "The Narayanpur Incident by Shashi Deshpande (Short story - Modern Indian Stories)",
+          "Bidesia Babu by Mala Marwah (Short story - Modern Indian Stories)",
+          "Neem Baba (Short story- Poorvi)",
+          "Listening Skills",
+          "Recitation",
+          "Reading Comprehension",
+          "Book Review",
+          "Descriptive Writing",
+          "Conjunctions",
+          "Interjections",
+          "Reported speech",
+          "Vocabulary Assessment",
+          "Spelling Assessment"
+        ],
+        "Hindi": [
+          "िरीक्षा (कहानी)",
+          "जलाते चलो (कविता)",
+          "मैया मैं नठहां माखन खायो (कविता)",
+          "जांगल का न्याय",
+          "बुद्चधम ान माूँ",
+          "क्रिया",
+          "अनेकाथी शब्द (1-20)",
+          "शब्द विचार – (िुनर ािृवि)",
+          "अिठित गद्याांश / िद्याांश",
+          "िाकय शोधन",
+          "सांिाद लेखन",
+          "चचिकथा लेखन",
+          "अनुच्छेद लेखन",
+          "िि लेखन (अनौिचाररक)"
+        ],
+        "Sanskrit": [
+          "अव्यय (अततचथदेिो भि सप्तम: िाि:)",
+          "कताण से अचधकरण कारक –तनयम ि िाकय प्रयोग",
+          "तीनों िुरु ष लट् लकार और ल ृट् लकार से सम्बलन्धत सरल िाकय (िुनर ािृवि)"
+        ],
+        "Mathematics": [
+          "Perimeter of irregular shapes",
+          "Perimeter of regular shapes: squares and rectangles, and word problems based on them",
+          "Areas of irregular shapes",
+          "Area of a square and a rectangle, along with word problems.",
+          "Organisation of data into a frequency table",
+          "Pictographs",
+          "Reading, interpreting and constructing Bar Graphs",
+          "Reading Pie Charts",
+          "Mean, Median, Mode",
+          "Construction of line segments of a given length.",
+          "Construction of a perpendicular through a point on the line.",
+          "Construction of perpendicular bisectors of a line segment.",
+          "Construction of angles using a protractor.",
+          "Construction of certain angles of measures 30, 60, 90, 120 and 150 degrees using a compass."
+        ],
+        "Science": [
+          "Exploring magnets",
+          "Project for Science Day(conti.)",
+          "A journey through states of water",
+          "Beyond Earth"
+        ],
+        "Social Science": [
+          "Governance and Democracy- Part 2: Panchayati Raj System, Gram Panchayat, Child-friendly Panchayat Initiative, Panchayat Samiti and Zila Parishad",
+          "Governance and Democracy- Part 3: Urban local bodies",
+          "Economic Life Around Us- The Value of Work: Types of economic activities, importance of non-economic activities, community participation",
+          "Economic Activities Around Us- Primary activities, Secondary activities, Tertiary activities, Interdependence between sectors"
+        ],
+        "Applied Art Specialisation": [
+          "Symmetrical & Asymmetrical",
+          "Design Composition"
+        ],
+        "Painting Specialisation": [
+          "A composition based on the theme of music – to enhance visualizing and imagination.",
+          "A composition using numerical (nos. from 1 to 9) in monochrome (any shade).",
+          "A composition done with the words like happiness, anger, calm/serene etc. How to show them with one's own facial expressions or through hands, on the paper.",
+          "Outdoor study- to learn how to pick colors from nature at different hours of time.",
+          "Composition based on Indian miniature painting by using the figures and style."
+        ],
+        "Pottery Specialisation": [
+          "Introduction to Potter's wheel (Presentation, Demonstration and drawing)",
+          "Introduction to Glazing (Presentation and Demonstration on Glazing)",
+          "Glazing Clay work (Glazing)"
+        ],
+        "Sculpture Specialisation": [
+          "Furniture Design (Drawing)",
+          "Furniture Design (Clay)",
+          "Furniture Design (Mixed Media)"
+        ],
+        "Indian Dance": [
+          "Mayur Hasta Viniyoga (Usage of Mayur Hasta)",
+          "Surya namaskar",
+          "Strengthening exercises",
+          "Concentration and Focusing Skills",
+          "Breathing (Aloom Viloom)",
+          "Dance sequences used in Jatiswaram (2nd traditional piece)",
+          "Eye movements (Drishti) & Neck movements (Greeva)",
+          "Making notes of dance"
+        ],
+        "Creative Dance": [
+          "Standing leg",
+          "Working leg",
+          "Art appreciation"
+        ],
+        "Hindustani Vocal Music Specialisation": [
+          "Tansen",
+          "Faiz Khan",
+          "Amer Khushroo"
+        ],
+        "Sitar Specialisation": [
+          "Advance Bol Palta",
+          "Alankaar",
+          "Playing meend",
+          "Playing khatka, murki, krintan and ghaseet",
+          "Raga Kafi Mastikhani Gat in teen taal sthai antra, vistar and short alapchaari",
+          "Short taan of 8 beat and 16 beat with tehai",
+          "Madhyam laya teen taal raga kafi, introduction of one new raga",
+          "Dhun based on Misra raga",
+          "Taal- Keherva and Rupak",
+          "Making of paltas",
+          "Making of vistar in different taal",
+          "Making of alapchari",
+          "Playing composition in rhythm and maintaining taal"
+        ],
+        "Western Music Specialisation (Guitar)": [
+          "Chord (C major chord from Major scale)",
+          "Students will now relate between scale, melody and chord.",
+          "The remaining major scales G, D, A, E, and Major scales.",
+          "The major chords D, E, F, G, A, B and its sets (chords should be taught as sets)",
+          "Simple songs, melodies and exercises (based on these major sets)."
+        ],
+        "Drums Specialisation": [
+          "Waltz - Playing 12/8 blues and variations",
+          "To able to learn the kind of sticking pattern to apply of fills. Flam, Flam tap advance drum Strokes and Rock and Roll Feel. Jazz Cymbal Rhythm",
+          "To know style and rhythms that makes Reggae",
+          "Reggae One Drop. Sheet music and audio Cd and audio music",
+          "To know the reggae style of music",
+          "Judging the perform on the drum kit, based on tempo To work independently with metronome",
+          "Independent Practice, Exercise advance paradiddles"
+        ],
+        "Tabla Specialisation": [
+          "Learning the way of how to make their own simple paltas in a Kaida in different beats.",
+          "Learning different ways of playing the bols, playing the same bol in different style.",
+          "Playing all the taught Kaidas smoothly with all the paltas and tihai without stopping in between.",
+          "Able to do a stage performance of Tabla for atleast 7-10 minutes with confidence",
+          "Learning little complex practice bols to improve hand strength and stamina."
+        ],
+        "Western Violin Specialisation": [
+          "Diminished scales",
+          "Broken slur bowing technique",
+          "Identify the time signature",
+          "Identify the changing tonality",
+          "Identify the final cadence as perfect, plagal, imperfect or interrupted",
+          "Identify the interval as minor or major second, minor or major third, perfect fourth or fifth, minor or major sixth, minor or major seventh, or octave",
+          "Identify the bar in which the change of rhythm occurred",
+          "Identify the bar in which the change of pitch occurred",
+          "Harmonised 8 bars",
+          "Major or minor key",
+          "Expression",
+          "Vibrato",
+          "Grade music Pieces",
+          "Orchestra music pieces",
+          "Interval",
+          "Improvisation",
+          "Dynamics",
+          "Phrases",
+          "Articulation, legato staccato",
+          "Chromatic scales",
+          "Double stops major and minor",
+          "Double stops in 6th & Octave",
+          "Major scale in on one string"
+        ],
+        "Drama Specialisation": [
+          "Pantomime",
+          "Advanced exercises for body flexibility",
+          "Complex combination of movements of different parts of the body",
+          "Composition, Symmetry and Asymmetry",
+          "Assessment - Designing choreography for performance, emotional expressions through body, working on stylized movements"
+        ],
+        "Physical Education": [
+          "Basketball: Fundamentals of Defense, Rebounding, and Shooting",
+          "Football: Goalkeeping, Tackling, Volley",
+          "Gymnastics: Cardiovascular Endurance, Flexibility, All Basic Handlings of Hoop, Ball, Ribbon and Clubs Apparatus",
+          "Badminton: Endurance Multi Full Court, Smash Tap, Toss and Defence, Full Court Matches",
+          "Cricket: Understanding Length, Full Toss, Yorker",
+          "Table Tennis: Backhand Loop against Backspin, Forehand Chop against Loop, Forehand Smash against a Lob",
+          "Athletics: Fitness, Throws (Shot put, Kids Javelin, Medicine Ball Throw, Discus)",
+          "Hockey: Shooting at goal, Penalty corner basics, Advanced passing and ball control, Game rules and officiating"
+        ],
+        "Technology": [
+          "Basic HTML",
+          "Digital Portfolio Design",
+          "Apple Freeform (Cloud Computing Visualisation)",
+          "MakeCode micro:bit Programming"
+        ]
+      }
+    }
+  ]
+}

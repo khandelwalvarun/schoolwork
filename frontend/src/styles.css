@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .chip { @apply inline-block px-2 py-0.5 rounded text-xs font-medium; }
+  .chip-red { @apply chip bg-red-50 text-red-700; }
+  .chip-amber { @apply chip bg-amber-50 text-amber-800; }
+  .chip-blue { @apply chip bg-blue-50 text-blue-700; }
+  .chip-green { @apply chip bg-green-50 text-green-700; }
+}

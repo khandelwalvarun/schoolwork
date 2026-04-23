@@ -1,0 +1,584 @@
+"""MCP server exposing the parent-cockpit data to Dispatch, OpenClaw, Claude Desktop, etc.
+
+Registers tools once; can be launched either as stdio (via `schoolwork-mcp`) or mounted
+into the FastAPI app at /mcp (streamable-http + SSE). Every tool call is logged to
+`mcp_tool_calls` for audit.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from mcp.server.fastmcp import Context, FastMCP
+from sqlalchemy import insert
+
+from ..config import get_settings
+from ..db import get_async_session
+from ..models import MCPToolCall
+from ..services import queries as Q
+
+settings = get_settings()
+
+server = FastMCP(
+    name="parent-cockpit",
+    instructions=(
+        "Parent-facing tracker for Vasant Valley School's Veracross portal. "
+        "Use list_children first. For backlog questions use get_overdue / get_due_today / "
+        "get_upcoming. For free-form questions across any unstructured content "
+        "(teacher comments, school messages, articles, parent notes) use `ask`. "
+        "Numbers and dates are authoritative; do not invent data not returned by a tool."
+    ),
+)
+
+
+async def _audit(
+    tool: str,
+    arguments: dict[str, Any],
+    result: Any,
+    error: str | None,
+    started: float,
+    client_id: str | None,
+) -> None:
+    try:
+        preview = json.dumps(result, default=str)[:300] if result is not None else None
+        row_count = len(result) if isinstance(result, list) else None
+        async with get_async_session() as session:
+            await session.execute(
+                insert(MCPToolCall).values(
+                    tool=tool,
+                    arguments_json=json.dumps(arguments, default=str),
+                    client_id=client_id,
+                    result_preview=preview,
+                    row_count=row_count,
+                    error=error,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                )
+            )
+            await session.commit()
+    except Exception:
+        # Auditing must never break a tool call.
+        pass
+
+
+def _client_id(ctx: Context | None) -> str | None:
+    if ctx is None:
+        return None
+    try:
+        info = ctx.session.client_params.clientInfo  # type: ignore[attr-defined]
+        return f"{info.name}/{info.version}"
+    except Exception:
+        return None
+
+
+@server.tool()
+async def list_children(ctx: Context | None = None) -> list[dict[str, Any]]:
+    """Enumerate the children tracked by the cockpit (id, name, class)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.list_children(session)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("list_children", {}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def get_overdue(
+    child_id: int | None = None, ctx: Context | None = None
+) -> list[dict[str, Any]]:
+    """List overdue assignments. If child_id is omitted, returns across both kids."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_overdue(session, child_id=child_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_overdue", {"child_id": child_id}, result, err, started, _client_id(ctx)
+        )
+
+
+@server.tool()
+async def get_due_today(
+    child_id: int | None = None, ctx: Context | None = None
+) -> list[dict[str, Any]]:
+    """List assignments due today (IST)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_due_today(session, child_id=child_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_due_today", {"child_id": child_id}, result, err, started, _client_id(ctx)
+        )
+
+
+@server.tool()
+async def get_upcoming(
+    child_id: int | None = None, days: int = 14, ctx: Context | None = None
+) -> list[dict[str, Any]]:
+    """List upcoming assignments due in the next N days (default 14)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_upcoming(session, child_id=child_id, days=days)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_upcoming",
+            {"child_id": child_id, "days": days},
+            result,
+            err,
+            started,
+            _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_messages(
+    since_days: int = 7,
+    unread_only: bool = False,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """List recent school messages/announcements (last N days)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        since = datetime.now(tz=timezone.utc) - timedelta(days=since_days)
+        async with get_async_session() as session:
+            result = await Q.get_messages(session, since=since, unread_only=unread_only)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_messages",
+            {"since_days": since_days, "unread_only": unread_only},
+            result,
+            err,
+            started,
+            _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_today(ctx: Context | None = None) -> dict[str, Any]:
+    """Get the full Today view — the same data the 4pm digest is rendered from."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_today(session)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("get_today", {}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def get_notifications(
+    since_days: int = 7,
+    kinds: list[str] | None = None,
+    child_id: int | None = None,
+    limit: int = 100,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """List recent events and their per-channel delivery status (fired or suppressed)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        since = datetime.now(tz=timezone.utc) - timedelta(days=since_days)
+        kinds_tuple = tuple(kinds) if kinds else None
+        async with get_async_session() as session:
+            result = await Q.get_events(
+                session, since=since, kinds=kinds_tuple, child_id=child_id, limit=limit
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_notifications",
+            {
+                "since_days": since_days,
+                "kinds": kinds,
+                "child_id": child_id,
+                "limit": limit,
+            },
+            result,
+            err,
+            started,
+            _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_digest(
+    date_iso: str | None = None, ctx: Context | None = None
+) -> dict[str, Any] | None:
+    """Get the pre-rendered digest for a specific date (default: today).
+
+    Returns None if no digest has been generated for that date yet — in which case
+    the caller should use get_today for a live snapshot.
+    """
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] | None = None
+    try:
+        d = None
+        if date_iso:
+            d = datetime.fromisoformat(date_iso).date()
+        async with get_async_session() as session:
+            result = await Q.get_digest_summary(session, d=d)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_digest", {"date_iso": date_iso}, result, err, started, _client_id(ctx)
+        )
+
+
+@server.tool()
+async def ask(
+    query: str,
+    child_id: int | None = None,
+    kinds: list[str] | None = None,
+    since_days: int | None = None,
+    limit: int = 10,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Free-form search across assignments, teacher comments, school messages, articles,
+    and parent notes. Returns ranked passages; the caller synthesizes the answer.
+
+    Example queries: "cricket camp fee", "Tejas fractions worksheet", "handwriting".
+    """
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {"query": query, "results": []}
+    try:
+        since = (
+            datetime.now(tz=timezone.utc) - timedelta(days=since_days)
+            if since_days
+            else None
+        )
+        kinds_tuple = tuple(kinds) if kinds else None
+        async with get_async_session() as session:
+            rows = await Q.search(
+                session,
+                query=query,
+                child_id=child_id,
+                kinds=kinds_tuple,
+                since=since,
+                limit=limit,
+            )
+        result = {"query": query, "results": rows}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "ask",
+            {
+                "query": query,
+                "child_id": child_id,
+                "kinds": kinds,
+                "since_days": since_days,
+                "limit": limit,
+            },
+            result,
+            err,
+            started,
+            _client_id(ctx),
+        )
+
+
+@server.tool()
+async def add_note(
+    text: str,
+    child_id: int | None = None,
+    tags: str | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Append a parent note (free text). Optionally scoped to a child or tagged."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        async with get_async_session() as session:
+            result = await Q.add_parent_note(
+                session, text=text, child_id=child_id, tags=tags
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "add_note",
+            {"text": text[:200], "child_id": child_id, "tags": tags},
+            result,
+            err,
+            started,
+            _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_grades(
+    child_id: int, subject: str | None = None, ctx: Context | None = None
+) -> list[dict[str, Any]]:
+    """Recent grades for a child. Optionally filter by subject name."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_grades(session, child_id=child_id, subject=subject)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_grades", {"child_id": child_id, "subject": subject},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_grade_trends(
+    child_id: int, ctx: Context | None = None
+) -> list[dict[str, Any]]:
+    """Per-subject grade trend: sparkline, arrow, latest/avg/min/max, last 5 grades."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_grade_trends(session, child_id=child_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_grade_trends", {"child_id": child_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_channel_config(ctx: Context | None = None) -> dict[str, Any]:
+    """Return the current notification channel policy (thresholds, mute lists, rate limits)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..notability.dispatcher import load_config
+        async with get_async_session() as s:
+            result = await load_config(s)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("get_channel_config", {}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def update_channel_config(
+    config: dict[str, Any], ctx: Context | None = None
+) -> dict[str, Any]:
+    """Overwrite the channel policy. Provide the full config object (same shape as
+    get_channel_config returns). Stored in the channel_config singleton row."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {"status": "ok"}
+    try:
+        from ..notability.dispatcher import save_config
+        async with get_async_session() as s:
+            await save_config(s, config)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("update_channel_config", {"keys": list(config.keys())}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def test_channel(
+    channel: str, message: str = "Hello from Parent Cockpit", ctx: Context | None = None
+) -> dict[str, Any]:
+    """Send a test message through one channel (telegram|email|inapp)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..channels.email import EmailChannel
+        from ..channels.inapp import InAppChannel
+        from ..channels.telegram import TelegramChannel
+        channels = {
+            "telegram": TelegramChannel,
+            "email": EmailChannel,
+            "inapp": InAppChannel,
+        }
+        cls = channels.get(channel)
+        if cls is None:
+            raise ValueError(f"unknown channel: {channel}")
+        r = await cls().send_test(message)
+        result = {"channel": r.channel, "status": r.status, "error": r.error}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "test_channel", {"channel": channel, "message": message[:80]},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def send_digest(
+    kind: str = "digest_4pm", ctx: Context | None = None
+) -> dict[str, Any]:
+    """Build and dispatch a digest across all configured channels. Kind: 'digest_4pm' | 'weekly'."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..jobs.digest_job import run_daily_digest, run_weekly_digest
+        if kind == "digest_4pm":
+            await run_daily_digest()
+        elif kind == "weekly":
+            await run_weekly_digest()
+        else:
+            raise ValueError(f"unknown digest kind: {kind}")
+        result = {"status": "ok", "kind": kind}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("send_digest", {"kind": kind}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def get_digest_preview(ctx: Context | None = None) -> dict[str, Any]:
+    """Build (but don't dispatch) a digest from the current DB state. Returns
+    rendered text + HTML + telegram markdown + the structured data."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.briefing import generate_and_store_digest
+        from ..services.render import render_for_digest
+        data = await generate_and_store_digest(kind="digest_preview", llm=False)
+        result = render_for_digest(data)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_digest_preview", {}, {"text_len": len(result.get("text",""))},
+            err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def trigger_sync(
+    wait: bool = False,
+    include_grades: bool = False,
+    grading_periods: list[int] | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Kick off a Veracross sync.
+    - wait=True blocks and returns the full summary; default False = queued.
+    - include_grades=True adds a grade-report scan (expensive). Default False for
+      hourly syncs; enable weekly or on-demand to refresh grade trends.
+    - grading_periods: list of period IDs to fetch (e.g. [13,15,19,21] for all four
+      learning cycles). Defaults to the current period from settings.
+    """
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..scraper.sync import run_sync
+        periods_tuple = tuple(grading_periods) if grading_periods else None
+        if wait:
+            result = await run_sync(
+                trigger="mcp-wait",
+                include_grades=include_grades,
+                grading_periods=periods_tuple,
+            )
+        else:
+            task = asyncio.create_task(
+                run_sync(
+                    trigger="mcp",
+                    include_grades=include_grades,
+                    grading_periods=periods_tuple,
+                )
+            )
+            await asyncio.sleep(0)
+            result = {
+                "status": "queued",
+                "note": "sync running in background",
+                "task_name": task.get_name(),
+                "include_grades": include_grades,
+            }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "trigger_sync",
+            {"wait": wait, "include_grades": include_grades, "grading_periods": grading_periods},
+            result, err, started, _client_id(ctx),
+        )
+
+
+def run_stdio() -> None:
+    """Entry point for `schoolwork-mcp` — stdio transport, for Claude Desktop/Code."""
+    asyncio.run(server.run_stdio_async())
+
+
+if __name__ == "__main__":
+    run_stdio()

@@ -1,0 +1,588 @@
+{
+  "school_year": "2026-27",
+  "class_level": 4,
+  "cycles": [
+    {
+      "name": "LC1",
+      "start": "2026-04-01",
+      "end": "2026-05-22",
+      "topics_by_subject": {
+        "English": [
+          "Charlotte's Web by E. B. White",
+          "Godfrey Gordon Gustavus Gore by William Brighty",
+          "One thing at a time (Santoor)",
+          "Willy Wonka's Extraordinary Invention by Roald Dahl(Wisdom of Words)",
+          "Running Away by Natalie Babbit (Wisdom of Words)",
+          "The Old Stag (Santoor-NCERT)",
+          "Spelling/Dictation",
+          "Instructions",
+          "Comprehension",
+          "Loud Reading",
+          "Recitation",
+          "Reading for detail (answering questions)",
+          "Reading for comprehension (poems, passages and instructions)",
+          "Reading for appreciation of literature",
+          "Handwriting",
+          "Alliteration",
+          "Similes",
+          "Transcription",
+          "Reading Comprehension",
+          "Short/Long answers",
+          "Sentence Construction",
+          "Descriptive Writing-Describing people, things, setting",
+          "Adjectives/Position of Adjectives",
+          "Comparisons of Adjectives",
+          "Verbs",
+          "Tenses"
+        ],
+        "Hindi": [
+          "नीम",
+          "आसमान गरा",
+          "वणमाला",
+          "वण वच्छेद",
+          "कोशक्रम",
+          "संज्ञा (व्यिक्तवाचक व जातवाचक)",
+          "अनुच्छेद लेखन",
+          "सुलेख",
+          "बोलने वाला तोता (कहानी)",
+          "चमत्कारी वस्त्र (कहानी)",
+          "बतूता का जूता (कवता)",
+          "गम में शीत लहर (कवता)"
+        ],
+        "Sanskrit": [
+          "लंग व वचन का सामान्य परचय",
+          "अकारांत शब्द सूची तीनों वचनों में (दैनक जीवन में प्रयोग होने वाले शब्द, पशुओं और पयों के नाम)",
+          "क्रया शब्द परचय १० धातु (पठ्, चल्, हस्, खाद्, वद्, लख्, पब्, धाव्, गम्, वस्)",
+          "जन्मदन गीत"
+        ],
+        "Mathematics": [
+          "Number sequence up to 9 digits",
+          "Reading/writing numerals/number names",
+          "Count on /Number Grid",
+          "Numbers- Before /After (Predecessor /Successor)",
+          "Ascending Order /Descending Order",
+          "Place value",
+          "Expand the Numbers into Crores/hundred millions, Lakhs/millions, Thousands, Hundreds, Tens and Ones",
+          "Skip Counting /Number Pattern",
+          "Comparing - filling in <, > or = signs",
+          "Filling in the missing signs- ( +, -, x)",
+          "Introduction of DMAS",
+          "Division",
+          "Divisibility Rules (2, 3, 4, 5, 6, 8, 9, 10, 12 & 15)",
+          "Bar Graph",
+          "Patterns",
+          "Problem solving",
+          "History (From the Barter System to the current currency and plastic money)",
+          "Currency around the world",
+          "The Indian Currency-(Use and conversion of rupees and paisa; the existing denominations; making up of amounts)",
+          "Story Sums /Mental Maths on money"
+        ],
+        "Science": [
+          "Nature Trail",
+          "Growing up with Nature"
+        ],
+        "Social Science": [
+          "Definitions and examples",
+          "Illustrations of different landforms",
+          "Identification of different landforms on a physical map of the World and India",
+          "Mapping of major landforms of India",
+          "Exploring Our Neighbourhood"
+        ],
+        "Visual Arts": [
+          "Introduction to Geometric Art",
+          "Mandala Art",
+          "To get a tactile feeling by using different media like pencil, pastel, poster colour, water colour, collage, pen and ink/brush and ink and mixing mediums",
+          "Use of different sizes and quality of paper"
+        ],
+        "Indian Dance": [
+          "Revising and completing of Pataka Hasta viniyoga",
+          "Understanding of stretching and bending",
+          "Breathing (Pranayam) and balancing",
+          "Tat tai ta ha group of steps (Advance level)",
+          "Understanding of Tala pattern used in Bharatnatyam"
+        ],
+        "Western Dance": [
+          "Roll downs",
+          "Spotting",
+          "High arch, Isolations",
+          "Body coordination",
+          "Arm positions",
+          "Plié",
+          "Flexibility",
+          "Opposition technique",
+          "Spatial awareness",
+          "Pivot turns",
+          "Pick and Place",
+          "Cross open",
+          "Bus stop",
+          "Flick and place",
+          "Pencil turn",
+          "Pirouette preparations and turns"
+        ],
+        "Indian Music": [
+          "Introduction to Indian Musicians and musical instruments"
+        ],
+        "Western Music": [
+          "Delving deeper into concepts like pulse, meter, tempo",
+          "Listening and observing to understand those concepts",
+          "Learning songs"
+        ],
+        "Drama": [
+          "What is Drama?",
+          "What are Production Elements? (Sets, Costume, Props, Light and Sound)",
+          "Discussion on Setting and Set Design",
+          "Zip Zap Boing",
+          "Making Stage Designs"
+        ],
+        "Physical Education": [
+          "Basketball Control",
+          "Low dribbling and High Dribbling",
+          "Change of hand while dribbling",
+          "Low Crossover and High Crossover",
+          "Zig-Zag running with basketball",
+          "Dribbling Relays",
+          "Fitness: General Fitness and Sports related fitness: ABC exercises, flexibility exercises",
+          "Crouch start",
+          "Sprint: 50m, 100m and 200m race",
+          "Relay Races (4X100m)",
+          "Forward Dribbling",
+          "Push pass one to one",
+          "Drop the ball and trap",
+          "Overarm Throw",
+          "Small sided games",
+          "Batting: Grip, Stance, Back Lift, Step and Hit, Vertical bat shots, Cross bat shots",
+          "Bowling: Grip, Standing overarm bowling, Run and bowl",
+          "Fielding: Stopping a ball using hand and body, Long barrier, Short distance catching, Throw (over arm and under arm)",
+          "Games: Small overs games, Only batting or only bowling games",
+          "Different stations with aerobic and anaerobic routines",
+          "Back and Abdomen exercises",
+          "Leg strength, arm and shoulder with different sets of endurance",
+          "Backward roll swing, leg split, forward roll, back roll",
+          "Walk on the balancing beam",
+          "Cooldown exercises"
+        ],
+        "Technology": [
+          "Safe iPad handling, basic buttons and gestures",
+          "Logging into the school account and accessing the student portal",
+          "Exploring digital drawing tools and creating simple artwork-Draw app",
+          "Understanding files and folders and organising work"
+        ]
+      }
+    },
+    {
+      "name": "LC2",
+      "start": "2026-07-06",
+      "end": "2026-09-25",
+      "topics_by_subject": {
+        "English": [
+          "Charlotte's Web by E. B. White",
+          "Where The Mind Is Without Fear by Rabindranath Tagore",
+          "From A Railway Carriage by R. L. Stevenson (Wisdom of Words)",
+          "How the Donkey Became by Ted Hughes (Wisdom of Words) /The Magic Bowl",
+          "The Tinkling Bells (Santoor-NCERT)",
+          "Spelling/dictation",
+          "Instructions",
+          "Aural Comprehension",
+          "Poetry Recitation",
+          "Reading for detail (answering questions)",
+          "Reading for comprehension (poems, passages and instructions)",
+          "Reading for the appreciation of literature",
+          "Reading to sift out the main idea",
+          "Reading to summarize",
+          "Elements of Story Writing",
+          "Good Beginnings",
+          "Picture Prompt Story Writing",
+          "Reading Comprehension",
+          "Short/Long answers",
+          "Spellings",
+          "Main Idea and details",
+          "Summarising",
+          "Verb Tenses",
+          "Nouns",
+          "Articles",
+          "Types of Sentences",
+          "Homophones"
+        ],
+        "Hindi": [
+          "चेरापूँजी का मेहमान",
+          "कवता का कमाल",
+          "वचन",
+          "लंग",
+          "पयायवाची शब्द",
+          "वलोम शब्द",
+          "तुकबंदी शब्दों से कवता लेखन, संवाद लेखन",
+          "सुलेख",
+          "दो चोर (कहानी)",
+          "संतुष्ट व्यिक्त का उपहार (कहानी)",
+          "अंतम इच्छा (कहानी)",
+          "दूर देश से आते बादल (कवता)",
+          "इनसे सीखो (कवता)",
+          "आँखें (कवता)"
+        ],
+        "Sanskrit": [
+          "अकारांत पुिलंग शब्द (तीनों वचनों में वाक्य प्रयोग)",
+          "सवनाम शब्द परचय (तत्)",
+          "प्रथम पुरुष पुिलंग सवनाम शब्द से वाक्य रचना",
+          "संख्या (१-२०)",
+          "सिब्ज़यों के नाम पर आधारत गीत"
+        ],
+        "Mathematics": [
+          "Making of Bills – (concept of TIP & DISCOUNT)",
+          "Profit and Loss – (overhead expense)",
+          "Coin rubbing",
+          "Symmetry – Line of symmetry",
+          "More on patterns (shapes)",
+          "History of Time (from shadow stick, sundial, candle clock, rope clock, water clock, hour /minute glass to the present clocks and watches)",
+          "Reading and Plotting of Time",
+          "Sums on Time- Conversions (Week to days, days to hours, Hours to minutes, Minutes to seconds)",
+          "Working on 12 & 24-hour clock",
+          "Concept of calendar"
+        ],
+        "Science": [
+          "Food for Health"
+        ],
+        "Social Science": [
+          "Food for Health",
+          "Happy and Healthy Living"
+        ],
+        "Visual Arts": [
+          "Introduction to a famous artist Pablo Picasso and his artworks",
+          "Modern Art inspired by the artist",
+          "Cubism, Picasso faces",
+          "Realization of context and purpose of the art being taught"
+        ],
+        "Indian Dance": [
+          "Tri pataka Hasta Viniyoga (Usage of Tri pataka Hasta)",
+          "Introduction of jumps used in dance",
+          "Breathing exercises",
+          "Mind games",
+          "Teermanam Adavu",
+          "Ta hata jham tari ta"
+        ],
+        "Western Dance": [
+          "Contraction and release technique",
+          "Contraction Articulation of feet",
+          "Cross ball open and change",
+          "Flexed and pointed toes"
+        ],
+        "Indian Music": [
+          "Song related to national and other festivals",
+          "Songs of General interest"
+        ],
+        "Western Music": [
+          "Knowledge of the broad instrument families",
+          "Recognition of characteristics, sound of each of those families and the instruments belonging to them",
+          "Learning songs"
+        ],
+        "Drama": [
+          "Navigating the Stage",
+          "How Does Light Tell A Story?",
+          "Video: The Light and the Little Girl",
+          "Stage Directions - Trust Exercise",
+          "Solo Light Exploration",
+          "Group Work: Tableau with Lights"
+        ],
+        "Physical Education": [
+          "Shooting Form",
+          "How to realize the basketball",
+          "Jump and collect the basketball",
+          "How to take Lay-up shot",
+          "How to take free shot",
+          "How to take jump Shot",
+          "Fitness: Drill Exercises, Relay races, flexibility exercises",
+          "Inter House Track and Field Meet",
+          "Horizontal Jump: Long jump: Hang Style",
+          "Zigzag Dribbling",
+          "Dribble and passing",
+          "Long ball passing",
+          "Receiving using different body parts",
+          "Shooting and Punting",
+          "Throw",
+          "Goalkeeper grip and gather (Cup and W)",
+          "Batting: Grip, Stance, Back Lift, Step and Hit, Vertical bat shots, Cross bat shots",
+          "Bowling: Grip, Standing overarm bowling, Run and bowl",
+          "Fielding: Stopping a ball using hand and body, Long barrier, Short distance catching, Throw (over arm and under arm)",
+          "Games: Small overs games, Only batting or only bowling games",
+          "Leg raises (Forward & Backward)",
+          "Cartwheels",
+          "V Hold",
+          "Crunches",
+          "Planck, Arches",
+          "Sit-ups",
+          "Swings on the bar",
+          "Walk on the balancing beam",
+          "Cool down exercises"
+        ],
+        "Technology": [
+          "Online Scratch block coding - creating a story or a game"
+        ]
+      }
+    },
+    {
+      "name": "LC3",
+      "start": "2026-09-28",
+      "end": "2026-12-23",
+      "topics_by_subject": {
+        "English": [
+          "Ramayana – An Epic by Arshia Sattar",
+          "Colonel Fazackerley by Charles Causley",
+          "Hekko (Santoor-NCERT)",
+          "The Lagori Games (Santoor-NCERT)",
+          "Paddington by Michael Bond(Wisdom of Words)",
+          "Spelling/dictation",
+          "Instructions",
+          "Aural Comprehension",
+          "Just a Minute",
+          "Spin a Yarn",
+          "Reading for detail (answering questions)",
+          "Reading for comprehension (poems, passages and instructions)",
+          "Reading for appreciation of literature",
+          "Reading to sift out the main idea",
+          "Reading to summarize",
+          "Poetry Writing- Writing an Ode",
+          "Personification",
+          "Point Of View",
+          "Pronouns",
+          "Subject Predicate",
+          "Subject Verb Agreement",
+          "Apostrophe of possession and contraction"
+        ],
+        "Hindi": [
+          "जयपुर से पत्र",
+          "ओणम के रंग",
+          "सवनाम",
+          "क्रया",
+          "वशेषण",
+          "वराम चह्न",
+          "आत्मकथा लेखन, पत्र लेखन",
+          "सुलेख",
+          "शाही बैंगन (कहानी)",
+          "उधार का बोझ (कहानी)",
+          "कमयाँ नकालना (कहानी)",
+          "चींटी (कवता)",
+          "सबसे बढ़कर कौन ? (कवता)"
+        ],
+        "Sanskrit": [
+          "मध्यम पुरुष सवनाम शब्द (तीनों वचनों में वाक्य प्रयोग)",
+          "आकारांत स्त्रीलंग शब्द (दैनक जीवन में प्रयोग होने वाले शब्द, पशुओं और पयों के नाम)",
+          "आकारांत स्त्रीलंग शब्द (तीनों वचनों में वाक्य प्रयोग)",
+          "फलों के नाम पर आधारत गीत"
+        ],
+        "Mathematics": [
+          "Measurement – Length, Mass and Capacity",
+          "Rounding off",
+          "Round off to nearest 10's, 100's and 1000's",
+          "Story Sums based on the same",
+          "Circle",
+          "The relation between different parts of a circle",
+          "Use of a compass for the construction of a circle",
+          "Construction of a circle with a given radius or diameter"
+        ],
+        "Science": [
+          "Simple Machines",
+          "The Taj Mahal Integrated Project"
+        ],
+        "Social Science": [
+          "The Taj Mahal Integrated Project",
+          "A study of the geography and culture of some states/Union Territories of India from different regions",
+          "Map marking-Political map of India",
+          "Research and presentation of information on some selected parameters from the state of study",
+          "History (Taj Mahal)",
+          "Architecture (Taj Mahal)",
+          "Taj Mahal's impact on the Indian Economy",
+          "Environmental factors impacting the Taj Mahal"
+        ],
+        "Visual Arts": [
+          "Fluid Art painting",
+          "Landscapes",
+          "Silhouette art"
+        ],
+        "Indian Dance": [
+          "Ardha pataka Hasta Viniyoga (Usage of Ardh pataka Hasta)",
+          "Introduction of Mandi jumps",
+          "Mind games with Mudras",
+          "Dance sequences used in Alaripu",
+          "Beginning of Alaripu"
+        ],
+        "Western Dance": [
+          "Stylised walk, understandings the core, swift feet movement",
+          "Jazz walk",
+          "Chassé",
+          "Hitch kick",
+          "Understanding of music",
+          "Spatial awareness",
+          "Understanding rhythm"
+        ],
+        "Indian Music": [
+          "Drama Festival songs",
+          "Integration with other subjects"
+        ],
+        "Western Music": [
+          "Deeper knowledge of different musical styles, genres",
+          "Recognising how styles differ and their identifying elements",
+          "Learning songs"
+        ],
+        "Drama": [
+          "How Does Sound Tell A Story?",
+          "Flashlight and Music Performance (Pink Panther)",
+          "What Do Clothing and Costumes Tell Us?",
+          "Sound Machine",
+          "Round Robin: Action and Sound Effect",
+          "Solo Work: Costume Design"
+        ],
+        "Physical Education": [
+          "Passing with basketball",
+          "Chest, Bounce, overhead, passing",
+          "Passing machine drills",
+          "Full court passing",
+          "Fitness: Relay Race, Flexibility exercises (Yogasanas)",
+          "Vertical Jump: High jump, Straddle Jump",
+          "Sole trapping and dragging",
+          "Dribble and shooting",
+          "One to one chest trap/receive",
+          "Games/Matches",
+          "Video analysis (Indoor)",
+          "Tactical discussions (Indoor)",
+          "Batting: Forward defence, Back foot defence, Pull shots, Cut shots, Drive shots, Footwork drills",
+          "Bowling: Fast bowling grip, Spin bowling grip, Run up taking, Delivery strides and follow through, Target bowling",
+          "Fielding: Catching (short and medium high), Throw and back up, One stump target hitting, Wicket keeping",
+          "Squats with various forms",
+          "Knee Strengthen exercises, Calf muscle exercises",
+          "Swings on the high bar, grips and jump on the springboard",
+          "Holds in Handstand position, arches, cartwheels",
+          "Crawling, Crab walk (forward and backward)",
+          "Cool down exercises"
+        ],
+        "Technology": [
+          "Netiquette",
+          "Introduction Keynote app - visual communication",
+          "Virtual Tours",
+          "Using Apple AI Image Playground for backgrounds",
+          "Organising ideas using Apple Freeform"
+        ]
+      }
+    },
+    {
+      "name": "LC4",
+      "start": "2027-01-11",
+      "end": "2027-03-19",
+      "topics_by_subject": {
+        "English": [
+          "Ramayana by Arshia Sattar",
+          "Uncle Podger Hangs a Picture by Jerome K. Jerome",
+          "Braille (Santoor -NCERT)",
+          "The ABC by Spike Milligan",
+          "Spelling/dictation",
+          "Instructions",
+          "Comprehension",
+          "Spelling Bee",
+          "Word Quiz",
+          "Reading for detail (answering questions)",
+          "Reading for comprehension (poems, passages and instructions)",
+          "Reading for the appreciation of literature",
+          "Reading to identify the main idea",
+          "Story Writing",
+          "Reading Comprehension",
+          "Prepositions",
+          "Conjunctions",
+          "Parsing"
+        ],
+        "Hindi": [
+          "शतरंज में मात",
+          "मठाइयों का सम्मेलन",
+          "मुहावरे",
+          "गनती-१-५०",
+          "समान ध्वन वाले शब्द",
+          "कहानी लेखन (चत्र आधारत, वषय पर आधारत, दए गए आरम्भ पर आधारत)",
+          "सुलेख",
+          "इच्छा मृत्यु (कहानी)",
+          "दोषी कौन (कहानी)",
+          "सद का मौसम है आया (कवता)",
+          "नई सदी का जादूगर (कवता)"
+        ],
+        "Sanskrit": [
+          "नपुंसकलंग शब्द सूची तीनों वचन में (दैनक जीवन में प्रयोग होने वाले वस्तुओं के नाम)",
+          "अव्यय शब्द(यत्र, सदा, अत्र, तत्र, कुत्र) परचय तथा वाक्य प्रयोग",
+          "उत्तम पुरुष सवनाम शब्द से वाक्य रचना",
+          "एक सुभाषतान श्लोक"
+        ],
+        "Mathematics": [
+          "Understanding Fractions as a part of a whole",
+          "Understanding Numerator and Denominator",
+          "Understanding different types of fractions(like & unlike fractions, proper & improper fractions, unit fractions & mixed number)",
+          "Conversion of an improper fraction to a proper fraction and vice versa",
+          "Representing different fractions through shading",
+          "Addition and subtraction of like fractions",
+          "Understanding Equivalent Fractions",
+          "Comparison of fractions"
+        ],
+        "Science": [
+          "How Things Work",
+          "How Things are Made"
+        ],
+        "Social Science": [
+          "Our Environment",
+          "Our Sky",
+          "Solar System"
+        ],
+        "Visual Arts": [
+          "Introduction To Calligraphic Fonts",
+          "Representation Art /Introduction To Pop Art"
+        ],
+        "Indian Dance": [
+          "Ardha pataka Hasta Viniyoga (Usage of Ardh pataka Hasta)",
+          "Mandi jumps",
+          "Mind games with Mudras and arm movements",
+          "Alaripu in Tisra eka Talam",
+          "Abhinaya and Expressions",
+          "Eye movements & Neck movements"
+        ],
+        "Western Dance": [
+          "Swift movement of feet and kicks",
+          "Jazz square Hitch kick variation",
+          "Art appreciation"
+        ],
+        "Indian Music": [
+          "Introduction to Indian Classical Raaga",
+          "Introduction to Indian Classical Taals and its literature"
+        ],
+        "Western Music": [
+          "Understanding form and song structures",
+          "Observing different pieces and recognising the basic structure of a song",
+          "Learning songs"
+        ],
+        "Drama": [
+          "What Are Props?",
+          "How Do Props Take a Story Forward?",
+          "Video: How Silent Props Are Made",
+          "Newspaper Props",
+          "This Is Not A… (Material Transformation Exercise)",
+          "Group Work: Prop Design and Scene Work"
+        ],
+        "Physical Education": [
+          "How to do defense",
+          "Man to man defense",
+          "Full court defense",
+          "Offense and rebounding",
+          "Fitness: Aerobic exercises, Flexibility exercises",
+          "Throws: Shot put with softball, Kids Javelin, Cricket ball throw, Medicine Ball Throw",
+          "Various types of dribbling and passing",
+          "Shooting and volley",
+          "Small sided games",
+          "Matches",
+          "Batting: Forward defence, Back foot defence, Pull shots, Cut shots, Drive shots, Footwork drills",
+          "Bowling: Fast bowling grip, Spin bowling grip, Run up taking, Delivery strides and follow through, Target bowling",
+          "Fielding: Catching (short and medium high), Throw and back up, One stump target hitting, Wicket keeping",
+          "Different routines with different stations",
+          "Jogging, high knee action, shuffling, shifting, pick up and putting down the object, skipping, leg raises, one leg or both leg actions, with or without object",
+          "Cartwheels, handstand, arches, shot from the uneven bars, Dismount on the balancing beam, Flexibility exercises with Stretching including leg split and arches",
+          "Cooldown exercises"
+        ],
+        "Technology": [
+          "Numbers app - Creating simple tables and formatting data",
+          "Storytelling/Media Creation- iMovie/Story Jumper"
+        ]
+      }
+    }
+  ]
+}
