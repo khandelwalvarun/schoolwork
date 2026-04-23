@@ -35,6 +35,12 @@ recon/user-data/        # Chromium profile cache — per-machine, can be 100s of
 *.sqlite
 *.sqlite3
 
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
 # OS
 Thumbs.db
 .DS_Store
