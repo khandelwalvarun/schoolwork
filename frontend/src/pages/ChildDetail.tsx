@@ -1,0 +1,107 @@
+import { Link, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { api, Assignment, GradeTrend } from "../api";
+
+function Row({ a }: { a: Assignment }) {
+  return (
+    <tr className="border-t border-gray-100">
+      <td className="py-1 px-2 text-gray-600 text-sm">{a.subject}</td>
+      <td className="py-1 px-2">{a.title}</td>
+      <td className="py-1 px-2 text-sm whitespace-nowrap">{a.due_or_date}</td>
+    </tr>
+  );
+}
+
+export default function ChildDetail() {
+  const { id } = useParams();
+  const childId = Number(id);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["child-detail", childId],
+    queryFn: () => api.childDetail(childId),
+    enabled: !isNaN(childId),
+  });
+  if (isLoading) return <div>Loading…</div>;
+  if (error) return <div className="text-red-700">Error: {String(error)}</div>;
+  if (!data) return null;
+  const c = data.child;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-2xl font-bold">{c.display_name}</h2>
+          <div className="text-gray-500 text-sm">
+            Class {c.class_level}{c.class_section ? ` · ${c.class_section}` : ""}
+            {data.syllabus_cycle && (
+              <span className="ml-3 text-purple-700 bg-purple-50 border border-purple-200 rounded px-2 py-0.5 text-xs">
+                📚 {data.syllabus_cycle.name} · {data.syllabus_cycle.start} → {data.syllabus_cycle.end}
+              </span>
+            )}
+          </div>
+        </div>
+        <nav className="flex gap-3 text-sm">
+          <Link className="text-blue-700 hover:underline" to={`/child/${childId}/grades`}>Grades</Link>
+          <Link className="text-blue-700 hover:underline" to={`/child/${childId}/assignments`}>All assignments</Link>
+          <Link className="text-blue-700 hover:underline" to={`/child/${childId}/comments`}>Comments</Link>
+          <Link className="text-blue-700 hover:underline" to={`/child/${childId}/syllabus`}>Syllabus</Link>
+        </nav>
+      </div>
+
+      <div className="flex gap-3 mb-6">
+        <span className="chip-red">🚨 Overdue: <b>{data.counts.overdue}</b></span>
+        <span className="chip-amber">📌 Due today: <b>{data.counts.due_today}</b></span>
+        <span className="chip-blue">📅 Upcoming: <b>{data.counts.upcoming}</b></span>
+        <span className="chip-amber">💬 Comments: <b>{data.counts.comments}</b></span>
+      </div>
+
+      {data.overdue_sparkline && (
+        <div className="mb-6 bg-white border border-gray-200 rounded p-4">
+          <div className="text-sm text-gray-600 mb-1">14-day overdue backlog</div>
+          <div className="font-mono text-xl tracking-wide">{data.overdue_sparkline}</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {data.overdue_trend[0]?.date} → {data.overdue_trend[data.overdue_trend.length - 1]?.date}
+            &nbsp;· now {data.overdue_trend[data.overdue_trend.length - 1]?.count}
+          </div>
+        </div>
+      )}
+
+      {data.overdue.length > 0 && (
+        <section className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
+          <h3 className="font-semibold text-red-700 mb-2">Overdue — {data.overdue.length}</h3>
+          <table className="w-full text-sm"><tbody>{data.overdue.map((a) => <Row key={a.id} a={a} />)}</tbody></table>
+        </section>
+      )}
+      {data.due_today.length > 0 && (
+        <section className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
+          <h3 className="font-semibold text-amber-700 mb-2">Due today — {data.due_today.length}</h3>
+          <table className="w-full text-sm"><tbody>{data.due_today.map((a) => <Row key={a.id} a={a} />)}</tbody></table>
+        </section>
+      )}
+      {data.upcoming.length > 0 && (
+        <section className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
+          <h3 className="font-semibold text-blue-700 mb-2">Upcoming — {data.upcoming.length}</h3>
+          <table className="w-full text-sm"><tbody>{data.upcoming.slice(0, 20).map((a) => <Row key={a.id} a={a} />)}</tbody></table>
+        </section>
+      )}
+
+      {data.grade_trends.length > 0 && (
+        <section className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
+          <h3 className="font-semibold text-purple-700 mb-2">📊 Grade trends</h3>
+          <table className="w-full text-sm"><tbody>
+            {data.grade_trends.map((t: GradeTrend) => (
+              <tr key={t.subject} className="border-t border-gray-100">
+                <td className="py-1 px-2">{t.subject}</td>
+                <td className="py-1 px-2 font-mono">{t.sparkline}</td>
+                <td className="py-1 px-2 text-lg">{t.arrow}</td>
+                <td className="py-1 px-2">latest <b>{t.latest.toFixed(0)}%</b></td>
+                <td className="py-1 px-2 text-gray-500">avg {t.avg.toFixed(0)}% (n={t.count})</td>
+              </tr>
+            ))}
+          </tbody></table>
+          <div className="mt-2 text-xs">
+            <Link className="text-blue-700 hover:underline" to={`/child/${childId}/grades`}>See full grades →</Link>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}

@@ -421,6 +421,223 @@ async def get_channel_config(ctx: Context | None = None) -> dict[str, Any]:
 
 
 @server.tool()
+async def get_comments(
+    child_id: int | None = None, limit: int = 50, ctx: Context | None = None
+) -> list[dict[str, Any]]:
+    """Teacher comment items across one or all children (most recent first)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_comments(session, child_id=child_id, limit=limit)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_comments", {"child_id": child_id, "limit": limit},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_notes(
+    child_id: int | None = None, limit: int = 50, ctx: Context | None = None
+) -> list[dict[str, Any]]:
+    """Parent-authored notes across one or all children (most recent first)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_notes(session, child_id=child_id, limit=limit)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_notes", {"child_id": child_id, "limit": limit},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_summaries(
+    kind: str | None = None, limit: int = 30, ctx: Context | None = None
+) -> list[dict[str, Any]]:
+    """Past digest summaries (kind = digest_4pm|weekly|cycle_review). Most recent first."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_summaries(session, kind=kind, limit=limit)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_summaries", {"kind": kind, "limit": limit},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_overdue_trend(
+    child_id: int | None = None, days: int = 14, ctx: Context | None = None
+) -> list[dict[str, Any]]:
+    """14-day (configurable) overdue-backlog trend — [{date, count}] oldest → newest."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_overdue_trend(session, child_id=child_id, days=days)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_overdue_trend", {"child_id": child_id, "days": days},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def annotate_grade_trends(
+    child_id: int, ctx: Context | None = None
+) -> list[dict[str, Any]]:
+    """Grade-trend rows with an LLM-written one-sentence annotation that references
+    the current learning cycle. Falls back to numeric-only if no LLM configured."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from ..services.annotations import annotate_grade_trends as _ann
+        async with get_async_session() as session:
+            result = await _ann(session, child_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "annotate_grade_trends", {"child_id": child_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def replay_notifications(
+    since_days: int = 7, child_id: int | None = None, ctx: Context | None = None
+) -> dict[str, Any]:
+    """Counterfactual replay of recent events under the *current* channel policy.
+    Returns per-event (replay_status, reason) plus a summary of how many would
+    change. No messages are re-sent."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.replay import replay_notifications as _replay
+        async with get_async_session() as session:
+            result = await _replay(session, since_days=since_days, child_id=child_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "replay_notifications", {"since_days": since_days, "child_id": child_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_syllabus(
+    class_level: int, ctx: Context | None = None
+) -> dict[str, Any]:
+    """Syllabus for a class level (4 or 6) with parent-side overrides merged in."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.syllabus import merged_syllabus
+        async with get_async_session() as session:
+            result = await merged_syllabus(session, class_level)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_syllabus", {"class_level": class_level},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def set_syllabus_cycle_override(
+    class_level: int,
+    cycle_name: str,
+    start: str | None = None,
+    end: str | None = None,
+    note: str | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Shift a learning-cycle's date boundaries (e.g. LC2 started a week late).
+    Pass null start+end+note to clear the override."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.syllabus import upsert_cycle_override
+        async with get_async_session() as session:
+            result = await upsert_cycle_override(
+                session, class_level=class_level, cycle_name=cycle_name,
+                start=start, end=end, note=note,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "set_syllabus_cycle_override",
+            {"class_level": class_level, "cycle_name": cycle_name, "start": start, "end": end},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def mark_assignment_submitted(
+    item_id: int, submitted: bool = True, ctx: Context | None = None
+) -> dict[str, Any]:
+    """Parent-side override when the teacher hasn't updated the portal yet. Pass
+    `submitted=False` to clear the override. Accepts the veracross_items.id integer."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        async with get_async_session() as session:
+            result = await Q.mark_assignment_submitted(session, item_id, submitted=submitted)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "mark_assignment_submitted",
+            {"item_id": item_id, "submitted": submitted},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
 async def update_channel_config(
     config: dict[str, Any], ctx: Context | None = None
 ) -> dict[str, Any]:

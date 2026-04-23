@@ -101,8 +101,8 @@ Surfaced in the web UI under `/notifications → MCP activity` tab. Useful for s
 ```bash
 # Run the API + HTTP MCP together:
 uv run schoolwork-api
-# Then: curl http://127.0.0.1:8000/health
-#       Dispatch/OpenClaw: http://127.0.0.1:8000/mcp
+# Then: curl http://127.0.0.1:7777/health
+#       Dispatch/OpenClaw: http://127.0.0.1:7777/mcp
 
 # Or run stdio MCP alone (for Claude Desktop/Code):
 uv run schoolwork-mcp

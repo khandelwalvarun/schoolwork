@@ -101,6 +101,7 @@ async def _upsert_item(
                     is_new=True, old_status=None, new_status=status,
                     title=title, subject=subject, due_or_date=due_or_date,
                     item_id=item.id,
+                    parent_marked_submitted=False,
                 )
             )
         return True, False, item.id
@@ -120,6 +121,7 @@ async def _upsert_item(
     existing.raw_json = raw_s
     existing.normalized_json = norm_s
     existing.last_seen_at = now
+    parent_marked = existing.parent_marked_submitted_at is not None
     if diff is not None and (changed or (old_status != status)):
         diff.record(
             ItemDiff(
@@ -127,6 +129,7 @@ async def _upsert_item(
                 is_new=False, old_status=old_status, new_status=status,
                 title=title, subject=subject, due_or_date=due_or_date,
                 item_id=existing.id,
+                parent_marked_submitted=parent_marked,
             )
         )
     # Also fire overdue-threshold events even on unchanged items if they've crossed
@@ -138,6 +141,7 @@ async def _upsert_item(
                 is_new=False, old_status=old_status, new_status=status,
                 title=title, subject=subject, due_or_date=due_or_date,
                 item_id=existing.id,
+                parent_marked_submitted=parent_marked,
             )
         )
     return False, changed, existing.id

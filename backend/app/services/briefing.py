@@ -22,6 +22,7 @@ from ..llm.client import LLMClient
 from ..config import get_settings
 from ..models import Child, Summary, VeracrossItem
 from . import queries as Q
+from . import syllabus as syl_service
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -34,6 +35,8 @@ class DigestAssignmentRow:
     type: str | None
     status: str | None
     external_id: str | None
+    syllabus_context: str | None = None
+    item_id: int | None = None
 
 
 @dataclass
@@ -56,6 +59,9 @@ class DigestKidSection:
     upcoming: list[DigestAssignmentRow] = field(default_factory=list)
     overdue_by_subject: dict[str, int] = field(default_factory=dict)
     grade_trends: list[DigestGradeTrend] = field(default_factory=list)
+    overdue_sparkline: str | None = None
+    overdue_trend: list[dict[str, Any]] = field(default_factory=list)
+    syllabus_cycle: dict[str, str] | None = None
 
 
 @dataclass
@@ -79,6 +85,8 @@ def _row(item: dict[str, Any]) -> DigestAssignmentRow:
         type=norm.get("type"),
         status=item.get("status"),
         external_id=item.get("external_id"),
+        syllabus_context=item.get("syllabus_context"),
+        item_id=item.get("id"),
     )
 
 
@@ -105,6 +113,11 @@ async def build_digest_data(session: AsyncSession) -> DigestData:
             )
             for t in trends_raw
         ]
+        backlog = await Q.get_overdue_trend(session, c.id, days=14)
+        backlog_counts = [b["count"] for b in backlog]
+        cycle = await syl_service.cycle_for_date_merged(
+            session, c.class_level, now_ist.date()
+        ) if c.class_level else None
         kids.append(
             DigestKidSection(
                 child_id=c.id,
@@ -115,6 +128,12 @@ async def build_digest_data(session: AsyncSession) -> DigestData:
                 upcoming=[_row(x) for x in upcoming],
                 overdue_by_subject=dict(subj_counter),
                 grade_trends=trends,
+                overdue_sparkline=Q._overdue_sparkline(backlog_counts),
+                overdue_trend=backlog,
+                syllabus_cycle=(
+                    {"name": cycle.name, "start": cycle.start.isoformat(), "end": cycle.end.isoformat()}
+                    if cycle else None
+                ),
             )
         )
         totals["overdue"] += len(overdue)

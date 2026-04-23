@@ -1,6 +1,6 @@
 # Parent Cockpit — React frontend
 
-Minimal Vite + React + TanStack Query + Tailwind UI. Proxies `/api/*` to `http://localhost:8000` so you can run the backend and this dev server side by side.
+Minimal Vite + React + TanStack Query + Tailwind UI. Proxies `/api/*` to `http://localhost:7777` so you can run the backend and this dev server side by side.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ Minimal Vite + React + TanStack Query + Tailwind UI. Proxies `/api/*` to `http:/
 ```bash
 cd frontend
 npm install
-npm run dev    # http://localhost:3000
+npm run dev    # http://localhost:7778
 ```
 
 ## Build
@@ -23,8 +23,15 @@ npm run build  # emits dist/
 
 ## Pages
 
-- `/` — Today (overdue/due-today/upcoming per child, grade-trend sparklines, school messages)
-- `/notifications` — every event + per-channel delivery status
-- `/settings` — current `channel_config` JSON (read-only v1)
-
-More pages (ChildDetail, Assignments, Grades, Syllabus, Messages, Summaries, Notes, Settings/Channels) to come.
+- `/` — Today (overdue / due-today / upcoming per child, 14-day backlog sparkline, grade-trend sparklines, current cycle badge, syllabus context inline, school messages)
+- `/child/:id` — per-kid summary
+- `/child/:id/grades` — full grade list + LLM annotations
+- `/child/:id/assignments` — filterable assignment table with submitted-override toggle
+- `/child/:id/comments` — teacher comments
+- `/child/:id/syllabus` — syllabus browser with topic-status markers
+- `/messages` — school messages
+- `/notes` — parent notes (create + list)
+- `/summaries` — past digests
+- `/notifications` — events + per-channel delivery + counterfactual replay
+- `/settings/channels` — per-channel threshold / mute / rate-limit / quiet-hours editor + test-send
+- `/settings/syllabus` — cycle-boundary calibration + topic status

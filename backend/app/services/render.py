@@ -16,7 +16,10 @@ def _kid_header(k: DigestKidSection) -> str:
 def _fmt_row_line(r: DigestAssignmentRow) -> str:
     subj = (r.subject or "").replace("|", "/").strip()
     title = (r.title or "").strip()
-    return f"  • {subj:<18}  {title[:46]:<46}  due {r.due or '—'}"
+    base = f"  • {subj:<18}  {title[:46]:<46}  due {r.due or '—'}"
+    if r.syllabus_context:
+        base += f"\n      ↳ {r.syllabus_context}"
+    return base
 
 
 def render_text(data: DigestData) -> str:
@@ -44,7 +47,12 @@ def render_text(data: DigestData) -> str:
     for k in data.kids:
         lines.append("")
         lines.append("─" * 40)
-        lines.append(f"*{_kid_header(k)}*")
+        header = _kid_header(k)
+        if k.syllabus_cycle:
+            header += f"  📚 {k.syllabus_cycle['name']}"
+        lines.append(f"*{header}*")
+        if k.overdue_sparkline:
+            lines.append(f"  14-day backlog: {k.overdue_sparkline}")
         lines.append("─" * 40)
 
         if k.overdue:
@@ -115,7 +123,20 @@ def render_html(data: DigestData) -> str:
     )
 
     for k in data.kids:
-        parts.append(f'<h3 style="border-bottom:1px solid #ddd;padding-bottom:4px;margin-top:24px">{_esc(_kid_header(k))}</h3>')
+        header_html = _esc(_kid_header(k))
+        if k.syllabus_cycle:
+            header_html += (
+                f' <span style="font-size:13px;color:#6a0dad;background:#f5efff;'
+                f'padding:2px 8px;border-radius:10px;margin-left:6px">📚 {_esc(k.syllabus_cycle["name"])} · '
+                f'{_esc(k.syllabus_cycle.get("start",""))} → {_esc(k.syllabus_cycle.get("end",""))}</span>'
+            )
+        parts.append(f'<h3 style="border-bottom:1px solid #ddd;padding-bottom:4px;margin-top:24px">{header_html}</h3>')
+        if k.overdue_sparkline:
+            parts.append(
+                f'<div style="color:#555;font-size:13px;margin:4px 0 8px">'
+                f'14-day backlog <span style="font-family:monospace;font-size:16px">{_esc(k.overdue_sparkline)}</span>'
+                f'</div>'
+            )
 
         def _tbl(title: str, rows: list[DigestAssignmentRow], color: str) -> None:
             if not rows:
@@ -131,10 +152,16 @@ def render_html(data: DigestData) -> str:
                 '</tr></thead><tbody>'
             )
             for r in rows:
+                title_cell = _esc(r.title)
+                if r.syllabus_context:
+                    title_cell += (
+                        f'<div style="color:#777;font-size:12px;margin-top:2px">'
+                        f'↳ {_esc(r.syllabus_context)}</div>'
+                    )
                 parts.append(
                     '<tr style="border-top:1px solid #eee">'
                     f'<td style="padding:4px 8px;white-space:nowrap">{_esc(r.subject)}</td>'
-                    f'<td style="padding:4px 8px">{_esc(r.title)}</td>'
+                    f'<td style="padding:4px 8px">{title_cell}</td>'
                     f'<td style="padding:4px 8px;color:#555">{_esc(r.type)}</td>'
                     f'<td style="padding:4px 8px;white-space:nowrap">{_esc(r.due)}</td>'
                     '</tr>'

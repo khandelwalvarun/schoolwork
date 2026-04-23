@@ -50,7 +50,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:7778", "http://127.0.0.1:7778"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -191,6 +191,156 @@ async def api_notifications(
         return await Q.get_events(
             session, since=since, child_id=child_id, limit=limit
         )
+
+
+@app.get("/api/assignments")
+async def api_assignments(
+    child_id: int | None = None,
+    subject: str | None = None,
+    status: str | None = None,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    async with get_async_session() as session:
+        return await Q.get_all_assignments(
+            session, child_id=child_id, subject=subject, status=status, limit=limit
+        )
+
+
+@app.get("/api/comments")
+async def api_comments(child_id: int | None = None, limit: int = 200) -> list[dict[str, Any]]:
+    async with get_async_session() as session:
+        return await Q.get_comments(session, child_id=child_id, limit=limit)
+
+
+@app.get("/api/notes")
+async def api_notes(child_id: int | None = None, limit: int = 200) -> list[dict[str, Any]]:
+    async with get_async_session() as session:
+        return await Q.get_notes(session, child_id=child_id, limit=limit)
+
+
+@app.post("/api/notes")
+async def api_notes_add(payload: dict[str, Any]) -> dict[str, Any]:
+    note = (payload or {}).get("note")
+    if not isinstance(note, str) or not note.strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "note is required")
+    async with get_async_session() as session:
+        return await Q.add_parent_note(
+            session,
+            text=note,
+            child_id=(payload or {}).get("child_id"),
+            tags=(payload or {}).get("tags"),
+        )
+
+
+@app.get("/api/summaries")
+async def api_summaries(kind: str | None = None, limit: int = 60) -> list[dict[str, Any]]:
+    async with get_async_session() as session:
+        return await Q.get_summaries(session, kind=kind, limit=limit)
+
+
+@app.get("/api/child/{child_id}")
+async def api_child_detail(child_id: int) -> dict[str, Any]:
+    async with get_async_session() as session:
+        r = await Q.get_child_detail(session, child_id)
+    if r is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+    return r
+
+
+@app.get("/api/overdue-trend")
+async def api_overdue_trend(
+    child_id: int | None = None, days: int = 14
+) -> list[dict[str, Any]]:
+    async with get_async_session() as session:
+        return await Q.get_overdue_trend(session, child_id=child_id, days=days)
+
+
+@app.get("/api/grade-trends/annotate")
+async def api_grade_trends_annotate(child_id: int) -> list[dict[str, Any]]:
+    from .services.annotations import annotate_grade_trends
+    async with get_async_session() as session:
+        return await annotate_grade_trends(session, child_id)
+
+
+@app.post("/api/notifications/replay")
+async def api_notifications_replay(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    from .services.replay import replay_notifications
+    payload = payload or {}
+    async with get_async_session() as session:
+        return await replay_notifications(
+            session,
+            since_days=int(payload.get("since_days", 7)),
+            child_id=payload.get("child_id"),
+            limit=int(payload.get("limit", 200)),
+        )
+
+
+@app.get("/api/syllabus/{class_level}")
+async def api_syllabus(class_level: int) -> dict[str, Any]:
+    from .services.syllabus import merged_syllabus
+    async with get_async_session() as session:
+        return await merged_syllabus(session, class_level)
+
+
+@app.put("/api/syllabus/{class_level}/cycle/{cycle_name}")
+async def api_syllabus_cycle_put(
+    class_level: int, cycle_name: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    from .services.syllabus import upsert_cycle_override
+    async with get_async_session() as session:
+        return await upsert_cycle_override(
+            session,
+            class_level=class_level,
+            cycle_name=cycle_name,
+            start=payload.get("start"),
+            end=payload.get("end"),
+            note=payload.get("note"),
+        )
+
+
+@app.put("/api/syllabus/{class_level}/topic")
+async def api_syllabus_topic_put(
+    class_level: int, payload: dict[str, Any]
+) -> dict[str, Any]:
+    from .services.syllabus import upsert_topic_status
+    subj = payload.get("subject")
+    topic = payload.get("topic")
+    if not subj or not topic:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "subject and topic are required")
+    try:
+        return_ = None
+        async with get_async_session() as session:
+            return_ = await upsert_topic_status(
+                session,
+                class_level=class_level,
+                subject=subj,
+                topic=topic,
+                status=payload.get("status"),
+                note=payload.get("note"),
+            )
+        return return_
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+@app.post("/api/assignments/{item_id}/mark-submitted")
+async def api_mark_submitted(item_id: int) -> dict[str, Any]:
+    """Parent-side submitted flag — used when the teacher hasn't updated the portal yet."""
+    async with get_async_session() as session:
+        r = await Q.mark_assignment_submitted(session, item_id, submitted=True)
+    if r.get("status") == "not_found":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"assignment {item_id} not found")
+    return r
+
+
+@app.delete("/api/assignments/{item_id}/mark-submitted")
+async def api_unmark_submitted(item_id: int) -> dict[str, Any]:
+    """Clear the parent-side submitted override."""
+    async with get_async_session() as session:
+        r = await Q.mark_assignment_submitted(session, item_id, submitted=False)
+    if r.get("status") == "not_found":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"assignment {item_id} not found")
+    return r
 
 
 @app.post("/api/sync")

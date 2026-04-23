@@ -89,12 +89,12 @@ class Settings(BaseSettings):
 
     # MCP
     mcp_bearer_token: str = ""
-    mcp_public_url: str = "http://localhost:8000"
+    mcp_public_url: str = "http://localhost:7777"
 
     # App
     app_secret: str = "change-me-please"
     app_host: str = "127.0.0.1"
-    app_port: int = 8000
+    app_port: int = 7777
     log_level: str = "INFO"
 
 

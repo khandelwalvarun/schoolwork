@@ -32,6 +32,7 @@ class ItemDiff:
     subject: str | None = None
     due_or_date: str | None = None
     item_id: int | None = None  # filled after upsert
+    parent_marked_submitted: bool = False
 
     def context(self) -> dict[str, Any]:
         return {
@@ -122,7 +123,8 @@ def compute_events(diff: DiffAggregator) -> list[dict[str, Any]]:
                         )
                     )
             # Overdue-threshold crossings apply to any open item whose due is past.
-            if _is_open(d.new_status):
+            # Parent-marked submitted items are treated as closed even if the portal hasn't updated.
+            if _is_open(d.new_status) and not d.parent_marked_submitted:
                 days = _days_overdue(d.due_or_date)
                 if days >= 7:
                     ek = R.OVERDUE_7D
@@ -231,11 +233,13 @@ async def compute_aggregate_events(
         )
 
     # Per-child: open overdue snapshot → subject concentration + backlog acceleration.
+    # Parent-marked submitted items are excluded — the parent already said it's done.
     rows = (
         await session.execute(
             select(VeracrossItem.child_id, VeracrossItem.subject, VeracrossItem.due_or_date)
             .where(VeracrossItem.kind == "assignment")
             .where(~VeracrossItem.status.in_(("submitted", "graded", "dismissed")))
+            .where(VeracrossItem.parent_marked_submitted_at.is_(None))
         )
     ).all()
     by_child: dict[int, list[tuple[str | None, str | None]]] = defaultdict(list)
