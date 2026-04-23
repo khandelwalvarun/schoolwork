@@ -24,6 +24,11 @@ test-results/
 recon/output/
 recon/snapshots/
 recon/screenshots/
+recon/user-data/        # Chromium profile cache — per-machine, can be 100s of MB
+
+# SQLite WAL/SHM files (transient, never commit)
+*.db-wal
+*.db-shm
 
 # DB
 *.db
