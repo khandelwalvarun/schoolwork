@@ -2,7 +2,7 @@
 
 Opens a visible Chromium window. You sign in (handle the reCAPTCHA). Script
 serialises the authenticated state (cookies + localStorage) to
-`recon/storage_state.json` — which the scraper reads on every run.
+`data/storage_state.json` — which the scraper reads on every run.
 
 Run me whenever /api/sync reports "needs_reauth" (session expired).
 

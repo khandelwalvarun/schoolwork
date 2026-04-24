@@ -2,7 +2,7 @@
 
 Holds a single Playwright session (at a time) in memory. Streams screenshots
 to the frontend over HTTP polling, forwards mouse/keyboard events, and on
-success writes `recon/storage_state.json` so subsequent headless syncs
+success writes `data/storage_state.json` so subsequent headless syncs
 reuse the session.
 
 This exists so the parent can solve Veracross's reCAPTCHA from ANY machine

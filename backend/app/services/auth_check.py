@@ -1,6 +1,6 @@
 """Lightweight live auth probe for the Veracross portal.
 
-Loads cookies from `recon/storage_state.json`, does ONE unauthenticated-looking
+Loads cookies from the persisted storage_state.json, does ONE unauthenticated-looking
 GET to the portal with those cookies set, and decides whether the session
 is currently valid.
 

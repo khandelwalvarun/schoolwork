@@ -8,6 +8,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+DATA_ROOT = REPO_ROOT / "data"
 
 
 class Settings(BaseSettings):
@@ -17,9 +18,14 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Database
-    database_url: str = f"sqlite+aiosqlite:///{REPO_ROOT / 'app.db'}"
-    sync_database_url: str = f"sqlite:///{REPO_ROOT / 'app.db'}"
+    # Where ALL persistent state lives (SQLite DB, attachments, spellbee lists,
+    # storage_state.json, ui_prefs, syllabus seeds, etc.). Override with DATA_DIR
+    # in .env to put the data somewhere other than the repo-relative default.
+    data_dir: str = str(DATA_ROOT)
+
+    # Database — defaults point inside data_dir. Env overrides still win.
+    database_url: str = f"sqlite+aiosqlite:///{DATA_ROOT / 'app.db'}"
+    sync_database_url: str = f"sqlite:///{DATA_ROOT / 'app.db'}"
 
     # Timezone
     tz: str = "Asia/Kolkata"
@@ -37,7 +43,7 @@ class Settings(BaseSettings):
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
     scraper_user_data_dir: str = str(REPO_ROOT / "recon" / "user-data")
-    scraper_storage_state_path: str = str(REPO_ROOT / "recon" / "storage_state.json")
+    scraper_storage_state_path: str = str(DATA_ROOT / "storage_state.json")
 
     # Grades — period IDs for this school year (Veracross internal). Comma-separated.
     # 2026-27 Vasant Valley: 13=LC1, 15=LC2, 19=LC3, 21=LC4.

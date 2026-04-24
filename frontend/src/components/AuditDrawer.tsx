@@ -66,8 +66,8 @@ export default function AuditDrawer({
     [isSpellBee, a.title, a.title_en, a.notes_en, a.normalized?.body],
   );
   const { data: spellBeeLists } = useQuery<SpellBeeList[]>({
-    queryKey: ["spellbee-lists"],
-    queryFn: api.spellbeeLists,
+    queryKey: ["spellbee-lists", a.child_id],
+    queryFn: () => api.spellbeeLists(a.child_id),
     enabled: isSpellBee,
   });
   const matchingList = useMemo(() => {

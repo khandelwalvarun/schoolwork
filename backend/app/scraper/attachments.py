@@ -20,8 +20,9 @@ from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import get_settings
-from ..models import Attachment
+from ..config import REPO_ROOT, get_settings
+from ..models import Attachment, Child, VeracrossItem
+from ..util import paths as P
 
 log = logging.getLogger(__name__)
 
@@ -96,13 +97,21 @@ async def _fetch_bytes(client, url: str) -> tuple[bytes, str | None]:
     return body, ctype
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-
-
-def _attachments_root() -> Path:
-    root = _REPO_ROOT / "data" / "attachments"
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+async def _load_child_and_item(
+    session: AsyncSession, item_id: int, child_id: int | None,
+) -> tuple[Child | None, VeracrossItem | None]:
+    """Fetch Child + VeracrossItem rows we need to compose the human-readable
+    filename and locate the per-kid attachments directory."""
+    item = (
+        await session.execute(select(VeracrossItem).where(VeracrossItem.id == item_id))
+    ).scalar_one_or_none()
+    child_pk = child_id or (item.child_id if item else None)
+    child: Child | None = None
+    if child_pk is not None:
+        child = (
+            await session.execute(select(Child).where(Child.id == child_pk))
+        ).scalar_one_or_none()
+    return child, item
 
 
 async def save_and_record(
@@ -114,7 +123,13 @@ async def save_and_record(
     suggested_name: str,
     source_kind: str,
 ) -> Attachment | None:
-    """Download `url`, dedup by SHA-256, upsert an Attachment row. Returns the row."""
+    """Download `url`, dedup by SHA-256, upsert an Attachment row. Returns the row.
+
+    Files are written to `data/rawdata/<kid_slug>/attachments/` with a
+    human-readable filename derived from the assignment's date, subject, and
+    title — NOT the raw sha256. SHA is kept in the DB for dedup + as the
+    collision-guard suffix in the filename.
+    """
     try:
         body, ctype = await _fetch_bytes(client, url)
     except Exception as e:
@@ -135,20 +150,38 @@ async def save_and_record(
         existing.last_seen_at = datetime.now(tz=timezone.utc)
         return existing
 
-    ext = _guess_ext(suggested_name, ctype)
-    root = _attachments_root()
-    subdir = root / sha[:2]
-    subdir.mkdir(parents=True, exist_ok=True)
-    local = subdir / (sha + ext)
+    child, item = await _load_child_and_item(session, item_id, child_id)
+    if child is None:
+        # Fall back to legacy sha-bucket layout if we somehow can't resolve
+        # the kid. Shouldn't happen in practice; keeps the writer defensive.
+        log.warning("attachment save: no child row for item_id=%s; using fallback path", item_id)
+        legacy_root = P.data_root() / "attachments" / sha[:2]
+        legacy_root.mkdir(parents=True, exist_ok=True)
+        ext = _guess_ext(suggested_name, ctype)
+        local = legacy_root / (sha + ext)
+    else:
+        ext = _guess_ext(suggested_name, ctype)
+        date_iso = (item.due_or_date if item else None) or (
+            item.first_seen_at.date().isoformat() if item and item.first_seen_at else None
+        )
+        human = P.attachment_filename(
+            date_iso=date_iso,
+            subject=item.subject if item else None,
+            title=item.title if item else suggested_name,
+            sha256_hex=sha,
+            ext=ext,
+        )
+        local = P.kid_attachments_dir(child) / human
+
     if not local.exists():
         local.write_bytes(body)
 
     att = Attachment(
         item_id=item_id,
-        child_id=child_id,
+        child_id=child_id if child_id is not None else (child.id if child else None),
         filename=suggested_name,
         original_url=url,
-        local_path=str(local.relative_to(_REPO_ROOT)),  # repo-relative path
+        local_path=P.repo_relative(local),
         mime_type=ctype,
         size_bytes=len(body),
         sha256=sha,

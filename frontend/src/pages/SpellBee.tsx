@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, SpellBeeLinkedAssignment, SpellBeeList } from "../api";
+import { api, Child, SpellBeeLinkedAssignment, SpellBeeList } from "../api";
 import { formatDate } from "../util/dates";
 
 function fmtSize(n: number): string {
@@ -149,23 +149,14 @@ function ListRow({
   );
 }
 
-function LinkedAssignments({
-  linked,
-  lists,
-}: {
-  linked: SpellBeeLinkedAssignment[];
-  lists: SpellBeeList[];
-}) {
+function LinkedAssignments({ linked }: { linked: SpellBeeLinkedAssignment[] }) {
   if (linked.length === 0) return null;
-  const byNumber = new Map<number, SpellBeeList>();
-  for (const l of lists) if (l.number !== null) byNumber.set(l.number, l);
   return (
     <section className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
       <h3 className="font-semibold mb-2">Linked assignments</h3>
       <table className="w-full text-sm">
         <thead className="text-xs uppercase text-gray-500 border-b border-gray-200">
           <tr>
-            <th className="text-left px-2 py-1 w-24">Kid</th>
             <th className="text-left px-2 py-1 w-28">Subject</th>
             <th className="text-left px-2 py-1">Assignment</th>
             <th className="text-left px-2 py-1 w-28">Due</th>
@@ -174,10 +165,8 @@ function LinkedAssignments({
         </thead>
         <tbody>
           {linked.map((a) => {
-            const match = a.detected_list_number != null ? byNumber.get(a.detected_list_number) : null;
             return (
               <tr key={a.id} className="border-t border-gray-100 align-top">
-                <td className="px-2 py-1">{a.child_name}</td>
                 <td className="px-2 py-1 text-gray-600">{a.subject}</td>
                 <td className="px-2 py-1">
                   <div>{a.title}</div>
@@ -190,17 +179,17 @@ function LinkedAssignments({
                   {a.detected_list_number == null && (
                     <span className="text-gray-500 italic">no list # in text</span>
                   )}
-                  {a.detected_list_number != null && match && (
+                  {a.detected_list_number != null && a.matched_list && (
                     <a
-                      href={match.download_url}
+                      href={a.matched_list.download_url}
                       target="_blank"
                       rel="noreferrer"
                       className="text-blue-700 hover:underline"
                     >
-                      List {a.detected_list_number} · {match.filename}
+                      List {a.detected_list_number} · {a.matched_list.filename}
                     </a>
                   )}
-                  {a.detected_list_number != null && !match && (
+                  {a.detected_list_number != null && !a.matched_list && (
                     <span className="text-amber-700">
                       List {a.detected_list_number} — <i>not uploaded yet</i>
                     </span>
@@ -217,19 +206,31 @@ function LinkedAssignments({
 
 export default function SpellBee() {
   const qc = useQueryClient();
+  const { data: children } = useQuery<Child[]>({ queryKey: ["children"], queryFn: api.children });
+  const [childId, setChildId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (childId == null && children && children.length > 0) {
+      setChildId(children[0].id);
+    }
+  }, [children, childId]);
+
   const { data: lists, isLoading } = useQuery<SpellBeeList[]>({
-    queryKey: ["spellbee-lists"],
-    queryFn: api.spellbeeLists,
+    queryKey: ["spellbee-lists", childId],
+    queryFn: () => api.spellbeeLists(childId!),
+    enabled: childId != null,
   });
   const { data: linked } = useQuery<SpellBeeLinkedAssignment[]>({
-    queryKey: ["spellbee-linked"],
-    queryFn: api.spellbeeLinkedAssignments,
+    queryKey: ["spellbee-linked", childId],
+    queryFn: () => api.spellbeeLinkedAssignments(childId!),
+    enabled: childId != null,
   });
 
   const upload = useMutation({
-    mutationFn: (files: File[]) => api.spellbeeUpload(files),
+    mutationFn: (files: File[]) => api.spellbeeUpload(childId!, files),
     onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ["spellbee-lists"] });
+      qc.invalidateQueries({ queryKey: ["spellbee-lists", childId] });
+      qc.invalidateQueries({ queryKey: ["spellbee-linked", childId] });
       if (r.errors.length > 0) {
         alert(
           "Some files were rejected:\n" +
@@ -239,13 +240,19 @@ export default function SpellBee() {
     },
   });
   const del = useMutation({
-    mutationFn: (filename: string) => api.spellbeeDelete(filename),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["spellbee-lists"] }),
+    mutationFn: (filename: string) => api.spellbeeDelete(childId!, filename),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["spellbee-lists", childId] });
+      qc.invalidateQueries({ queryKey: ["spellbee-linked", childId] });
+    },
   });
   const rename = useMutation({
     mutationFn: ({ filename, newName }: { filename: string; newName: string }) =>
-      api.spellbeeRename(filename, newName),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["spellbee-lists"] }),
+      api.spellbeeRename(childId!, filename, newName),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["spellbee-lists", childId] });
+      qc.invalidateQueries({ queryKey: ["spellbee-linked", childId] });
+    },
   });
 
   const missingLists = useMemo(() => {
@@ -256,39 +263,60 @@ export default function SpellBee() {
     return [...want].filter((n) => !have.has(n)).sort((a, b) => a - b);
   }, [linked, lists]);
 
+  const currentChild = children?.find((c) => c.id === childId);
+
   return (
     <div>
       <h2 className="text-2xl font-bold mb-1">🐝 Spelling Bee</h2>
       <p className="text-sm text-gray-600 mb-4">
-        Upload the word-list files here. Filenames that contain a number
-        (e.g. <code>list-03.pdf</code>) are sorted and cross-referenced to
-        assignments automatically. Everything lives in{" "}
+        Per-kid word lists. Files live under{" "}
         <code className="text-xs bg-gray-100 border border-gray-200 rounded px-1 py-0.5">
-          data/spellbee/
+          data/rawdata/&lt;kid&gt;/spellbee/
         </code>
         .
       </p>
 
-      <div className="mb-4">
-        <DropZone onFiles={(fs) => upload.mutate(fs)} />
-        {upload.isPending && <div className="text-xs text-gray-500 mt-2">Uploading…</div>}
-      </div>
+      {children && children.length > 1 && (
+        <div className="flex gap-2 mb-4 border-b border-gray-200">
+          {children.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setChildId(c.id)}
+              className={
+                "px-3 py-2 text-sm border-b-2 -mb-px " +
+                (c.id === childId
+                  ? "border-amber-500 text-amber-700 font-semibold"
+                  : "border-transparent text-gray-600 hover:text-gray-900")
+              }
+            >
+              {c.display_name} · {c.class_level}{c.class_section ?? ""}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {linked && lists && <LinkedAssignments linked={linked} lists={lists} />}
+      {currentChild && (
+        <div className="mb-4">
+          <DropZone onFiles={(fs) => upload.mutate(fs)} />
+          {upload.isPending && <div className="text-xs text-gray-500 mt-2">Uploading…</div>}
+        </div>
+      )}
+
+      {linked && <LinkedAssignments linked={linked} />}
 
       {missingLists.length > 0 && (
         <div className="mb-4 bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900">
           <b>Missing:</b> assignments reference{" "}
           {missingLists.map((n) => `List ${n}`).join(", ")} but no matching file
-          has been uploaded. Drop those files above.
+          has been uploaded for {currentChild?.display_name}.
         </div>
       )}
 
       {isLoading && <div className="text-sm text-gray-500">Loading…</div>}
       {lists && lists.length === 0 && (
         <div className="bg-gray-50 border border-gray-200 rounded p-4 text-sm text-gray-700">
-          No lists yet. Use the drop zone above, or copy files into{" "}
-          <code className="text-xs">data/spellbee/</code> manually.{" "}
+          No lists yet for {currentChild?.display_name ?? "this child"}. Use the
+          drop zone above, or copy files into the per-kid directory manually.{" "}
           <Link to="/" className="text-blue-700 hover:underline">← back home</Link>
         </div>
       )}
@@ -296,7 +324,7 @@ export default function SpellBee() {
       {lists && lists.length > 0 && (
         <section className="bg-white border border-gray-200 rounded shadow-sm">
           <div className="px-3 py-2 border-b border-gray-200 text-xs uppercase text-gray-500 font-semibold">
-            Uploaded lists
+            Uploaded lists — {currentChild?.display_name}
           </div>
           <table className="w-full text-sm">
             <thead className="text-xs uppercase text-gray-500 border-b border-gray-200">

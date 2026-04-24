@@ -221,18 +221,18 @@ async def api_attachments_list(
 @app.get("/api/attachments/{attachment_id}")
 async def api_attachment_download(attachment_id: int):
     from fastapi.responses import FileResponse
-    from pathlib import Path as _P
+    from .config import REPO_ROOT
+    from .util import paths as P
     async with get_async_session() as session:
         att = await Q.get_attachment_row(session, attachment_id)
     if att is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"attachment {attachment_id} not found")
-    repo_root = _P(__file__).resolve().parent.parent.parent
-    path = (repo_root / att.local_path).resolve()
+    path = (REPO_ROOT / att.local_path).resolve()
     if not path.exists():
         raise HTTPException(status.HTTP_410_GONE, f"file vanished on disk: {att.local_path}")
-    # Guard path traversal: ensure the file is under data/attachments/
+    # Guard path traversal: file must live under the data directory
     try:
-        path.relative_to((repo_root / "data" / "attachments").resolve())
+        path.relative_to(P.data_root().resolve())
     except ValueError:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "attachment path escapes storage root")
     return FileResponse(
@@ -750,18 +750,34 @@ async def api_digest_preview() -> dict[str, Any]:
     return render_for_digest(data)
 
 
+async def _resolve_child(session: Any, child_id: int):
+    from sqlalchemy import select
+    from .models import Child
+    child = (
+        await session.execute(select(Child).where(Child.id == child_id))
+    ).scalar_one_or_none()
+    if child is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+    return child
+
+
 @app.get("/api/spellbee/lists")
-async def api_spellbee_lists() -> list[dict[str, Any]]:
-    """Directory listing of Spelling Bee word lists dropped into data/spellbee/."""
+async def api_spellbee_lists(child_id: int) -> list[dict[str, Any]]:
+    """Directory listing of Spelling Bee word lists for one child. Files
+    live under data/rawdata/<kid_slug>/spellbee/."""
     from .services import spellbee as SB
-    return [x.to_dict() for x in SB.list_lists()]
+    async with get_async_session() as session:
+        child = await _resolve_child(session, child_id)
+    return [x.to_dict() for x in SB.list_lists(child)]
 
 
-@app.get("/api/spellbee/list/{filename}")
-async def api_spellbee_download(filename: str):
+@app.get("/api/spellbee/list/{child_id}/{filename}")
+async def api_spellbee_download(child_id: int, filename: str):
     from fastapi.responses import FileResponse
     from .services import spellbee as SB
-    path = SB.resolve_file(filename)
+    async with get_async_session() as session:
+        child = await _resolve_child(session, child_id)
+    path = SB.resolve_file(child, filename)
     if path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"spellbee list {filename!r} not found")
     ext = path.suffix.lower()
@@ -771,65 +787,77 @@ async def api_spellbee_download(filename: str):
 
 @app.post("/api/spellbee/upload")
 async def api_spellbee_upload(
+    child_id: int,
     files: list[UploadFile] = File(...),  # noqa: B008
 ) -> dict[str, Any]:
-    """Upload one or more Spelling Bee list files into data/spellbee/.
-    Accepts multipart/form-data with field name `files`. Overwrites any
-    existing file with the same (sanitized) name."""
+    """Upload one or more Spelling Bee list files for a child. Writes under
+    data/rawdata/<kid_slug>/spellbee/. Overwrites any file with the same
+    sanitized name."""
     from .services import spellbee as SB
+    async with get_async_session() as session:
+        child = await _resolve_child(session, child_id)
     saved: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
     for f in files:
         try:
             data = await f.read()
-            row = SB.save_upload(f.filename or "unnamed", data)
+            row = SB.save_upload(child, f.filename or "unnamed", data)
             saved.append(row.to_dict())
         except ValueError as e:
             errors.append({"filename": f.filename or "", "error": str(e)})
     return {"saved": saved, "errors": errors}
 
 
-@app.delete("/api/spellbee/list/{filename}")
-async def api_spellbee_delete(filename: str) -> dict[str, Any]:
+@app.delete("/api/spellbee/list/{child_id}/{filename}")
+async def api_spellbee_delete(child_id: int, filename: str) -> dict[str, Any]:
     from .services import spellbee as SB
-    if not SB.delete_file(filename):
+    async with get_async_session() as session:
+        child = await _resolve_child(session, child_id)
+    if not SB.delete_file(child, filename):
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"spellbee list {filename!r} not found")
     return {"status": "deleted", "filename": filename}
 
 
-@app.post("/api/spellbee/list/{filename}/rename")
-async def api_spellbee_rename(filename: str, payload: dict[str, Any]) -> dict[str, Any]:
+@app.post("/api/spellbee/list/{child_id}/{filename}/rename")
+async def api_spellbee_rename(
+    child_id: int, filename: str, payload: dict[str, Any],
+) -> dict[str, Any]:
     from .services import spellbee as SB
+    async with get_async_session() as session:
+        child = await _resolve_child(session, child_id)
     new_name = (payload or {}).get("new_name") or ""
     if not new_name:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "new_name required")
     try:
-        row = SB.rename_file(filename, new_name)
+        row = SB.rename_file(child, filename, new_name)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     return row.to_dict()
 
 
 @app.get("/api/spellbee/linked-assignments")
-async def api_spellbee_linked_assignments() -> list[dict[str, Any]]:
+async def api_spellbee_linked_assignments(child_id: int | None = None) -> list[dict[str, Any]]:
     """Assignments whose title/body/notes reference the Spelling Bee, with
-    the detected list number (if any). Used by the /spellbee page to show
-    which current assignments map to which lists."""
+    the detected list number and the matching file (if uploaded for that
+    kid). `child_id` optional — filter to one child."""
     from sqlalchemy import select, desc
     from .models import VeracrossItem, Child
     from .services import spellbee as SB
     import json as _json
     out: list[dict[str, Any]] = []
     async with get_async_session() as session:
-        rows = (
-            await session.execute(
-                select(VeracrossItem, Child)
-                .join(Child, Child.id == VeracrossItem.child_id)
-                .where(VeracrossItem.kind == "assignment")
-                .order_by(desc(VeracrossItem.first_seen_at))
-                .limit(500)
-            )
-        ).all()
+        stmt = (
+            select(VeracrossItem, Child)
+            .join(Child, Child.id == VeracrossItem.child_id)
+            .where(VeracrossItem.kind == "assignment")
+            .order_by(desc(VeracrossItem.first_seen_at))
+            .limit(500)
+        )
+        if child_id is not None:
+            stmt = stmt.where(VeracrossItem.child_id == child_id)
+        rows = (await session.execute(stmt)).all()
+        # Cache per-kid lists so we don't rescan the directory for every row
+        lists_by_child: dict[int, dict[int, Any]] = {}
         for item, child in rows:
             body = ""
             if item.normalized_json:
@@ -841,6 +869,11 @@ async def api_spellbee_linked_assignments() -> list[dict[str, Any]]:
             if not SB.is_spellbee_text(*texts):
                 continue
             num = SB.detect_list_reference(*texts)
+            if child.id not in lists_by_child:
+                lists_by_child[child.id] = {
+                    l.number: l for l in SB.list_lists(child) if l.number is not None
+                }
+            match = lists_by_child[child.id].get(num) if num is not None else None
             out.append({
                 "id": item.id,
                 "child_id": child.id,
@@ -851,6 +884,7 @@ async def api_spellbee_linked_assignments() -> list[dict[str, Any]]:
                 "due_or_date": item.due_or_date,
                 "status": item.status,
                 "detected_list_number": num,
+                "matched_list": match.to_dict() if match else None,
             })
     return out
 

@@ -935,21 +935,32 @@ async def list_attachments(
 
 
 @server.tool()
-async def list_spellbee_lists(ctx: Context | None = None) -> list[dict[str, Any]]:
-    """Spelling Bee word lists stored in data/spellbee/. Each entry has the
-    parsed list number (or null) plus a download_url for fetching the file."""
+async def list_spellbee_lists(
+    child_id: int, ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Spelling Bee word lists for one child, stored under
+    data/rawdata/<kid_slug>/spellbee/. Each entry has the parsed list number
+    (or null) plus a download_url for fetching the file."""
     started = time.monotonic()
     err: str | None = None
     result: list[dict[str, Any]] = []
     try:
+        from sqlalchemy import select
+        from ..models import Child
         from ..services import spellbee as SB
-        result = [x.to_dict() for x in SB.list_lists()]
+        async with get_async_session() as session:
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+        if child is None:
+            raise ValueError(f"child {child_id} not found")
+        result = [x.to_dict() for x in SB.list_lists(child)]
         return result
     except Exception as e:
         err = repr(e)
         raise
     finally:
-        await _audit("list_spellbee_lists", {}, result, err, started, _client_id(ctx))
+        await _audit("list_spellbee_lists", {"child_id": child_id}, result, err, started, _client_id(ctx))
 
 
 @server.tool()
@@ -1287,16 +1298,15 @@ async def resolve_attachment_path(
     err: str | None = None
     result: dict[str, Any] = {}
     try:
-        from pathlib import Path
+        from ..config import REPO_ROOT
+        from ..util import paths as P
         async with get_async_session() as session:
             att = await Q.get_attachment_row(session, attachment_id)
         if att is None:
             raise ValueError(f"attachment {attachment_id} not found")
-        repo_root = Path(__file__).resolve().parent.parent.parent.parent
-        path = (repo_root / att.local_path).resolve()
-        attach_root = (repo_root / "data" / "attachments").resolve()
+        path = (REPO_ROOT / att.local_path).resolve()
         try:
-            path.relative_to(attach_root)
+            path.relative_to(P.data_root().resolve())
         except ValueError:
             raise ValueError(f"attachment path escapes storage root: {att.local_path}")
         if not path.exists():
@@ -1322,18 +1332,26 @@ async def resolve_attachment_path(
 
 @server.tool()
 async def resolve_spellbee_path(
-    filename: str, ctx: Context | None = None,
+    child_id: int, filename: str, ctx: Context | None = None,
 ) -> dict[str, Any]:
     """For LOCAL clients — absolute filesystem path of a Spelling Bee list
-    file so Claude Desktop / OpenClaw can read it directly."""
+    file for a given kid, so Claude Desktop / OpenClaw can read it directly."""
     started = time.monotonic()
     err: str | None = None
     result: dict[str, Any] = {}
     try:
+        from sqlalchemy import select
+        from ..models import Child
         from ..services import spellbee as SB
-        path = SB.resolve_file(filename)
+        async with get_async_session() as session:
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+        if child is None:
+            raise ValueError(f"child {child_id} not found")
+        path = SB.resolve_file(child, filename)
         if path is None:
-            raise ValueError(f"spellbee list {filename!r} not found")
+            raise ValueError(f"spellbee list {filename!r} not found for child {child_id}")
         result = {
             "filename": path.name,
             "absolute_path": str(path),
@@ -1346,7 +1364,7 @@ async def resolve_spellbee_path(
         raise
     finally:
         await _audit(
-            "resolve_spellbee_path", {"filename": filename},
+            "resolve_spellbee_path", {"child_id": child_id, "filename": filename},
             {"path": result.get("absolute_path")}, err, started, _client_id(ctx),
         )
 

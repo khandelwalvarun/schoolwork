@@ -28,12 +28,17 @@ recon/screenshots/
 recon/user-data/
 recon/storage_state.json
 
-# Downloaded attachments (scraped from Veracross)
-data/attachments/
-# Per-install UI prefs (collapsed sections, ordering, etc.)
-data/ui_prefs.json
-# Veracross credential override (plaintext — never commit)
-data/veracross_creds.json
+# Everything runtime under data/ (SQLite DB, attachments, spellbee lists,
+# storage_state, creds, ui prefs). None of it belongs in git. Seed syllabus
+# JSONs + their .cache PDFs are allowlisted below.
+data/*
+!data/syllabus/
+data/syllabus/*
+!data/syllabus/.gitkeep
+!data/syllabus/*.json
+!data/syllabus/.cache/
+data/syllabus/.cache/*
+!data/syllabus/.cache/*.pdf
 tmp-login-debug/
 tmp-probe.py
 

@@ -4,7 +4,7 @@
 - needs_reauth:           most recent failure is of the `needs_reauth:` kind
 - consecutive_failures:   count back from the latest run while status != ok
 - last_success / last_failure / last_error
-- storage_state_exists:   is `recon/storage_state.json` on disk
+- storage_state_exists:   is the persisted session cookie file on disk
 """
 from __future__ import annotations
 

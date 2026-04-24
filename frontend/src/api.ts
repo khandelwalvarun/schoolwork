@@ -239,6 +239,8 @@ export type SpellBeeList = {
   number: number | null;
   size_bytes: number;
   mime_type: string;
+  child_id: number;
+  kid_slug: string;
   download_url: string;
 };
 
@@ -327,23 +329,32 @@ export const api = {
     fetchJson<StatusHistoryEntry[]>(`/api/assignments/${itemId}/history`),
   assignmentConstants: () =>
     fetchJson<AssignmentConstants>("/api/assignments/constants"),
-  spellbeeLists: () => fetchJson<SpellBeeList[]>("/api/spellbee/lists"),
-  spellbeeLinkedAssignments: () =>
-    fetchJson<SpellBeeLinkedAssignment[]>("/api/spellbee/linked-assignments"),
-  spellbeeUpload: async (files: File[]) => {
+  spellbeeLists: (childId: number) =>
+    fetchJson<SpellBeeList[]>(`/api/spellbee/lists?child_id=${childId}`),
+  spellbeeLinkedAssignments: (childId?: number) =>
+    fetchJson<SpellBeeLinkedAssignment[]>(
+      `/api/spellbee/linked-assignments${childId ? `?child_id=${childId}` : ""}`,
+    ),
+  spellbeeUpload: async (childId: number, files: File[]) => {
     const fd = new FormData();
     for (const f of files) fd.append("files", f, f.name);
-    const r = await fetch("/api/spellbee/upload", { method: "POST", body: fd, credentials: "same-origin" });
+    const r = await fetch(`/api/spellbee/upload?child_id=${childId}`, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+    });
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     return (await r.json()) as { saved: SpellBeeList[]; errors: Array<{ filename: string; error: string }> };
   },
-  spellbeeDelete: (filename: string) =>
-    fetchJson<unknown>(`/api/spellbee/list/${encodeURIComponent(filename)}`, { method: "DELETE" }),
-  spellbeeRename: (filename: string, newName: string) =>
-    fetchJson<SpellBeeList>(`/api/spellbee/list/${encodeURIComponent(filename)}/rename`, {
-      method: "POST",
-      body: JSON.stringify({ new_name: newName }),
+  spellbeeDelete: (childId: number, filename: string) =>
+    fetchJson<unknown>(`/api/spellbee/list/${childId}/${encodeURIComponent(filename)}`, {
+      method: "DELETE",
     }),
+  spellbeeRename: (childId: number, filename: string, newName: string) =>
+    fetchJson<SpellBeeList>(
+      `/api/spellbee/list/${childId}/${encodeURIComponent(filename)}/rename`,
+      { method: "POST", body: JSON.stringify({ new_name: newName }) },
+    ),
 };
 
 export type SpellBeeLinkedAssignment = {
@@ -356,4 +367,5 @@ export type SpellBeeLinkedAssignment = {
   due_or_date: string | null;
   status: string | null;
   detected_list_number: number | null;
+  matched_list: SpellBeeList | null;
 };
