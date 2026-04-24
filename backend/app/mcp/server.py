@@ -30,6 +30,11 @@ server = FastMCP(
         "Use list_children first. For backlog questions use get_overdue / get_due_today / "
         "get_upcoming. For free-form questions across any unstructured content "
         "(teacher comments, school messages, articles, parent notes) use `ask`. "
+        "To change an assignment's parent-side state (mark done-at-home, snooze, "
+        "priority, tags, notes) use update_assignment — call get_assignment_constants "
+        "first to see the allowed parent_status enum + tag vocabulary. "
+        "For files use list_attachments; for Spelling Bee word lists use list_spellbee_lists. "
+        "For sync observability use get_sync_runs + get_sync_run_log. "
         "Numbers and dates are authoritative; do not invent data not returned by a tool."
     ),
 )
@@ -788,6 +793,288 @@ async def trigger_sync(
         await _audit(
             "trigger_sync",
             {"wait": wait, "include_grades": include_grades, "grading_periods": grading_periods},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def update_assignment(
+    item_id: int,
+    parent_status: str | None = None,
+    priority: int | None = None,
+    snooze_until: str | None = None,
+    status_notes: str | None = None,
+    tags: list[str] | None = None,
+    note: str | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Partial update of parent-side assignment state. Every changed field is
+    logged to assignment_status_history.
+
+    - parent_status: one of in_progress | done_at_home | submitted | needs_help
+      | blocked | skipped, or "" / None to clear.
+    - priority: 0..3 (stars).
+    - snooze_until: ISO date 'YYYY-MM-DD' (or None to clear).
+    - status_notes: free text.
+    - tags: list of tag strings (replaces existing tags; see
+      get_assignment_constants for the fixed vocabulary).
+    - note: optional explanation written to the audit log for this change.
+    """
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services import assignment_state as ast
+        payload: dict[str, Any] = {}
+        if parent_status is not None:
+            payload["parent_status"] = parent_status
+        if priority is not None:
+            payload["priority"] = priority
+        if snooze_until is not None:
+            payload["snooze_until"] = snooze_until
+        if status_notes is not None:
+            payload["status_notes"] = status_notes
+        if tags is not None:
+            payload["tags"] = tags
+        if note:
+            payload["note"] = note
+        payload["actor"] = f"mcp:{_client_id(ctx) or 'unknown'}"
+        async with get_async_session() as session:
+            r = await ast.update_assignment_state(
+                session, item_id, payload, actor=payload.get("actor"),
+            )
+        if r is None:
+            raise ValueError(f"assignment {item_id} not found")
+        result = r
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "update_assignment",
+            {"item_id": item_id, "fields": sorted(payload.keys()) if 'payload' in locals() else []},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_assignment_history(
+    item_id: int, limit: int = 200, ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Status-change audit log for one assignment. Each entry has field,
+    old_value, new_value, source, actor, note, created_at."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from ..services import assignment_state as ast
+        async with get_async_session() as session:
+            result = await ast.get_history(session, item_id, limit=limit)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_assignment_history",
+            {"item_id": item_id, "limit": limit},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_assignment_constants(ctx: Context | None = None) -> dict[str, Any]:
+    """The fixed vocabulary used by update_assignment — parent-status enum and
+    tag list. Call this before building an update_assignment payload."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services import assignment_state as ast
+        result = {
+            "parent_statuses": list(ast.PARENT_STATUSES),
+            "fixed_tags": list(ast.FIXED_TAGS),
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("get_assignment_constants", {}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def list_attachments(
+    child_id: int | None = None,
+    source_kind: str | None = None,
+    limit: int = 200,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Files downloaded from Veracross (PDFs, images, docs). Each row includes
+    download_url — prefix with the cockpit base URL to fetch bytes via HTTP.
+    source_kind filters by originating item kind (assignment | comment | message)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.list_attachments(
+                session, child_id=child_id, source_kind=source_kind, limit=limit,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "list_attachments",
+            {"child_id": child_id, "source_kind": source_kind, "limit": limit},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def list_spellbee_lists(ctx: Context | None = None) -> list[dict[str, Any]]:
+    """Spelling Bee word lists stored in data/spellbee/. Each entry has the
+    parsed list number (or null) plus a download_url for fetching the file."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from ..services import spellbee as SB
+        result = [x.to_dict() for x in SB.list_lists()]
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("list_spellbee_lists", {}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def get_sync_runs(
+    limit: int = 20, ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Recent Veracross sync runs, newest first. Each entry has status, timing,
+    item counts, and whether a captured log is available."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from sqlalchemy import desc, select, func as _func
+        from ..models import SyncRun
+        async with get_async_session() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        SyncRun.id, SyncRun.started_at, SyncRun.ended_at,
+                        SyncRun.trigger, SyncRun.status,
+                        SyncRun.items_new, SyncRun.items_updated,
+                        SyncRun.events_produced, SyncRun.notifications_fired,
+                        SyncRun.error,
+                        _func.length(SyncRun.log_text).label("log_length"),
+                    ).order_by(desc(SyncRun.started_at)).limit(limit)
+                )
+            ).all()
+            result = [
+                {
+                    "id": r.id,
+                    "started_at": r.started_at.isoformat() if r.started_at else None,
+                    "ended_at": r.ended_at.isoformat() if r.ended_at else None,
+                    "trigger": r.trigger,
+                    "status": r.status,
+                    "items_new": r.items_new,
+                    "items_updated": r.items_updated,
+                    "events_produced": r.events_produced,
+                    "notifications_fired": r.notifications_fired,
+                    "error": r.error,
+                    "has_log": bool(r.log_length and r.log_length > 0),
+                }
+                for r in rows
+            ]
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("get_sync_runs", {"limit": limit}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def get_sync_run_log(run_id: int, ctx: Context | None = None) -> dict[str, Any]:
+    """Captured log text for one sync run. Includes log_capture_healthy flag
+    (True iff start + end sentinels are present)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import SyncRun
+        async with get_async_session() as session:
+            r = (
+                await session.execute(select(SyncRun).where(SyncRun.id == run_id))
+            ).scalar_one_or_none()
+        if r is None:
+            raise ValueError(f"sync run {run_id} not found")
+        log_text = r.log_text or ""
+        has_start = "=== sync started" in log_text
+        has_end = "=== sync ended" in log_text
+        is_running = r.status == "running"
+        healthy = (is_running and has_start) or (
+            not is_running and has_start and has_end
+        )
+        result = {
+            "id": r.id,
+            "status": r.status,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "ended_at": r.ended_at.isoformat() if r.ended_at else None,
+            "trigger": r.trigger,
+            "error": r.error,
+            "log_text": log_text,
+            "log_line_count": len(log_text.splitlines()),
+            "log_capture_healthy": healthy,
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_sync_run_log", {"run_id": run_id},
+            {"line_count": result.get("log_line_count")}, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def set_syllabus_topic_status(
+    class_level: int,
+    subject: str,
+    topic: str,
+    status: str | None,
+    note: str | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Mark a syllabus topic as covered | skipped | delayed | in_progress (or
+    pass status=None to clear). Persists to the per-class syllabus override
+    file and shows up in the /child/:id/syllabus UI."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {"status": "ok"}
+    try:
+        from ..services.syllabus import upsert_topic_status
+        async with get_async_session() as session:
+            result = await upsert_topic_status(
+                session, class_level, subject, topic, status=status, note=note,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "set_syllabus_topic_status",
+            {"class_level": class_level, "subject": subject, "topic": topic, "status": status},
             result, err, started, _client_id(ctx),
         )
 
