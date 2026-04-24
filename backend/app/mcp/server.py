@@ -1486,6 +1486,137 @@ async def resolve_resource_path(
         )
 
 
+async def _load_child(child_id: int):
+    from sqlalchemy import select
+    from ..models import Child
+    async with get_async_session() as session:
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+    if child is None:
+        raise ValueError(f"child {child_id} not found")
+    return child
+
+
+@server.tool()
+async def get_spellbee_linked_assignments(
+    child_id: int | None = None, ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Every current assignment whose title/body references the Spelling Bee,
+    along with the detected 'List N' number (if any) and the matching uploaded
+    file (if one exists for that kid). Use this to answer 'what spelling-bee
+    work is due + which list does each reference?' in one call."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from sqlalchemy import select, desc
+        import json as _json
+        from ..models import Child, VeracrossItem
+        from ..services import spellbee as SB
+        async with get_async_session() as session:
+            stmt = (
+                select(VeracrossItem, Child)
+                .join(Child, Child.id == VeracrossItem.child_id)
+                .where(VeracrossItem.kind == "assignment")
+                .order_by(desc(VeracrossItem.first_seen_at))
+                .limit(500)
+            )
+            if child_id is not None:
+                stmt = stmt.where(VeracrossItem.child_id == child_id)
+            rows = (await session.execute(stmt)).all()
+        lists_by_child: dict[int, dict[int, Any]] = {}
+        for item, child in rows:
+            body = ""
+            if item.normalized_json:
+                try:
+                    body = _json.loads(item.normalized_json).get("body") or ""
+                except Exception:
+                    body = ""
+            texts = (item.title, item.title_en, item.notes_en, body)
+            if not SB.is_spellbee_text(*texts):
+                continue
+            num = SB.detect_list_reference(*texts)
+            if child.id not in lists_by_child:
+                lists_by_child[child.id] = {
+                    l.number: l for l in SB.list_lists(child) if l.number is not None
+                }
+            match = lists_by_child[child.id].get(num) if num is not None else None
+            result.append({
+                "id": item.id,
+                "child_id": child.id,
+                "child_name": child.display_name,
+                "subject": item.subject,
+                "title": item.title,
+                "due_or_date": item.due_or_date,
+                "status": item.status,
+                "detected_list_number": num,
+                "matched_list": match.to_dict() if match else None,
+            })
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_spellbee_linked_assignments",
+            {"child_id": child_id}, result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def delete_spellbee_list(
+    child_id: int, filename: str, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Remove a Spelling Bee list file from a kid's spellbee/ directory.
+    Traversal-guarded. Returns {status: 'deleted'|'not_found', filename}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services import spellbee as SB
+        child = await _load_child(child_id)
+        ok = SB.delete_file(child, filename)
+        result = {"status": "deleted" if ok else "not_found", "filename": filename}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "delete_spellbee_list",
+            {"child_id": child_id, "filename": filename},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def rename_spellbee_list(
+    child_id: int, filename: str, new_name: str, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Rename a Spelling Bee list file. Use this to fix filenames so the
+    list-number parser picks up the ordinal (e.g. rename 'random.pdf' to
+    'list-03.pdf'). new_name is sanitized; only allowed extensions accepted."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services import spellbee as SB
+        child = await _load_child(child_id)
+        row = SB.rename_file(child, filename, new_name)
+        result = row.to_dict()
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "rename_spellbee_list",
+            {"child_id": child_id, "filename": filename, "new_name": new_name},
+            result, err, started, _client_id(ctx),
+        )
+
+
 def run_stdio() -> None:
     """Entry point for `schoolwork-mcp` — stdio transport, for Claude Desktop/Code."""
     asyncio.run(server.run_stdio_async())
