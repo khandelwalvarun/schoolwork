@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api } from "../api";
 import ChildHeader from "../components/ChildHeader";
+import { todayISOInIST } from "../util/ist";
 
 export default function ChildSyllabus() {
   const { id } = useParams();
@@ -19,7 +20,7 @@ export default function ChildSyllabus() {
     enabled: classLevel !== undefined,
   });
 
-  const todayISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayISO = useMemo(() => todayISOInIST(), []);
 
   if (!child) return <div>Loading child…</div>;
   if (!syl) return <div>Loading syllabus…</div>;

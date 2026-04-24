@@ -17,7 +17,7 @@ from ..channels.inapp import InAppChannel
 from ..channels.telegram import TelegramChannel
 from ..models import ChannelConfig, Event, Notification
 
-IST = ZoneInfo("Asia/Kolkata")
+from ..util.time import IST  # canonical
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "channels": {

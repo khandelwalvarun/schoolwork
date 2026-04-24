@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy import insert
 
+from ..util.time import today_ist
+
 from ..channels.email import EmailChannel
 from ..channels.inapp import InAppChannel
 from ..channels.telegram import TelegramChannel
@@ -106,9 +108,8 @@ async def run_weekly_digest() -> None:
     try:
         data = await generate_and_store_digest(kind="weekly", llm=True)
         rendered = render_for_digest(data)
-        # Period key includes ISO week so it dedups per week.
-        from datetime import date
-        week_key = date.today().strftime("%G-W%V")
+        # Period key includes ISO week (IST) so it dedups per week.
+        week_key = today_ist().strftime("%G-W%V")
         await _dispatch_digest("digest_weekly", rendered, week_key)
         log.info("weekly digest delivered for %s", week_key)
     except Exception:

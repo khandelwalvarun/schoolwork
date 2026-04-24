@@ -45,7 +45,8 @@ def _now() -> datetime:
 
 
 def _today_iso() -> str:
-    return date.today().isoformat()
+    from ..util.time import today_iso_ist
+    return today_iso_ist()
 
 
 async def _upsert_item(
@@ -737,9 +738,15 @@ async def _run_sync_locked(
     # Attach a memory log handler so we can persist the run log to the DB
     # for the Settings → sync log viewer. Limited to 200KB per run; anything
     # more gets truncated. Handler is detached in the finally block.
-    import io, logging as _logging
+    import io, logging as _logging, time as _time
+    from ..util.time import IST as _IST
     log_buffer = io.StringIO()
-    formatter = _logging.Formatter("%(asctime)s  %(levelname)-5s  %(name)s: %(message)s", "%H:%M:%S")
+    formatter = _logging.Formatter("%(asctime)s IST  %(levelname)-5s  %(name)s: %(message)s", "%H:%M:%S")
+    # Force log records to stamp IST, not the server's local zone.
+    def _ist_converter(secs: float | None) -> _time.struct_time:
+        from datetime import datetime as _dt
+        return _dt.fromtimestamp(secs or 0, tz=_IST).timetuple()
+    formatter.converter = _ist_converter  # type: ignore[assignment]
     buf_handler = _logging.StreamHandler(log_buffer)
     buf_handler.setLevel(_logging.INFO)
     buf_handler.setFormatter(formatter)

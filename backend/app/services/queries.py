@@ -17,8 +17,7 @@ from ..config import get_settings
 from ..models import Attachment, Child, Event, Notification, ParentNote, Summary, SyncRun, VeracrossItem
 from . import assignment_state as ast
 from . import syllabus as syl
-
-IST = ZoneInfo("Asia/Kolkata")
+from ..util.time import IST, now_ist, today_ist
 
 
 async def _child_class_levels(session: AsyncSession) -> dict[int, int]:
@@ -108,12 +107,9 @@ async def list_attachments(
     return out
 
 
-def _now_ist() -> datetime:
-    return datetime.now(tz=IST)
-
-
-def _today_ist() -> date:
-    return _now_ist().date()
+# Legacy name aliases — canonical helpers now live in util.time.
+_now_ist = now_ist
+_today_ist = today_ist
 
 
 def _item_to_dict(

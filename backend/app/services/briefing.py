@@ -24,7 +24,7 @@ from ..models import Child, Summary, VeracrossItem
 from . import queries as Q
 from . import syllabus as syl_service
 
-IST = ZoneInfo("Asia/Kolkata")
+from ..util.time import IST  # canonical
 
 
 @dataclass

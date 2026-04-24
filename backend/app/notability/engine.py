@@ -17,6 +17,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Event, VeracrossItem
+from ..util.time import today_ist
 from . import rubric as R
 
 
@@ -55,7 +56,8 @@ class DiffAggregator:
 
 
 def _today() -> date:
-    return datetime.now(tz=timezone.utc).astimezone().date()
+    """Always IST — "today" for overdue detection is the parent's today."""
+    return today_ist()
 
 
 def _days_overdue(due_iso: str | None) -> int:

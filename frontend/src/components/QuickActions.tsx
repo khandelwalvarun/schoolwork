@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, Assignment, ParentStatus } from "../api";
 import StatusPopover from "./StatusPopover";
+import { daysFromTodayIST, nextWeekendIST, todayISOInIST } from "../util/ist";
 
 /** Row-level one-click actions for an assignment.
  *   ✓     — toggle done-at-home
@@ -39,18 +40,14 @@ export default function QuickActions({ a }: { a: Assignment }) {
     }
   };
 
-  const daysFromNow = (n: number): string => {
-    const d = new Date(); d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
-  };
-  const nextWeekend = (): string => {
-    const d = new Date(); const dow = d.getDay();  // 0 Sun 6 Sat
-    const delta = (6 - dow + 7) % 7 || 7;
-    return daysFromNow(delta);
-  };
+  // All date math is anchored to IST — the parent's timezone — regardless
+  // of the browser's locale. Phone in a different zone must still pick
+  // the same "tomorrow".
+  const daysFromNow = (n: number): string => daysFromTodayIST(n);
+  const nextWeekend = (): string => nextWeekendIST();
 
   const isDone = a.parent_status === "done_at_home" || a.parent_status === "submitted";
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayISOInIST();
   const isSnoozed = !!a.snooze_until && a.snooze_until > todayIso;
 
   const box =

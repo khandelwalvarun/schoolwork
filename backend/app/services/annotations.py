@@ -35,8 +35,8 @@ async def annotate_grade_trends(
     ).scalar_one_or_none()
     class_level = child.class_level if child else None
 
-    from datetime import date as _date
-    today_d = _date.today()
+    from ..util.time import today_ist
+    today_d = today_ist()
     cycle = None
     prev_cycle = None
     if class_level is not None:

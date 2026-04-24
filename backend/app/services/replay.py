@@ -77,9 +77,8 @@ async def replay_notifications(
     channels_cfg = cfg.get("channels") or DEFAULT_CONFIG["channels"]
     actual = await _actual_statuses(session, [e.id for e in events])
 
-    from zoneinfo import ZoneInfo
-    IST = ZoneInfo("Asia/Kolkata")
-    now_ist = datetime.now(tz=IST)
+    from ..util.time import now_ist as _now_ist
+    now_ist = _now_ist()
 
     would_send = would_suppress = changed = 0
     out_events: list[dict[str, Any]] = []

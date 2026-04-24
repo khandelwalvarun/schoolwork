@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, AssignmentPatch, ParentStatus } from "../api";
+import { daysFromTodayIST, nextWeekendIST } from "../util/ist";
 
 /** Floating action bar. Appears at bottom-center when `selectedIds.length > 0`.
  * All actions PATCH every selected id in parallel and invalidate queries
@@ -50,15 +51,9 @@ export default function BulkActionBar({
     }
   };
 
-  const daysFromNow = (n: number) => {
-    const d = new Date(); d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
-  };
-  const nextWeekend = () => {
-    const d = new Date(); const dow = d.getDay();
-    const delta = (6 - dow + 7) % 7 || 7;
-    return daysFromNow(delta);
-  };
+  // IST-anchored so snooze behaves identically regardless of the device's tz.
+  const daysFromNow = daysFromTodayIST;
+  const nextWeekend = nextWeekendIST;
 
   const SNOOZE_PRESETS: { label: string; iso: string }[] = [
     { label: "Tomorrow",   iso: daysFromNow(1) },

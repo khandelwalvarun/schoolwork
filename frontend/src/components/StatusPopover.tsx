@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, Assignment, ParentStatus } from "../api";
+import { daysFromTodayIST, todayISOInIST } from "../util/ist";
 
 const PARENT_STATUS_LABELS: Record<ParentStatus, { label: string; dot: string; chip: string }> = {
   in_progress:  { label: "In progress",     dot: "bg-amber-500",   chip: "chip-amber" },
@@ -42,11 +43,8 @@ export function EffectiveStatusChip({ a }: { a: Assignment }) {
   return <span className={cls}>{label}</span>;
 }
 
-function daysFromNow(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
+// IST-anchored — don't let the device's timezone drift the date.
+const daysFromNow = daysFromTodayIST;
 
 const FIXED_TAGS = [
   "needs-printing",
@@ -182,8 +180,10 @@ export default function StatusPopover({
               Tomorrow
             </button>
             <button onClick={() => {
-              const d = new Date(); const dow = d.getDay();
-              // Next Saturday
+              // Next Saturday in IST — see util/ist.ts
+              const [yy, mm, dd] = todayISOInIST().split("-").map(Number);
+              const anchor = new Date(Date.UTC(yy, mm - 1, dd));
+              const dow = anchor.getUTCDay();
               const delta = (6 - dow + 7) % 7 || 7;
               setSnooze(daysFromNow(delta));
             }}

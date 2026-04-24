@@ -1,6 +1,9 @@
 /** Date formatting helpers. All inputs are ISO strings (YYYY-MM-DD or full
  * timestamp). Output is human-friendly: "Today", "Tomorrow", "Fri 25 Apr",
- * "3 days ago". */
+ * "3 days ago". All day-arithmetic is anchored to IST so a parent
+ * on a different timezone still sees the same "Today". */
+
+import { todayISOInIST } from "./ist";
 
 const SHORT_WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const SHORT_MONTH = [
@@ -24,8 +27,15 @@ function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-/** Day-difference (today - date) in integer days. Negative = future. */
-function daysDiff(target: Date, today = new Date()): number {
+/** Day-difference (today-in-IST minus date) in integer days. Negative = future.
+ *  The IST anchor makes the labels stable regardless of the browser's
+ *  timezone — a parent using the app from a phone set to a different
+ *  zone still sees "Today" for the IST today. */
+function daysDiff(target: Date, today?: Date): number {
+  if (!today) {
+    const [y, m, d] = todayISOInIST().split("-").map(Number);
+    today = new Date(y, m - 1, d);
+  }
   const t = startOfDay(today).getTime();
   const x = startOfDay(target).getTime();
   return Math.round((t - x) / (24 * 60 * 60 * 1000));
