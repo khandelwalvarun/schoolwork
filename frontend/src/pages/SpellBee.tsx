@@ -289,7 +289,7 @@ export default function SpellBee() {
                   : "border-transparent text-gray-600 hover:text-gray-900")
               }
             >
-              {c.display_name} · {c.class_level}{c.class_section ?? ""}
+              {c.display_name} · {c.class_section ?? c.class_level}
             </button>
           ))}
         </div>
