@@ -117,6 +117,13 @@ export default function Settings() {
       <h2 className="text-2xl font-bold mb-4">Settings</h2>
       <SyncCadence />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Link to="/settings/veracross" className="surface p-5 hover:bg-gray-50">
+          <div className="font-semibold text-lg">Veracross login</div>
+          <div className="text-sm text-gray-600 mt-1">
+            Portal URL, username, password. Sync health, last-success/failure,
+            recent runs. Remote CAPTCHA solver when a re-auth is needed.
+          </div>
+        </Link>
         <Link to="/settings/channels" className="surface p-5 hover:bg-gray-50">
           <div className="font-semibold text-lg">Channels</div>
           <div className="text-sm text-gray-600 mt-1">

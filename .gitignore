@@ -32,6 +32,8 @@ recon/storage_state.json
 data/attachments/
 # Per-install UI prefs (collapsed sections, ordering, etc.)
 data/ui_prefs.json
+# Veracross credential override (plaintext — never commit)
+data/veracross_creds.json
 tmp-login-debug/
 tmp-probe.py
 

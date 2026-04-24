@@ -23,6 +23,13 @@ from playwright.async_api import (
 
 from ..config import Settings, get_settings
 
+
+def _creds() -> dict[str, str]:
+    """Live credentials — overlay file > .env. Called fresh each time so
+    edits via /api/veracross/credentials take effect without restart."""
+    from ..services.veracross_creds import current_credentials
+    return current_credentials()
+
 EMBED_BASE = "https://portals-embed.veracross.eu"
 DOCS_BASE = "https://documents.veracross.eu"
 
@@ -91,8 +98,8 @@ class ScraperClient:
             "input[type=email], input[name*='user' i], input[name*='email' i], "
             "input[id*='user' i], input[id*='email' i], input[name*='login' i]"
         )
-        await self._page.locator(user_sel).first.fill(self.settings.veracross_username)
-        await self._page.locator("input[type=password]").first.fill(self.settings.veracross_password)
+        await self._page.locator(user_sel).first.fill(_creds()["username"])
+        await self._page.locator("input[type=password]").first.fill(_creds()["password"])
         try:
             submit = self._page.locator(
                 "button[type=submit], input[type=submit], "
@@ -114,7 +121,7 @@ class ScraperClient:
 
     async def _ensure_authenticated(self) -> None:
         assert self._page is not None
-        portal = self.settings.veracross_portal_url.rstrip("/")
+        portal = _creds()["portal_url"].rstrip("/")
         await self._page.goto(portal, wait_until="domcontentloaded", timeout=45_000)
         try:
             await self._page.wait_for_load_state("networkidle", timeout=15_000)
@@ -189,7 +196,7 @@ class ScraperClient:
                     "X-CSRF-Token": self._csrf,
                     "X-Requested-With": "XMLHttpRequest",
                     "Accept": "application/json, text/javascript, */*; q=0.01",
-                    "Referer": self.settings.veracross_portal_url,
+                    "Referer": _creds()["portal_url"],
                 },
                 timeout=30_000,
             )
@@ -198,7 +205,7 @@ class ScraperClient:
             return await resp.json()
 
     def main_portal_url(self, path: str) -> str:
-        return urljoin(self.settings.veracross_portal_url.rstrip("/") + "/", path.lstrip("/"))
+        return urljoin(_creds()["portal_url"].rstrip("/") + "/", path.lstrip("/"))
 
     def embed_planner_url(self, vc_id: str, school_year: int = 2026) -> str:
         return (

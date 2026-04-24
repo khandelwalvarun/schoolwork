@@ -311,6 +311,97 @@ async def api_notifications_replay(payload: dict[str, Any] | None = None) -> dic
         )
 
 
+# ── Veracross credentials + sync health + remote-login ───────────────────────
+
+@app.get("/api/veracross/credentials")
+async def api_vc_credentials_get() -> dict[str, Any]:
+    from .services.veracross_creds import public_view
+    return public_view()
+
+
+@app.put("/api/veracross/credentials")
+async def api_vc_credentials_put(payload: dict[str, Any]) -> dict[str, Any]:
+    from .services.veracross_creds import save_credentials
+    return save_credentials(payload or {})
+
+
+@app.get("/api/veracross/status")
+async def api_vc_status() -> dict[str, Any]:
+    from .services.sync_health import snapshot
+    async with get_async_session() as session:
+        return await snapshot(session)
+
+
+@app.post("/api/veracross/login/start")
+async def api_vc_login_start() -> dict[str, Any]:
+    from .services.remote_login import start_session
+    return await start_session()
+
+
+@app.get("/api/veracross/login/status")
+async def api_vc_login_status() -> dict[str, Any]:
+    from .services.remote_login import current_status
+    return await current_status()
+
+
+@app.get("/api/veracross/login/screenshot")
+async def api_vc_login_screenshot():
+    from fastapi.responses import Response
+    from .services.remote_login import screenshot_png
+    png = await screenshot_png()
+    if not png:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no active session or screenshot yet")
+    return Response(content=png, media_type="image/png", headers={
+        "Cache-Control": "no-store",
+    })
+
+
+@app.post("/api/veracross/login/click")
+async def api_vc_login_click(payload: dict[str, Any]) -> dict[str, Any]:
+    from .services.remote_login import click
+    return await click(
+        int(payload.get("x", 0)),
+        int(payload.get("y", 0)),
+        button=str(payload.get("button", "left")),
+    )
+
+
+@app.post("/api/veracross/login/type")
+async def api_vc_login_type(payload: dict[str, Any]) -> dict[str, Any]:
+    from .services.remote_login import type_text
+    return await type_text(str(payload.get("text", "")))
+
+
+@app.post("/api/veracross/login/key")
+async def api_vc_login_key(payload: dict[str, Any]) -> dict[str, Any]:
+    from .services.remote_login import press_key
+    return await press_key(str(payload.get("key", "")))
+
+
+@app.post("/api/veracross/login/fill-credentials")
+async def api_vc_login_fill() -> dict[str, Any]:
+    from .services.remote_login import fill_credentials
+    return await fill_credentials()
+
+
+@app.get("/api/veracross/login/check-success")
+async def api_vc_login_check() -> dict[str, Any]:
+    from .services.remote_login import check_success
+    return await check_success()
+
+
+@app.post("/api/veracross/login/finish")
+async def api_vc_login_finish() -> dict[str, Any]:
+    from .services.remote_login import finish_and_save
+    return await finish_and_save()
+
+
+@app.delete("/api/veracross/login")
+async def api_vc_login_close() -> dict[str, Any]:
+    from .services.remote_login import close_session
+    return await close_session()
+
+
 @app.get("/api/ui-prefs")
 async def api_ui_prefs_get() -> dict[str, Any]:
     """Returns the full UI-preferences blob: collapsed sections, bucket

@@ -14,6 +14,7 @@ import Notes from "./pages/Notes";
 import Summaries from "./pages/Summaries";
 import SettingsChannels from "./pages/SettingsChannels";
 import SettingsSyllabus from "./pages/SettingsSyllabus";
+import SettingsVeracross from "./pages/SettingsVeracross";
 import AttachmentsPage from "./pages/AttachmentsPage";
 import CommandPalette from "./components/CommandPalette";
 import HelpPanel from "./components/HelpPanel";
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/channels" element={<SettingsChannels />} />
           <Route path="/settings/syllabus" element={<SettingsSyllabus />} />
+          <Route path="/settings/veracross" element={<SettingsVeracross />} />
         </Routes>
       </main>
     </div>
