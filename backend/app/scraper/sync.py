@@ -563,12 +563,57 @@ async def _sync_messages(
                 log.warning("message detail failed for %s: %s", row["external_id"], exc)
 
 
+# Module-level lock: only one sync may execute in-process at a time.
+# The APScheduler hourly_sync job has max_instances=1, but that doesn't
+# stop manual POST /api/sync from overlapping the cron. This lock does.
+_SYNC_LOCK: asyncio.Lock = asyncio.Lock()
+STALE_RUN_MIN = 15  # any "running" row older than this is treated as orphaned
+
+
+async def _cleanup_stale_runs(older_than_min: int = STALE_RUN_MIN) -> int:
+    """Mark any row stuck at status='running' as failed.
+
+    Called in two places:
+      - FastAPI lifespan startup (older_than_min=0 → close every 'running'
+        row, because no new sync has started yet in this process so anything
+        that still says running IS an orphan from the previous lifetime).
+      - Before each run_sync (default STALE_RUN_MIN minutes — only closes
+        rows that have been running impossibly long, so a legitimate
+        in-flight sync isn't clobbered).
+    """
+    from datetime import timedelta
+    if older_than_min <= 0:
+        cutoff = _now() + timedelta(seconds=1)  # any started_at is "before" this
+    else:
+        cutoff = _now() - timedelta(minutes=older_than_min)
+    closed = 0
+    async with get_async_session() as session:
+        stale = (
+            await session.execute(
+                select(SyncRun).where(SyncRun.status == "running").where(SyncRun.started_at < cutoff)
+            )
+        ).scalars().all()
+        for r in stale:
+            r.status = "failed"
+            r.ended_at = _now()
+            r.error = (r.error or "") + "orphaned: process exited before run completed"
+            closed += 1
+        if closed:
+            await session.commit()
+            log.warning("closed %d stale running sync_run rows", closed)
+    return closed
+
+
 async def run_sync(
     trigger: str = "manual",
     include_grades: bool = True,
     grading_periods: tuple[int, ...] | None = None,
 ) -> dict[str, Any]:
     """Orchestrate one sync pass. Returns a summary dict.
+
+    Serialised: only one sync executes at a time. If called while another
+    is running, the overlap is refused with status='skipped_concurrent' —
+    we don't queue a second run because the newer state is what matters.
 
     `include_grades=True` adds a grade-report scan (one request per class per
     grading period). Keep off by default for hourly syncs; enable weekly or
@@ -579,6 +624,31 @@ async def run_sync(
     if grading_periods is None:
         grading_periods = (s.grading_period_current,)
 
+    # Concurrency guard: refuse overlapping in-process calls.
+    if _SYNC_LOCK.locked():
+        log.warning("sync refused: another run is already in progress (trigger=%s)", trigger)
+        return {
+            "sync_run_id": None,
+            "status": "skipped_concurrent",
+            "trigger": trigger,
+            "error": "another sync is already running",
+        }
+
+    # Housekeeping: any row stuck at running from a previous crash.
+    try:
+        await _cleanup_stale_runs()
+    except Exception:
+        log.exception("stale-run cleanup failed (non-fatal)")
+
+    async with _SYNC_LOCK:
+        return await _run_sync_locked(trigger, include_grades, grading_periods)
+
+
+async def _run_sync_locked(
+    trigger: str,
+    include_grades: bool,
+    grading_periods: tuple[int, ...],
+) -> dict[str, Any]:
     counters = {
         "items_new": 0,
         "items_updated": 0,
@@ -596,6 +666,30 @@ async def run_sync(
         await session.commit()
         await session.refresh(run)
         sync_run_id = run.id
+
+    # Attach a memory log handler so we can persist the run log to the DB
+    # for the Settings → sync log viewer. Limited to 200KB per run; anything
+    # more gets truncated. Handler is detached in the finally block.
+    import io, logging as _logging
+    log_buffer = io.StringIO()
+    formatter = _logging.Formatter("%(asctime)s  %(levelname)-5s  %(name)s: %(message)s", "%H:%M:%S")
+    buf_handler = _logging.StreamHandler(log_buffer)
+    buf_handler.setLevel(_logging.INFO)
+    buf_handler.setFormatter(formatter)
+    capture_loggers = [
+        _logging.getLogger("backend.app.scraper.sync"),
+        _logging.getLogger("backend.app.scraper.client"),
+        _logging.getLogger("backend.app.scraper.attachments"),
+        _logging.getLogger("backend.app.notability.dispatcher"),
+        _logging.getLogger("backend.app.notability.engine"),
+        _logging.getLogger("backend.app.services.translate"),
+    ]
+    for lg in capture_loggers:
+        lg.addHandler(buf_handler)
+    # Sentinel — lets the frontend confirm log capture plumbing is intact
+    # even when the sync itself was a no-op.
+    log.info("=== sync started (id=%s trigger=%s include_grades=%s) ===",
+             sync_run_id, trigger, include_grades)
 
     diff = DiffAggregator()
     event_ids: list[int] = []
@@ -668,6 +762,26 @@ async def run_sync(
 
     ended = _now()
 
+    # Sentinel — so we can verify capture is intact end-to-end
+    log.info("=== sync ended (status=%s new=%s updated=%s events=%s) ===",
+             ("failed" if err else ("partial" if counters.get("errors") else "ok")),
+             counters["items_new"], counters["items_updated"], counters["events_produced"])
+
+    # Detach log capture, clip to a sane size for the DB column
+    for lg in capture_loggers:
+        try:
+            lg.removeHandler(buf_handler)
+        except Exception:
+            pass
+    captured = log_buffer.getvalue()
+    if len(captured) > 200_000:
+        captured = (
+            captured[:100_000]
+            + "\n\n…[truncated]…\n\n"
+            + captured[-90_000:]
+        )
+    log_buffer.close()
+
     # Step 2: close sync_run row
     async with get_async_session() as session:
         run = (
@@ -680,6 +794,7 @@ async def run_sync(
         run.events_produced = counters["events_produced"]
         run.notifications_fired = counters["notifications_fired"]
         run.error = err
+        run.log_text = captured or None
         await session.commit()
 
     return {

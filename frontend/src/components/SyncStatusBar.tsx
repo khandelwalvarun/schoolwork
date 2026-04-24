@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { formatRelative } from "../util/dates";
 import RemoteLoginModal from "./RemoteLoginModal";
+import SyncLogModal from "./SyncLogModal";
 
 /** Global sync-health banner. Lives under the top nav on every page.
  * Colors:
@@ -68,6 +69,7 @@ export default function SyncStatusBar() {
 
   const [dismissed, setDismissed] = useState(false);
   const [showReauth, setShowReauth] = useState(false);
+  const [showLog, setShowLog] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   // Live-gated needs_reauth: even if the last sync said "needs_reauth",
@@ -75,6 +77,13 @@ export default function SyncStatusBar() {
   const liveNeedsReauth =
     !!health?.needs_reauth
     && (probe?.state === "expired" || probe?.state === "never");
+
+  // Let other components (e.g. CommandPalette) open the log via an event
+  useEffect(() => {
+    function onOpen() { setShowLog(true); }
+    document.addEventListener("pc:synclog:open", onOpen);
+    return () => document.removeEventListener("pc:synclog:open", onOpen);
+  }, []);
 
   // Auto-prompt once per browser session when we've CONFIRMED (not just
   // suspected) that the session is dead.
@@ -204,7 +213,15 @@ export default function SyncStatusBar() {
     <>
       <div className={`border-b text-sm ${cls}`}>
         <div className="max-w-6xl mx-auto px-5 py-1.5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 flex-wrap">{label}</div>
+          <button
+            onClick={() => setShowLog(true)}
+            className="flex items-center gap-3 flex-wrap text-left hover:opacity-80 cursor-pointer"
+            title="Click to view sync log"
+            aria-label="Open sync log"
+          >
+            {label}
+            <span className="text-xs opacity-50 hidden sm:inline">· click for log</span>
+          </button>
           <div className="flex items-center gap-2">{cta}</div>
         </div>
       </div>
@@ -215,6 +232,7 @@ export default function SyncStatusBar() {
           refetchProbe();
         }} />
       )}
+      {showLog && <SyncLogModal onClose={() => setShowLog(false)} />}
     </>
   );
 }

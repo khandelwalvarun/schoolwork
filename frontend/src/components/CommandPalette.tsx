@@ -78,6 +78,8 @@ export default function CommandPalette() {
     cmds.push({ id: "act:sync",      label: "Run: Sync now",            action: () => { api.syncNow(); } });
     cmds.push({ id: "act:digest",    label: "Run: Send digest now",     action: () => { api.digestRun(); } });
     cmds.push({ id: "act:syllabus",  label: "Run: Recheck syllabus",    action: () => { fetch("/api/syllabus/check-now", { method: "POST" }); } });
+    cmds.push({ id: "view:sync-log", label: "View: Sync log",           action: () => { document.dispatchEvent(new CustomEvent("pc:synclog:open")); } });
+    cmds.push({ id: "nav:vc-settings", label: "Go to: Veracross settings", action: () => navigate("/settings/veracross") });
     // Assignments (top 60) — each a jump that opens audit drawer via URL hash
     const assignments: Assignment[] = [];
     if (today) {

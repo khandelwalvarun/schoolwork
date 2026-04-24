@@ -34,6 +34,19 @@ settings = get_settings()
 async def lifespan(app: FastAPI):  # noqa: ANN001
     # MCP server's session_manager must run its own lifespan (for streamable-http).
     async with mcp_server.session_manager.run():
+        # Close any sync_run rows that got orphaned at status=running when
+        # the previous server process exited. Happens on crash or kill -9.
+        try:
+            from .scraper.sync import _cleanup_stale_runs
+            closed = await _cleanup_stale_runs(older_than_min=0)
+            if closed:
+                import logging as _l
+                _l.getLogger(__name__).info(
+                    "startup: closed %d orphaned running sync_run rows", closed,
+                )
+        except Exception:
+            import logging as _l
+            _l.getLogger(__name__).exception("startup stale-run cleanup failed")
         start_scheduler()
         try:
             yield
@@ -563,15 +576,22 @@ async def api_sync_blocking() -> dict[str, Any]:
 
 
 @app.get("/api/sync-runs")
-async def api_sync_runs(limit: int = 20) -> list[dict[str, Any]]:
-    from sqlalchemy import desc, select
+async def api_sync_runs(limit: int = 60) -> list[dict[str, Any]]:
+    from sqlalchemy import desc, select, func as _func
     from .models import SyncRun
     async with get_async_session() as session:
         rows = (
             await session.execute(
-                select(SyncRun).order_by(desc(SyncRun.started_at)).limit(limit)
+                select(
+                    SyncRun.id, SyncRun.started_at, SyncRun.ended_at,
+                    SyncRun.trigger, SyncRun.status,
+                    SyncRun.items_new, SyncRun.items_updated,
+                    SyncRun.events_produced, SyncRun.notifications_fired,
+                    SyncRun.error,
+                    _func.length(SyncRun.log_text).label("log_length"),
+                ).order_by(desc(SyncRun.started_at)).limit(limit)
             )
-        ).scalars().all()
+        ).all()
         return [
             {
                 "id": r.id,
@@ -581,10 +601,92 @@ async def api_sync_runs(limit: int = 20) -> list[dict[str, Any]]:
                 "status": r.status,
                 "items_new": r.items_new,
                 "items_updated": r.items_updated,
+                "events_produced": r.events_produced,
+                "notifications_fired": r.notifications_fired,
                 "error": r.error,
+                "has_log": bool(r.log_length and r.log_length > 0),
+                "log_length": int(r.log_length or 0),
             }
             for r in rows
         ]
+
+
+@app.get("/api/sync-runs/{run_id}/log")
+async def api_sync_run_log(run_id: int) -> dict[str, Any]:
+    """Full captured log text for one sync run. Logs are retained for 7
+    days; rows older than that are purged by the daily retention job.
+
+    Also returns `log_capture_healthy`: True iff the start + end sentinels
+    are present in the log text — a quick way for the UI to flag runs where
+    the logging handler was misconfigured or detached prematurely."""
+    from sqlalchemy import select
+    from .models import SyncRun
+    async with get_async_session() as session:
+        r = (
+            await session.execute(
+                select(SyncRun).where(SyncRun.id == run_id)
+            )
+        ).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"sync run {run_id} not found")
+    log_text = r.log_text or ""
+    has_start = "=== sync started" in log_text
+    has_end = "=== sync ended" in log_text
+    is_running = r.status == "running"
+    log_capture_healthy = (
+        is_running and has_start
+    ) or (not is_running and has_start and has_end)
+    lines = log_text.splitlines()
+    return {
+        "id": r.id,
+        "started_at": r.started_at.isoformat() if r.started_at else None,
+        "ended_at": r.ended_at.isoformat() if r.ended_at else None,
+        "trigger": r.trigger,
+        "status": r.status,
+        "error": r.error,
+        "log_text": log_text,
+        "log_line_count": len(lines),
+        "log_capture_healthy": log_capture_healthy,
+        "has_start_sentinel": has_start,
+        "has_end_sentinel": has_end,
+    }
+
+
+@app.get("/api/sync-runs/concurrency-check")
+async def api_sync_concurrency_check() -> dict[str, Any]:
+    """Returns info about currently-running sync(s). If more than one row
+    is at status='running', something is wrong — the UI can warn."""
+    from sqlalchemy import select, desc
+    from .models import SyncRun
+    async with get_async_session() as session:
+        running = (
+            await session.execute(
+                select(SyncRun).where(SyncRun.status == "running").order_by(desc(SyncRun.started_at))
+            )
+        ).scalars().all()
+    from datetime import datetime, timezone
+    now = datetime.now(tz=timezone.utc)
+    return {
+        "count": len(running),
+        "multiple_running": len(running) > 1,
+        "runs": [
+            {
+                "id": r.id,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "age_sec": int((now - r.started_at).total_seconds()) if r.started_at else None,
+                "trigger": r.trigger,
+                "stale": r.started_at and (now - r.started_at).total_seconds() > 15 * 60,
+            }
+            for r in running
+        ],
+    }
+
+
+@app.post("/api/sync-runs/prune")
+async def api_sync_runs_prune(days: int = 7) -> dict[str, Any]:
+    """Manual retention trigger — same as the daily job but on demand."""
+    from .jobs.retention_job import prune_sync_logs
+    return await prune_sync_logs(days=days)
 
 
 @app.get("/api/channel-config")

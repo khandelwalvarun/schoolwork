@@ -22,3 +22,4 @@ class SyncRun(Base):
     notifications_fired: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(String, nullable=True)
     warnings: Mapped[str | None] = mapped_column(String, nullable=True)
+    log_text: Mapped[str | None] = mapped_column(String, nullable=True)

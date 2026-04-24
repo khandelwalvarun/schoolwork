@@ -12,6 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 from ..config import get_settings
 from ..services.ui_prefs import load_prefs
 from .digest_job import run_daily_digest, run_weekly_digest
+from .retention_job import run_daily_retention
 from .sync_job import run_hourly_sync
 from .syllabus_job import run_weekly_syllabus_check
 
@@ -95,6 +96,17 @@ def start_scheduler() -> AsyncIOScheduler:
         run_weekly_syllabus_check,
         CronTrigger(day_of_week="sun", hour=7, minute=30),
         id="weekly_syllabus_check",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    # Daily retention: drop sync_runs older than 7 days so log_text doesn't
+    # accumulate forever.
+    s.add_job(
+        run_daily_retention,
+        CronTrigger(hour=3, minute=10),
+        id="daily_retention",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
