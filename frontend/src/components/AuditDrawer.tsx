@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, Assignment, StatusHistoryEntry } from "../api";
 import Attachments from "./Attachments";
 import StatusPopover, { EffectiveStatusChip } from "./StatusPopover";
-import { formatDate, formatDateTime } from "../util/dates";
+import { formatDate, formatDateTime, formatDDMMMYYTime } from "../util/dates";
 
 function formatValue(field: string, v: string | null): string {
   if (v === null || v === undefined || v === "") return "—";
@@ -68,6 +68,14 @@ export default function AuditDrawer({
               {a.priority > 0 && <> · priority: {"★".repeat(a.priority)}</>}
               {a.snooze_until && <> · snoozed until {a.snooze_until}</>}
             </div>
+            {a.first_seen_at && (
+              <div className="text-xs text-gray-500 mt-1" title={a.first_seen_at}>
+                First detected by scraper: <b className="font-mono">{formatDDMMMYYTime(a.first_seen_at)}</b>
+                {a.last_seen_at && a.last_seen_at !== a.first_seen_at && (
+                  <> · last seen <span className="font-mono">{formatDDMMMYYTime(a.last_seen_at)}</span></>
+                )}
+              </div>
+            )}
             <div className="flex items-center gap-2 mt-2">
               <EffectiveStatusChip a={a} />
               <button

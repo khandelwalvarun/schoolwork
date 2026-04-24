@@ -7,7 +7,7 @@ import TitleBlock from "../components/TitleBlock";
 import AuditDrawer from "../components/AuditDrawer";
 import ChildHeader from "../components/ChildHeader";
 import { SortableTH, useSortable } from "../components/useSortable";
-import { formatDate } from "../util/dates";
+import { formatDDMMMYY, formatDDMMMYYTime } from "../util/dates";
 
 type GradeRow = {
   id: number;
@@ -17,6 +17,7 @@ type GradeRow = {
   graded_date?: string | null;
   grade_pct?: number | null;
   score_text?: string | null;
+  first_seen_at?: string | null;
   attachments?: AttachmentLink[];
   normalized?: Record<string, unknown>;
 };
@@ -44,12 +45,13 @@ export default function ChildGrades() {
 
   const sort = useSortable<GradeRow>(rows, "graded_date", "desc", (g, key) => {
     switch (key) {
-      case "graded_date": return g.graded_date ?? null;
-      case "subject":     return g.subject ?? null;
-      case "title":       return (g.title ?? null);
-      case "score_text":  return g.score_text ?? null;
-      case "grade_pct":   return g.grade_pct ?? null;
-      default:            return null;
+      case "graded_date":   return g.graded_date ?? null;
+      case "subject":       return g.subject ?? null;
+      case "title":         return (g.title ?? null);
+      case "score_text":    return g.score_text ?? null;
+      case "grade_pct":     return g.grade_pct ?? null;
+      case "first_seen_at": return g.first_seen_at ?? null;
+      default:              return null;
     }
   });
 
@@ -102,16 +104,17 @@ export default function ChildGrades() {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-xs uppercase border-b border-[color:var(--line-soft)]">
-              <SortableTH label="Date"       k="graded_date" s={sort} />
-              <SortableTH label="Subject"    k="subject"     s={sort} />
-              <SortableTH label="Assignment" k="title"       s={sort} />
-              <SortableTH label="Score"      k="score_text"  s={sort} />
-              <SortableTH label="%"          k="grade_pct"   s={sort} align="right" />
+              <SortableTH label="Graded"     k="graded_date"   s={sort} />
+              <SortableTH label="Detected"   k="first_seen_at" s={sort} />
+              <SortableTH label="Subject"    k="subject"       s={sort} />
+              <SortableTH label="Assignment" k="title"         s={sort} />
+              <SortableTH label="Score"      k="score_text"    s={sort} />
+              <SortableTH label="%"          k="grade_pct"     s={sort} align="right" />
             </tr>
           </thead>
           <tbody>
             {sort.sorted.length === 0 && (
-              <tr><td colSpan={5} className="py-4 text-center text-gray-400">No grades yet.</td></tr>
+              <tr><td colSpan={6} className="py-4 text-center text-gray-400">No grades yet.</td></tr>
             )}
             {sort.sorted.map((g) => {
               const hasAttach = (g.attachments?.length ?? 0) > 0;
@@ -121,8 +124,13 @@ export default function ChildGrades() {
                   className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer align-top"
                   onClick={() => setAudit(g as unknown as Assignment)}
                 >
-                  <td className="py-1 px-2 whitespace-nowrap align-top" title={g.graded_date ?? ""}>
-                    {formatDate(g.graded_date, { absolute: true })}
+                  <td className="py-1 px-2 whitespace-nowrap align-top font-mono text-gray-800"
+                      title={g.graded_date ?? ""}>
+                    {formatDDMMMYY(g.graded_date)}
+                  </td>
+                  <td className="py-1 px-2 whitespace-nowrap align-top font-mono text-gray-500 text-xs"
+                      title={g.first_seen_at ?? "first seen by scraper"}>
+                    {formatDDMMMYYTime(g.first_seen_at)}
                   </td>
                   <td className="py-1 px-2 align-top">{g.subject}</td>
                   <td className="py-1 px-2 align-top">

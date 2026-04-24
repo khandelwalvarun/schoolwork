@@ -45,6 +45,9 @@ export type Assignment = {
   parent_marked_submitted_at: string | null;
   syllabus_context: string | null;
   external_id: string;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  detail_fetched_at?: string | null;
   attachments?: AttachmentLink[];
   normalized?: {
     type?: string;

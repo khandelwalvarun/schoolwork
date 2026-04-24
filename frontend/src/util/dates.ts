@@ -11,15 +11,25 @@ const SHORT_MONTH = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/** Parse an ISO date (YYYY-MM-DD or timestamp) into a local Date.
- * For date-only strings we anchor at local midnight to avoid TZ surprises. */
+/** Parse an ISO date/timestamp into a Date.
+ *
+ *  - Pure `YYYY-MM-DD` → local midnight on that day (calendar semantics).
+ *  - Timestamp WITH an explicit offset (`Z`, `+HH:MM`, `-HH:MM`) → respected.
+ *  - Timestamp WITHOUT an offset (our backend returns these for
+ *    DateTime(timezone=True) columns on SQLite) → treated as UTC.
+ *
+ *  The last clause is what fixes "synced 6h ago" mis-reports on IST —
+ *  without it, `new Date("2026-04-24T06:30:00")` was being parsed as
+ *  local IST time, inflating the age by the IST offset. */
 function parseLocal(iso: string): Date | null {
   if (!iso) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
     const [y, m, d] = iso.split("-").map(Number);
     return new Date(y, m - 1, d);
   }
-  const d = new Date(iso);
+  const hasTzOffset = /Z$|[+-]\d{2}:?\d{2}$/.test(iso);
+  const normalized = hasTzOffset ? iso : iso + "Z";
+  const d = new Date(normalized);
   return isNaN(d.getTime()) ? null : d;
 }
 
@@ -82,6 +92,29 @@ export function formatDateShort(iso: string | null | undefined): string {
   const mon = SHORT_MONTH[d.getMonth()];
   const yr = d.getFullYear();
   return yr === thisYear ? `${dd} ${mon}` : `${dd} ${mon} ${yr}`;
+}
+
+/** Format as dd-mmm-yy — e.g. "25-Apr-26". Used on dense historical
+ *  tables (grades, audit logs) where scannability beats friendliness. */
+export function formatDDMMMYY(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = parseLocal(iso);
+  if (!d) return iso;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mon = SHORT_MONTH[d.getMonth()];
+  const yy = String(d.getFullYear() % 100).padStart(2, "0");
+  return `${dd}-${mon}-${yy}`;
+}
+
+/** dd-mmm-yy HH:MM — same density for timestamps (local time). */
+export function formatDDMMMYYTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = parseLocal(iso);
+  if (!d) return iso;
+  const base = formatDDMMMYY(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${base} ${hh}:${mi}`;
 }
 
 /** Format a timestamp as short "Apr 25 · 14:32" (local time). */
