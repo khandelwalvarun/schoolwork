@@ -51,7 +51,7 @@ export default function AuditDrawer({
   return (
     <div className="fixed inset-0 z-50 flex" style={{ background: "rgba(0,0,0,0.3)" }} onClick={onClose}>
       <div
-        className="ml-auto w-[540px] h-full bg-white shadow-2xl overflow-y-auto"
+        className="ml-auto w-[540px] h-full bg-white shadow-2xl overflow-y-auto slide-in-right"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-4 border-b border-gray-200 sticky top-0 bg-white flex items-baseline justify-between">

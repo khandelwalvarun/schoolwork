@@ -15,6 +15,7 @@ import Summaries from "./pages/Summaries";
 import SettingsChannels from "./pages/SettingsChannels";
 import SettingsSyllabus from "./pages/SettingsSyllabus";
 import AttachmentsPage from "./pages/AttachmentsPage";
+import CommandPalette from "./components/CommandPalette";
 import { api } from "./api";
 
 function NavItem({ to, label, end = true }: { to: string; label: string; end?: boolean }) {
@@ -52,9 +53,23 @@ export default function App() {
     <div className="min-h-screen flex flex-col">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between flex-wrap gap-3">
-          <Link to="/" className="text-xl font-bold tracking-tight text-gray-900">
-            🏫 Parent Cockpit
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link to="/" className="text-xl font-bold tracking-tight text-gray-900">
+              🏫 Parent Cockpit
+            </Link>
+            <button
+              onClick={() => {
+                // Simulate ⌘K press
+                const ev = new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true });
+                document.dispatchEvent(ev);
+              }}
+              className="text-xs text-gray-500 hover:text-gray-800 inline-flex items-center gap-1 border border-[color:var(--line)] rounded px-2 py-0.5 bg-[color:var(--bg-muted)]"
+              title="Search assignments, kids, pages, actions"
+            >
+              <span>Search</span>
+              <span className="kbd">⌘K</span>
+            </button>
+          </div>
           <nav className="flex gap-5 text-sm items-center flex-wrap">
             <NavItem to="/" label="Today" />
             {(children || []).map((c) => (
@@ -70,6 +85,7 @@ export default function App() {
           </nav>
         </div>
       </header>
+      <CommandPalette />
       <main className="flex-1 max-w-6xl mx-auto w-full px-5 py-6">
         <Routes>
           <Route path="/" element={<Today />} />

@@ -2,10 +2,109 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens.
+ * Grayscale-first: neutrals carry hierarchy, color is semantic-only
+ * (red = overdue, green = done, amber = action-needed, blue = submitted,
+ *  purple = syllabus). Type scale and spacing follow a strict rhythm. */
+
+:root {
+  /* Surfaces */
+  --bg-app:    #f7f7f5;   /* page */
+  --bg-card:   #ffffff;
+  --bg-muted:  #f1f1ef;
+  --bg-sunken: #e9e9e6;
+
+  /* Ink */
+  --ink-primary:   #111113;
+  --ink-secondary: #55575b;
+  --ink-tertiary:  #8b8d92;
+  --ink-muted:     #b4b6bb;
+
+  /* Lines */
+  --line:       #e6e6e2;
+  --line-soft:  #efefea;
+
+  /* Accent (keyboard focus, primary action) */
+  --accent:       #1e40af;   /* blue-800 */
+  --accent-bg:    #dbe4ff;
+
+  /* Semantic */
+  --red:    #b42318;
+  --red-bg: #fef3f2;
+  --amber:  #b45309;
+  --amber-bg: #fff7ed;
+  --green:  #067647;
+  --green-bg: #ecfdf3;
+  --blue:   #175cd3;
+  --blue-bg: #eff8ff;
+  --purple: #5925dc;
+  --purple-bg: #f4f3ff;
+}
+
+@layer base {
+  body {
+    background: var(--bg-app);
+    color: var(--ink-primary);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Consistent keyboard focus treatment. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer utilities {
+  .fade-in   { animation: fadeIn 140ms ease-out; }
+  .slide-in-right { animation: slideInRight 160ms cubic-bezier(0.16,1,0.3,1); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
 @layer components {
-  .chip { @apply inline-block px-2 py-0.5 rounded text-xs font-medium; }
-  .chip-red { @apply chip bg-red-50 text-red-700; }
-  .chip-amber { @apply chip bg-amber-50 text-amber-800; }
-  .chip-blue { @apply chip bg-blue-50 text-blue-700; }
-  .chip-green { @apply chip bg-green-50 text-green-700; }
+  /* Status chips — semantic colors only. Muted enough not to compete. */
+  .chip        { @apply inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap; line-height: 1.2; }
+  .chip-red    { @apply chip; background: var(--red-bg);    color: var(--red);    }
+  .chip-amber  { @apply chip; background: var(--amber-bg);  color: var(--amber);  }
+  .chip-blue   { @apply chip; background: var(--blue-bg);   color: var(--blue);   }
+  .chip-green  { @apply chip; background: var(--green-bg);  color: var(--green);  }
+  .chip-purple { @apply chip; background: var(--purple-bg); color: var(--purple); }
+  .chip-gray   { @apply chip; background: var(--bg-muted);  color: var(--ink-secondary); }
+
+  /* Section heading — used above each bucket / block */
+  .h-section { @apply text-[11px] font-semibold uppercase tracking-wider text-gray-500; }
+
+  /* A single assignment row: compact, scannable, hover-reveal actions */
+  .row {
+    @apply grid items-center gap-3 px-3 py-2 border-t border-[color:var(--line-soft)] text-sm;
+    grid-template-columns: 20px 7rem 1fr 7rem 8rem;
+  }
+  .row:hover { background: var(--bg-muted); }
+  .row.selected { background: var(--accent-bg); }
+
+  /* Hover-reveal quick actions (Linear-style) */
+  .hover-reveal { @apply opacity-0 transition-opacity; }
+  .row:hover .hover-reveal,
+  .row:focus-within .hover-reveal { @apply opacity-100; }
+
+  /* Surfaces */
+  .surface      { @apply bg-white border border-[color:var(--line)] rounded-lg; }
+  .surface-flat { @apply bg-white border-t border-[color:var(--line)]; }
+
+  /* Keyboard-shortcut key */
+  .kbd {
+    @apply inline-flex items-center justify-center px-1.5 h-5 text-[10px] font-mono
+           border border-[color:var(--line)] rounded bg-white text-gray-600;
+  }
 }

@@ -1,32 +1,13 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { api, Assignment } from "../api";
-import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover";
+import StatusPopover from "../components/StatusPopover";
 import AuditDrawer from "../components/AuditDrawer";
 import ChildHeader from "../components/ChildHeader";
-import QuickActions from "../components/QuickActions";
-
-function PriorityStar({ n }: { n: number }) {
-  if (n <= 0) return null;
-  return <span className="ml-2 text-amber-500 text-xs">{"★".repeat(n)}</span>;
-}
-
-function StatusChipButton({ a, onClick }: { a: Assignment; onClick: (rect: DOMRect) => void }) {
-  const ref = useRef<HTMLButtonElement | null>(null);
-  return (
-    <button
-      ref={ref}
-      onClick={(e) => {
-        e.stopPropagation();
-        const rect = (ref.current as HTMLButtonElement).getBoundingClientRect();
-        onClick(rect);
-      }}
-    >
-      <EffectiveStatusChip a={a} />
-    </button>
-  );
-}
+import BulkActionBar from "../components/BulkActionBar";
+import { AssignmentList } from "../components/AssignmentList";
+import { useSelection } from "../components/useSelection";
 
 export default function ChildAssignments() {
   const { id } = useParams();
@@ -35,6 +16,7 @@ export default function ChildAssignments() {
   const [subject, setSubject] = useState<string>("");
   const [popover, setPopover] = useState<{ a: Assignment; rect: DOMRect } | null>(null);
   const [audit, setAudit] = useState<Assignment | null>(null);
+  const selection = useSelection();
 
   const { data } = useQuery({
     queryKey: ["assignments", childId, status, subject],
@@ -48,7 +30,7 @@ export default function ChildAssignments() {
   return (
     <div>
       <ChildHeader title="All assignments" />
-      <div className="flex gap-3 mb-4 text-sm">
+      <div className="flex items-center gap-3 mb-3 text-sm">
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
@@ -68,60 +50,26 @@ export default function ChildAssignments() {
           <option value="">All subjects</option>
           {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <div className="text-gray-500 self-center">{rows.length} rows</div>
+        <div className="text-gray-500">{rows.length} rows</div>
       </div>
-      <table className="w-full text-sm bg-white border border-gray-200 rounded shadow-sm">
-        <thead>
-          <tr className="text-left text-xs uppercase text-gray-500 border-b border-gray-100">
-            <th className="py-2 px-3">Subject</th>
-            <th className="py-2 px-3">Title</th>
-            <th className="py-2 px-3">Due</th>
-            <th className="py-2 px-3">Status</th>
-            <th className="py-2 px-3">Syllabus</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((a) => (
-            <tr key={a.id} className="border-t border-gray-100 hover:bg-gray-50 align-top cursor-pointer"
-                onClick={() => setAudit(a)}>
-              <td className="py-2 px-3 text-gray-600 whitespace-nowrap">
-                {a.subject}
-                <PriorityStar n={a.priority} />
-              </td>
-              <td className="py-2 px-3">
-                {a.title}
-                {a.title_en && a.title_en !== a.title && (
-                  <div className="text-xs text-gray-600 italic mt-0.5">→ {a.title_en}</div>
-                )}
-                {a.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {a.tags.map((t) => (
-                      <span key={t} className="px-1.5 py-0 rounded-full border border-gray-200 bg-gray-50 text-[10px] text-gray-700">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </td>
-              <td className="py-2 px-3 whitespace-nowrap">{a.due_or_date}</td>
-              <td className="py-2 px-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center gap-2">
-                  <StatusChipButton a={a} onClick={(rect) => setPopover({ a, rect })} />
-                  <QuickActions a={a} />
-                </div>
-              </td>
-              <td className="py-2 px-3 text-xs text-gray-500">{a.syllabus_context ?? "—"}</td>
-            </tr>
-          ))}
-          {rows.length === 0 && (
-            <tr><td colSpan={5} className="py-4 text-center text-gray-400">No assignments match.</td></tr>
-          )}
-        </tbody>
-      </table>
 
+      <section className="surface overflow-hidden">
+        <AssignmentList
+          rows={rows}
+          label="Results"
+          selection={selection}
+          onOpenAudit={setAudit}
+          onOpenPopover={(a, r) => setPopover({ a, rect: r })}
+        />
+      </section>
+
+      <BulkActionBar
+        selectedIds={selection.list}
+        onClear={selection.clear}
+        scope="All assignments"
+      />
       {popover && (
-        <StatusPopover a={popover.a} anchorRect={popover.rect}
-          onClose={() => setPopover(null)} />
+        <StatusPopover a={popover.a} anchorRect={popover.rect} onClose={() => setPopover(null)} />
       )}
       {audit && <AuditDrawer a={audit} onClose={() => setAudit(null)} />}
     </div>
