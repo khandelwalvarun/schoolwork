@@ -23,6 +23,8 @@ export type Assignment = {
   child_id: number;
   subject: string | null;
   title: string | null;
+  title_en: string | null;
+  notes_en: string | null;
   due_or_date: string | null;
   status: string | null;
   effective_status: string | null;

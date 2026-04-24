@@ -47,6 +47,9 @@ function AssignmentRow({ a, onChange }: { a: Assignment; onChange: () => void })
       <td className="py-2 px-3 whitespace-nowrap text-gray-600 text-sm align-top">{a.subject}</td>
       <td className="py-2 px-3 align-top">
         <div>{a.title}</div>
+        {a.title_en && a.title_en !== a.title && (
+          <div className="text-xs text-gray-600 italic mt-0.5">→ {a.title_en}</div>
+        )}
         {a.syllabus_context && (
           <div className="text-xs text-gray-500 mt-0.5">↳ {a.syllabus_context}</div>
         )}

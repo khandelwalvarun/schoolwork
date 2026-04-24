@@ -133,6 +133,8 @@ def _item_to_dict(
         "subject": subject_clean,          # prefer cleaned — strips "6B " prefix
         "subject_raw": item.subject,       # keep the raw label if the UI ever needs it
         "title": item.title,
+        "title_en": item.title_en,
+        "notes_en": item.notes_en,
         "due_or_date": item.due_or_date,
         "status": item.status,
         "effective_status": effective_status,

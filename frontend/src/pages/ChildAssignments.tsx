@@ -79,7 +79,12 @@ export default function ChildAssignments() {
           {rows.map((a) => (
             <tr key={a.id} className="border-t border-gray-100 align-top">
               <td className="py-2 px-3 text-gray-600 whitespace-nowrap">{a.subject}</td>
-              <td className="py-2 px-3">{a.title}</td>
+              <td className="py-2 px-3">
+                {a.title}
+                {a.title_en && a.title_en !== a.title && (
+                  <div className="text-xs text-gray-600 italic mt-0.5">→ {a.title_en}</div>
+                )}
+              </td>
               <td className="py-2 px-3 whitespace-nowrap">{a.due_or_date}</td>
               <td className="py-2 px-3"><StatusPill a={a} /></td>
               <td className="py-2 px-3 text-xs text-gray-500">{a.syllabus_context ?? "—"}</td>

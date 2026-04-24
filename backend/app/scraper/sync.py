@@ -368,6 +368,7 @@ async def _sync_one_child(
     ]
     combined = list(new_or_active_items) + backfill
     if extract_and_save is not None and combined:
+        from ..services.translate import needs_translation, translate_to_english
         for ext_id, item_id in combined[:80]:
             detail_url = client.main_portal_url(f"/detail/assignment/{ext_id}")
             try:
@@ -375,6 +376,57 @@ async def _sync_one_child(
             except Exception as e:
                 log.warning("attachment detail fetch failed for %s: %s", ext_id, e)
                 continue
+            # Refresh title / subject from the detail page — the main-portal
+            # detail HTML preserves Devanagari bytes, unlike the embed planner
+            # which serves them as '?'.
+            try:
+                d = parse_assignment_detail(detail_html)
+                detail_title = d.get("title")
+                detail_notes = d.get("notes")
+                item_row = (
+                    await session.execute(
+                        select(VeracrossItem).where(VeracrossItem.id == item_id)
+                    )
+                ).scalar_one_or_none()
+                if item_row is not None:
+                    changed_any = False
+                    # Prefer detail title if it has fewer placeholder '?'s
+                    if detail_title and (
+                        (item_row.title or "").count("?") > detail_title.count("?")
+                        or item_row.title != detail_title
+                    ):
+                        item_row.title = detail_title
+                        changed_any = True
+                    # Translate if non-Latin, only if title_en is empty or stale
+                    if (
+                        detail_title
+                        and needs_translation(detail_title)
+                        and (not item_row.title_en or item_row.title_en == "")
+                    ):
+                        try:
+                            t_en = await translate_to_english(detail_title)
+                            if t_en and t_en != detail_title:
+                                item_row.title_en = t_en
+                                changed_any = True
+                        except Exception as _e:
+                            log.warning("translate title failed %s: %s", ext_id, _e)
+                    if (
+                        detail_notes
+                        and needs_translation(detail_notes)
+                        and not item_row.notes_en
+                    ):
+                        try:
+                            n_en = await translate_to_english(detail_notes)
+                            if n_en and n_en != detail_notes:
+                                item_row.notes_en = n_en
+                                changed_any = True
+                        except Exception as _e:
+                            log.warning("translate notes failed %s: %s", ext_id, _e)
+                    if changed_any:
+                        counters["items_updated"] += 1
+                        await session.flush()
+            except Exception as e:
+                log.warning("detail refresh failed for %s: %s", ext_id, e)
             try:
                 n = await extract_and_save(
                     session, client, item_id=item_id, child_id=child.id,

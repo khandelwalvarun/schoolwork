@@ -42,5 +42,7 @@ class VeracrossItem(Base):
     parent_marked_submitted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    title_en: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes_en: Mapped[str | None] = mapped_column(String, nullable=True)
 
     child = relationship("Child", back_populates="items")
