@@ -18,6 +18,7 @@ import SettingsVeracross from "./pages/SettingsVeracross";
 import AttachmentsPage from "./pages/AttachmentsPage";
 import CommandPalette from "./components/CommandPalette";
 import HelpPanel from "./components/HelpPanel";
+import SyncStatusBar from "./components/SyncStatusBar";
 import { api } from "./api";
 
 function NavItem({ to, label, end = true }: { to: string; label: string; end?: boolean }) {
@@ -95,6 +96,7 @@ export default function App() {
           </nav>
         </div>
       </header>
+      <SyncStatusBar />
       <CommandPalette />
       <HelpPanel />
       <main className="flex-1 max-w-6xl mx-auto w-full px-5 py-6">

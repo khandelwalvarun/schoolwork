@@ -130,7 +130,6 @@ export default function SettingsVeracross() {
   const [portalUrl, setPortalUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -247,21 +246,13 @@ export default function SettingsVeracross() {
               {creds?.has_password && !password && (
                 <span className="ml-2 text-gray-400">· currently set ({creds.password_length} chars)</span>
               )}
-              <button
-                type="button"
-                onClick={() => setShowPw((v) => !v)}
-                className="ml-2 text-blue-700 hover:underline text-xs"
-              >
-                {showPw ? "hide" : "show"}
-              </button>
             </span>
             <input
               className="border border-gray-300 rounded px-2 py-1 font-mono"
-              type={showPw ? "text" : "password"}
+              type="text"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="(leave blank to keep current)"
-              autoComplete="new-password"
             />
           </label>
         </div>

@@ -18,6 +18,61 @@ from ..config import get_settings
 from ..models import SyncRun
 
 
+def classify_error(err: str | None) -> dict[str, str]:
+    """Map a raw sync-error string onto one of a fixed set of causes with a
+    human-friendly label and a suggested action. Adding new cases here is
+    how we wire new remediation flows.
+
+    Codes:
+      needs_reauth         — Veracross session expired; CAPTCHA blocks auto-relogin
+      auth_failure         — credentials wrong, or reCAPTCHA token rejected
+      network_timeout      — goto/navigation timed out (portal slow or offline)
+      playwright_missing   — scraper executable or browser not installed
+      scraper_drift        — selector mismatch / parser returned 0 rows
+      unknown              — everything else
+    """
+    e = (err or "").strip()
+    low = e.lower()
+    if not e:
+        return {"code": "unknown", "label": "Unknown error", "hint": "", "suggested_action": "view_logs"}
+    if "needs_reauth" in low:
+        return {
+            "code": "needs_reauth",
+            "label": "Veracross session expired",
+            "hint": "A human needs to solve the reCAPTCHA to sign in again.",
+            "suggested_action": "remote_login",
+        }
+    if "login failed" in low:
+        return {
+            "code": "auth_failure",
+            "label": "Login rejected",
+            "hint": "Username / password may be wrong, or reCAPTCHA didn't clear.",
+            "suggested_action": "remote_login",
+        }
+    if "timeout" in low and ("goto" in low or "navigation" in low or "page." in low):
+        return {
+            "code": "network_timeout",
+            "label": "Portal timed out",
+            "hint": "Veracross may be slow right now. Retry in a minute.",
+            "suggested_action": "retry",
+        }
+    if "executable doesn't exist" in low or "playwright install" in low or "browsertype.launch" in low:
+        return {
+            "code": "playwright_missing",
+            "label": "Browser not installed",
+            "hint": "Run `uv run playwright install chromium` on the server.",
+            "suggested_action": "install_browser",
+        }
+    if "no such element" in low or "selector" in low or "parser" in low:
+        return {
+            "code": "scraper_drift",
+            "label": "Page layout changed",
+            "hint": "Veracross updated the DOM; scraper selectors need a fix.",
+            "suggested_action": "view_logs",
+        }
+    return {"code": "unknown", "label": "Sync failed", "hint": e[:160], "suggested_action": "view_logs"}
+
+
 async def snapshot(session: AsyncSession, limit: int = 20) -> dict[str, Any]:
     runs = (
         await session.execute(
@@ -26,29 +81,43 @@ async def snapshot(session: AsyncSession, limit: int = 20) -> dict[str, Any]:
     ).scalars().all()
 
     last_success = next((r for r in runs if (r.status or "") == "ok"), None)
-    last_failure = next((r for r in runs if (r.status or "") != "ok"), None)
+    last_failure = next((r for r in runs if (r.status or "") not in ("ok", "running")), None)
+    latest = runs[0] if runs else None
 
     consecutive_failures = 0
     for r in runs:
-        if (r.status or "") != "ok":
+        st = r.status or ""
+        if st == "running":
+            continue
+        if st != "ok":
             consecutive_failures += 1
         else:
             break
 
-    needs_reauth = False
-    if last_failure and last_failure.error and "needs_reauth" in last_failure.error:
-        needs_reauth = True
+    cause = classify_error(last_failure.error if last_failure else None) if last_failure else {
+        "code": "ok", "label": "OK", "hint": "", "suggested_action": None,
+    }
 
     s = get_settings()
     storage_state_exists = Path(s.scraper_storage_state_path).exists()
 
+    latest_status = (latest.status if latest else None) or "never"
+    healthy = latest_status == "ok"
+    currently_running = latest_status == "running"
+
     return {
-        "healthy": bool(runs) and (runs[0].status or "") == "ok",
-        "needs_reauth": needs_reauth,
+        "healthy": healthy,
+        "currently_running": currently_running,
+        "latest_status": latest_status,
+        "needs_reauth": cause["code"] in ("needs_reauth", "auth_failure") and not healthy,
         "consecutive_failures": consecutive_failures,
         "last_success_at": last_success.ended_at.isoformat() if last_success and last_success.ended_at else None,
         "last_failure_at": last_failure.ended_at.isoformat() if last_failure and last_failure.ended_at else None,
         "last_error": (last_failure.error if last_failure else None),
+        "cause_code": cause["code"],
+        "cause_label": cause["label"],
+        "cause_hint": cause["hint"],
+        "suggested_action": cause["suggested_action"],
         "storage_state_exists": storage_state_exists,
         "recent_runs": [
             {

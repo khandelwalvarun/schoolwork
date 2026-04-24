@@ -36,7 +36,6 @@ export default function RemoteLoginModal({ onClose }: { onClose: () => void }) {
   const [imgSrc, setImgSrc] = useState<string>("");
   const [status, setStatus] = useState<LoginStatus>({ status: "starting" });
   const [banner, setBanner] = useState<string>("");
-  const [pwHidden, setPwHidden] = useState(true);
   const [saved, setSaved] = useState(false);
 
   // Start a session on mount, close on unmount
@@ -219,18 +218,9 @@ export default function RemoteLoginModal({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <div className="px-5 py-2 border-t border-[color:var(--line-soft)] text-xs text-gray-500 flex items-center justify-between">
-          <span>
-            Click the image to click the page · printable keys while hovering the image type into it ·
-            <span className="kbd ml-1">Esc</span> to close.
-          </span>
-          <button
-            onClick={() => setPwHidden((v) => !v)}
-            className="text-gray-500 hover:text-gray-800 text-xs"
-            title="Toggle auto-fill password visibility"
-          >
-            {pwHidden ? "Show" : "Hide"} password on fill
-          </button>
+        <div className="px-5 py-2 border-t border-[color:var(--line-soft)] text-xs text-gray-500">
+          Click the image to click the page · printable keys while hovering the image type into it ·
+          <span className="kbd ml-1">Esc</span> to close.
         </div>
       </div>
     </div>

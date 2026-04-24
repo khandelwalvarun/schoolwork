@@ -29,25 +29,43 @@ const DEFAULT_BUCKET_ORDER = ["overdue", "due_today", "upcoming"];
 
 function HeroBand({
   totals,
-  lastSyncLabel,
+  lastSync,
   onSync,
   onSendDigest,
 }: {
   totals: { overdue: number; due_today: number; upcoming: number };
-  lastSyncLabel: string;
+  lastSync: {
+    status: string | null;
+    ended_at: string | null;
+  } | null;
   onSync: () => void;
   onSendDigest: () => void;
 }) {
+  const ok = lastSync?.status === "ok";
+  const never = !lastSync?.ended_at;
+  const chipCls =
+    never ? "chip-gray"
+  : ok ? "chip-green"
+  : "chip-red";
   return (
     <section className="mb-6">
       <div className="flex items-end justify-between mb-3">
         <div>
           <h2 className="text-2xl font-bold">Today</h2>
-          <div className="text-xs text-gray-500 mt-0.5">Last sync: {lastSyncLabel}</div>
+          <div className="mt-1 flex items-center gap-2 text-xs">
+            <span className={chipCls}>
+              {never ? "Never synced" : ok ? "✓ Synced" : "✗ Sync failed"}
+            </span>
+            {lastSync?.ended_at && (
+              <span className="text-gray-500" title={lastSync.ended_at}>
+                {formatRelative(lastSync.ended_at)}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex gap-2">
           <button className="px-3 py-1.5 border border-gray-300 text-sm rounded hover:bg-gray-50" onClick={onSync}>
-            Sync
+            Sync now
           </button>
           <button className="px-3 py-1.5 border border-gray-300 text-sm rounded hover:bg-gray-50" onClick={onSendDigest}>
             Send digest
@@ -211,15 +229,11 @@ export default function Today() {
   const sync = async () => { await api.syncNow(); setTimeout(refresh, 500); };
   const sendDigest = async () => { await api.digestRun(); };
 
-  const lastSyncLabel = data.last_sync
-    ? `${data.last_sync.status} · ${formatRelative(data.last_sync.ended_at)}`
-    : "never";
-
   return (
     <div>
       <HeroBand
         totals={data.totals}
-        lastSyncLabel={lastSyncLabel}
+        lastSync={data.last_sync}
         onSync={sync}
         onSendDigest={sendDigest}
       />
