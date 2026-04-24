@@ -1079,6 +1079,278 @@ async def set_syllabus_topic_status(
         )
 
 
+@server.tool()
+async def get_child_detail(child_id: int, ctx: Context | None = None) -> dict[str, Any]:
+    """One-shot dashboard for a single child: overdue / due_today / upcoming
+    lists, grade_trends, overdue sparkline, current syllabus cycle, and
+    counts. Same payload the /child/:id web page hydrates from."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        async with get_async_session() as session:
+            r = await Q.get_child_detail(session, child_id)
+        if r is None:
+            raise ValueError(f"child {child_id} not found")
+        result = r
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_child_detail", {"child_id": child_id},
+            {"keys": sorted(result.keys())}, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def list_assignments(
+    child_id: int | None = None,
+    subject: str | None = None,
+    status: str | None = None,
+    limit: int = 200,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """All assignments (not just overdue/due-today/upcoming), with optional
+    filters. status matches the portal_status column (e.g. 'done', 'due',
+    'missing'). Use this when the caller needs the full history for a
+    subject or a free-form query across everything."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_all_assignments(
+                session, child_id=child_id, subject=subject, status=status, limit=limit,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "list_assignments",
+            {"child_id": child_id, "subject": subject, "status": status, "limit": limit},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_veracross_status(ctx: Context | None = None) -> dict[str, Any]:
+    """Snapshot of Veracross scraper health — last sync's outcome, age,
+    classified causality, and whether a re-auth is likely required.
+    Doesn't hit the portal; reads from sync_run rows."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.sync_health import snapshot
+        async with get_async_session() as session:
+            result = await snapshot(session)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("get_veracross_status", {}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def check_veracross_auth(ctx: Context | None = None) -> dict[str, Any]:
+    """Live probe — loads the persisted session cookie and does one HTTPX
+    GET to the Veracross portal to decide if the session is actually
+    valid. Cheap (~200ms); much faster than running a full sync. Use before
+    suggesting that the parent needs to re-login."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.auth_check import probe
+        result = await probe()
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("check_veracross_auth", {}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def trigger_syllabus_check(ctx: Context | None = None) -> dict[str, Any]:
+    """Kick off the weekly syllabus-vs-portal consistency job. Compares the
+    per-class syllabus topic list to what's been scraped and flags gaps."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..jobs.syllabus_job import check_syllabus_updates
+        r = await check_syllabus_updates()
+        result = {"status": "ok", **r}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("trigger_syllabus_check", {}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def get_concurrency_check(ctx: Context | None = None) -> dict[str, Any]:
+    """How many syncs are currently running. `multiple_running=True` means
+    the guard failed somewhere and two concurrent syncs are live — reason
+    to investigate."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select, desc
+        from ..models import SyncRun
+        from datetime import datetime, timezone
+        async with get_async_session() as session:
+            running = (
+                await session.execute(
+                    select(SyncRun).where(SyncRun.status == "running").order_by(desc(SyncRun.started_at))
+                )
+            ).scalars().all()
+        now = datetime.now(tz=timezone.utc)
+        result = {
+            "count": len(running),
+            "multiple_running": len(running) > 1,
+            "runs": [
+                {
+                    "id": r.id,
+                    "started_at": r.started_at.isoformat() if r.started_at else None,
+                    "age_sec": int((now - r.started_at).total_seconds()) if r.started_at else None,
+                    "trigger": r.trigger,
+                }
+                for r in running
+            ],
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("get_concurrency_check", {}, result, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def get_mcp_activity(
+    limit: int = 50, ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Recent MCP tool-call audit entries from the cockpit's own log. Useful
+    to see what Claude Desktop / OpenClaw / other clients have been doing."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from sqlalchemy import desc, select
+        from ..models import MCPToolCall
+        async with get_async_session() as session:
+            rows = (
+                await session.execute(
+                    select(MCPToolCall).order_by(desc(MCPToolCall.created_at)).limit(limit)
+                )
+            ).scalars().all()
+            result = [
+                {
+                    "id": r.id,
+                    "tool": r.tool,
+                    "client_id": r.client_id,
+                    "arguments": r.arguments_json,
+                    "result_preview": r.result_preview,
+                    "row_count": r.row_count,
+                    "error": r.error,
+                    "duration_ms": r.duration_ms,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in rows
+            ]
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit("get_mcp_activity", {"limit": limit}, {"rows": len(result)}, err, started, _client_id(ctx))
+
+
+@server.tool()
+async def resolve_attachment_path(
+    attachment_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """For LOCAL clients — returns the absolute filesystem path of a
+    downloaded attachment so Claude Desktop / OpenClaw can read the bytes
+    directly (Read tool on the path). Also includes mime_type + filename.
+    Guards against path traversal (file must be under data/attachments/)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from pathlib import Path
+        async with get_async_session() as session:
+            att = await Q.get_attachment_row(session, attachment_id)
+        if att is None:
+            raise ValueError(f"attachment {attachment_id} not found")
+        repo_root = Path(__file__).resolve().parent.parent.parent.parent
+        path = (repo_root / att.local_path).resolve()
+        attach_root = (repo_root / "data" / "attachments").resolve()
+        try:
+            path.relative_to(attach_root)
+        except ValueError:
+            raise ValueError(f"attachment path escapes storage root: {att.local_path}")
+        if not path.exists():
+            raise ValueError(f"file vanished on disk: {att.local_path}")
+        result = {
+            "id": att.id,
+            "absolute_path": str(path),
+            "filename": att.filename,
+            "mime_type": att.mime_type,
+            "size_bytes": att.size_bytes,
+            "sha256": att.sha256,
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "resolve_attachment_path", {"attachment_id": attachment_id},
+            {"path": result.get("absolute_path")}, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def resolve_spellbee_path(
+    filename: str, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """For LOCAL clients — absolute filesystem path of a Spelling Bee list
+    file so Claude Desktop / OpenClaw can read it directly."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services import spellbee as SB
+        path = SB.resolve_file(filename)
+        if path is None:
+            raise ValueError(f"spellbee list {filename!r} not found")
+        result = {
+            "filename": path.name,
+            "absolute_path": str(path),
+            "size_bytes": path.stat().st_size,
+            "mime_type": SB._MIME_BY_EXT.get(path.suffix.lower(), "application/octet-stream"),
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "resolve_spellbee_path", {"filename": filename},
+            {"path": result.get("absolute_path")}, err, started, _client_id(ctx),
+        )
+
+
 def run_stdio() -> None:
     """Entry point for `schoolwork-mcp` — stdio transport, for Claude Desktop/Code."""
     asyncio.run(server.run_stdio_async())
