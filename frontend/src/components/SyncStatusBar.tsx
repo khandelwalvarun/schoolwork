@@ -112,7 +112,9 @@ export default function SyncStatusBar() {
   const hideWhenHealthy = (() => {
     if (!health.healthy || !health.last_success_at) return false;
     try {
-      const last = new Date(health.last_success_at).getTime();
+      const iso = health.last_success_at;
+      const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(iso);
+      const last = new Date(hasTz ? iso : iso + "Z").getTime();
       return Date.now() - last < 4 * 60 * 60 * 1000;
     } catch {
       return false;

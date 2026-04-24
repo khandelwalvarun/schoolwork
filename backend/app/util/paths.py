@@ -98,6 +98,14 @@ def kid_root(child: _ChildLike) -> Path:
     return p
 
 
+def schoolwide_root() -> Path:
+    """Per-school (not per-kid) resources: newsletters, time tables,
+    handbook, exam schedules, etc."""
+    p = rawdata_root() / "schoolwide"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def kid_attachments_dir(child: _ChildLike) -> Path:
     p = kid_root(child) / "attachments"
     p.mkdir(parents=True, exist_ok=True)

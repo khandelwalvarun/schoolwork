@@ -66,11 +66,22 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`inline-block w-2 h-2 rounded-full ${cls}`} aria-label={status} />;
 }
 
+function parseIso(iso: string): number {
+  // Backend emits naive UTC timestamps (SQLite strips the tz-aware info on
+  // DateTime(timezone=True) columns). JS's Date constructor treats naive
+  // strings as LOCAL time, which was inflating elapsed-time by the IST
+  // offset (5.5h) when one side was naive and the other was Date.now().
+  // Mirror the fix in util/dates.ts::parseLocal here.
+  const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(iso);
+  return new Date(hasTz ? iso : iso + "Z").getTime();
+}
+
 function durationLabel(a: string | null, b: string | null): string {
   if (!a) return "—";
-  const start = new Date(a).getTime();
-  const end = b ? new Date(b).getTime() : Date.now();
+  const start = parseIso(a);
+  const end = b ? parseIso(b) : Date.now();
   const sec = Math.round((end - start) / 1000);
+  if (sec < 0) return "—";
   if (sec < 60) return `${sec}s`;
   return `${Math.floor(sec / 60)}m ${sec % 60}s`;
 }
