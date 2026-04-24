@@ -71,8 +71,17 @@ class ResourceTile:
     def drive_file_id(self) -> str | None:
         if self.kind != "drive":
             return None
-        m = re.search(r"/file/d/([^/]+)/", self.resolved_url) or re.search(r"[?&]id=([^&]+)", self.resolved_url)
-        return m.group(1) if m else None
+        # Any Google Docs / Sheets / Slides / Drive URL encodes the file-id
+        # as either `/file/d/<id>/`, `/spreadsheets/d/<id>/`,
+        # `/document/d/<id>/`, `/presentation/d/<id>/`, or `?id=<id>`.
+        for rx in (
+            r"/(?:file|spreadsheets|document|presentation|forms)/d/([^/?#]+)",
+            r"[?&]id=([^&]+)",
+        ):
+            m = re.search(rx, self.resolved_url)
+            if m:
+                return m.group(1)
+        return None
 
 
 def _classify(title: str) -> tuple[str, bool]:
@@ -84,7 +93,9 @@ def _classify(title: str) -> tuple[str, bool]:
 
 def _kind_of(url: str) -> str:
     host = urlparse(url).netloc.lower()
-    if "drive.google.com" in host or "docs.google.com" in host:
+    if "drive.google.com" in host:
+        return "drive"
+    if "docs.google.com" in host and any(p in url for p in ("/spreadsheets/", "/document/", "/presentation/")):
         return "drive"
     if host in PORTAL_HOSTS:
         if "/pages/" in url:
@@ -182,10 +193,32 @@ async def _download_direct(client, url: str) -> tuple[bytes, str | None, str]:
     return body, ctype, name
 
 
-async def _download_drive(client, file_id: str) -> tuple[bytes, str | None, str]:
+async def _download_drive(client, file_id: str, source_url: str = "") -> tuple[bytes, str | None, str]:
     """Download a public-link Google Drive file. Handles the virus-warning
-    interstitial that Drive shows for medium-large files."""
-    # First try the direct export URL.
+    interstitial that Drive shows for medium-large files. For native
+    Sheets/Docs/Slides URLs we can't go through /uc?export=download — those
+    require the per-format export endpoint on `docs.google.com`."""
+    # Native Google doc types → use their export endpoints (yield real bytes).
+    if source_url:
+        if "/spreadsheets/d/" in source_url:
+            url1 = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
+            body, ctype, name = await _download_direct(client, url1)
+            if not name or name.startswith("http"):
+                name = f"spreadsheet_{file_id}.xlsx"
+            return body, ctype, name
+        if "/document/d/" in source_url:
+            url1 = f"https://docs.google.com/document/d/{file_id}/export?format=pdf"
+            body, ctype, name = await _download_direct(client, url1)
+            if not name or name.startswith("http"):
+                name = f"document_{file_id}.pdf"
+            return body, ctype, name
+        if "/presentation/d/" in source_url:
+            url1 = f"https://docs.google.com/presentation/d/{file_id}/export/pdf"
+            body, ctype, name = await _download_direct(client, url1)
+            if not name or name.startswith("http"):
+                name = f"slides_{file_id}.pdf"
+            return body, ctype, name
+    # Generic Drive file — standard export=download with virus-warning shim.
     url1 = f"https://drive.google.com/uc?export=download&id={file_id}"
     ctx = client._ctx  # pylint: disable=protected-access
     resp = await ctx.request.get(url1, timeout=60_000, max_redirects=5)
@@ -247,7 +280,7 @@ async def fetch_tile(client, tile: ResourceTile) -> tuple[bytes, str | None, str
             log.warning("drive tile with no file_id: %s", tile.resolved_url)
             return None
         try:
-            return await _download_drive(client, fid)
+            return await _download_drive(client, fid, source_url=tile.resolved_url)
         except Exception as e:
             log.warning("drive fetch failed for %s (%s): %s", tile.title, fid, e)
             return None

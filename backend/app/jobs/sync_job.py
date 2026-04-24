@@ -59,6 +59,31 @@ async def run_heavy_sync() -> None:
         await run_weekly_syllabus_check()
     except Exception:
         log.exception("weekly syllabus check inside heavy sync failed")
+    try:
+        await _run_portal_resource_harvest()
+    except Exception:
+        log.exception("weekly resource harvest inside heavy sync failed")
+
+
+async def _run_portal_resource_harvest() -> None:
+    """Refresh every portal-landing resource (spelling list, book lists,
+    time tables, newsletters, syllabus PDFs, etc.) into data/rawdata/.
+    Runs at heavy-tier cadence (weekly) — these items change rarely."""
+    from sqlalchemy import select
+    from ..db import get_async_session
+    from ..models import Child
+    from ..scraper.client import scraper_session
+    from ..scraper import resources as R
+
+    log.info("portal resource harvest: starting")
+    async with get_async_session() as session:
+        children = (await session.execute(select(Child))).scalars().all()
+    async with scraper_session() as client:
+        summary = await R.harvest_all(client, list(children))
+    log.info(
+        "portal resource harvest: saved=%d skipped=%d tiles=%d",
+        len(summary["saved"]), len(summary["skipped"]), summary["tiles"],
+    )
 
 
 # Back-compat alias — keeps the old job id wiring if anything still refers
