@@ -750,6 +750,25 @@ async def api_digest_preview() -> dict[str, Any]:
     return render_for_digest(data)
 
 
+@app.get("/api/spellbee/lists")
+async def api_spellbee_lists() -> list[dict[str, Any]]:
+    """Directory listing of Spelling Bee word lists dropped into data/spellbee/."""
+    from .services import spellbee as SB
+    return [x.to_dict() for x in SB.list_lists()]
+
+
+@app.get("/api/spellbee/list/{filename}")
+async def api_spellbee_download(filename: str):
+    from fastapi.responses import FileResponse
+    from .services import spellbee as SB
+    path = SB.resolve_file(filename)
+    if path is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"spellbee list {filename!r} not found")
+    ext = path.suffix.lower()
+    mime = SB._MIME_BY_EXT.get(ext, "application/octet-stream")
+    return FileResponse(path=str(path), media_type=mime, filename=path.name)
+
+
 @app.get("/api/mcp-activity")
 async def api_mcp_activity(limit: int = 50) -> list[dict[str, Any]]:
     """Recent MCP tool-call audit entries (for the /notifications UI tab)."""

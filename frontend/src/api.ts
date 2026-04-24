@@ -234,6 +234,14 @@ export type ReplayEvent = {
   }>;
 };
 
+export type SpellBeeList = {
+  filename: string;
+  number: number | null;
+  size_bytes: number;
+  mime_type: string;
+  download_url: string;
+};
+
 export type ReplayResult = {
   events: ReplayEvent[];
   summary: { total?: number; would_send: number; would_suppress: number; changed: number; since_days?: number };
@@ -319,4 +327,5 @@ export const api = {
     fetchJson<StatusHistoryEntry[]>(`/api/assignments/${itemId}/history`),
   assignmentConstants: () =>
     fetchJson<AssignmentConstants>("/api/assignments/constants"),
+  spellbeeLists: () => fetchJson<SpellBeeList[]>("/api/spellbee/lists"),
 };

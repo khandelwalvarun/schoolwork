@@ -1,9 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { api, Assignment, StatusHistoryEntry } from "../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { api, Assignment, SpellBeeList, StatusHistoryEntry } from "../api";
 import Attachments from "./Attachments";
 import StatusPopover, { EffectiveStatusChip } from "./StatusPopover";
 import { formatDate, formatDateTime, formatDDMMMYYTime } from "../util/dates";
+
+const SPELLBEE_RE = /spell(?:ing)?\s*bee/i;
+const LIST_NUM_RE = /\blist\s*[-#]?\s*(\d{1,3})\b/i;
+
+function detectListNumber(...texts: (string | null | undefined)[]): number | null {
+  for (const t of texts) {
+    if (!t) continue;
+    const m = t.match(LIST_NUM_RE);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return null;
+}
 
 function formatValue(field: string, v: string | null): string {
   if (v === null || v === undefined || v === "") return "—";
@@ -41,6 +57,24 @@ export default function AuditDrawer({
   const editBtnRef = useRef<HTMLButtonElement | null>(null);
   const [popover, setPopover] = useState<DOMRect | null>(null);
 
+  const isSpellBee = useMemo(
+    () => SPELLBEE_RE.test(`${a.title ?? ""} ${a.title_en ?? ""} ${a.notes_en ?? ""} ${a.normalized?.body ?? ""}`),
+    [a.title, a.title_en, a.notes_en, a.normalized?.body],
+  );
+  const spellBeeListNum = useMemo(
+    () => (isSpellBee ? detectListNumber(a.title, a.title_en, a.notes_en, a.normalized?.body) : null),
+    [isSpellBee, a.title, a.title_en, a.notes_en, a.normalized?.body],
+  );
+  const { data: spellBeeLists } = useQuery<SpellBeeList[]>({
+    queryKey: ["spellbee-lists"],
+    queryFn: api.spellbeeLists,
+    enabled: isSpellBee,
+  });
+  const matchingList = useMemo(() => {
+    if (!spellBeeLists || spellBeeListNum == null) return null;
+    return spellBeeLists.find((l) => l.number === spellBeeListNum) ?? null;
+  }, [spellBeeLists, spellBeeListNum]);
+
   useEffect(() => {
     function onEsc(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -68,14 +102,18 @@ export default function AuditDrawer({
               {a.priority > 0 && <> · priority: {"★".repeat(a.priority)}</>}
               {a.snooze_until && <> · snoozed until {a.snooze_until}</>}
             </div>
-            {a.first_seen_at && (
-              <div className="text-xs text-gray-500 mt-1" title={a.first_seen_at}>
-                First detected by scraper: <b className="font-mono">{formatDDMMMYYTime(a.first_seen_at)}</b>
-                {a.last_seen_at && a.last_seen_at !== a.first_seen_at && (
-                  <> · last seen <span className="font-mono">{formatDDMMMYYTime(a.last_seen_at)}</span></>
-                )}
-              </div>
-            )}
+            {a.first_seen_at && (() => {
+              const isGrade = (a as unknown as { graded_date?: string | null }).graded_date != null;
+              const label = isGrade ? "First detected by scraper" : "Assigned";
+              return (
+                <div className="text-xs text-gray-500 mt-1" title={a.first_seen_at}>
+                  {label}: <b className="font-mono">{formatDDMMMYYTime(a.first_seen_at)}</b>
+                  {a.last_seen_at && a.last_seen_at !== a.first_seen_at && (
+                    <> · last seen <span className="font-mono">{formatDDMMMYYTime(a.last_seen_at)}</span></>
+                  )}
+                </div>
+              );
+            })()}
             <div className="flex items-center gap-2 mt-2">
               <EffectiveStatusChip a={a} />
               <button
@@ -95,6 +133,34 @@ export default function AuditDrawer({
         </div>
 
         <div className="px-5 py-4 space-y-5">
+          {isSpellBee && (
+            <section className="bg-amber-50 border border-amber-200 rounded p-3">
+              <div className="text-xs font-semibold text-amber-900 uppercase mb-1">🐝 Spelling Bee</div>
+              {spellBeeListNum != null && matchingList && (
+                <div className="text-sm text-amber-900">
+                  Referenced <b>List {spellBeeListNum}</b> — <a
+                    href={matchingList.download_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-700 hover:underline"
+                  >open {matchingList.filename}</a>
+                </div>
+              )}
+              {spellBeeListNum != null && !matchingList && spellBeeLists && (
+                <div className="text-sm text-amber-900">
+                  Referenced <b>List {spellBeeListNum}</b>, but no matching file in{" "}
+                  <code className="text-xs">data/spellbee/</code>.{" "}
+                  <Link to="/spellbee" className="text-blue-700 hover:underline">Browse lists →</Link>
+                </div>
+              )}
+              {spellBeeListNum == null && (
+                <div className="text-sm text-amber-900">
+                  No list number mentioned in the assignment text.{" "}
+                  <Link to="/spellbee" className="text-blue-700 hover:underline">Browse all lists →</Link>
+                </div>
+              )}
+            </section>
+          )}
           {a.syllabus_context && (
             <section>
               <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Syllabus</div>
