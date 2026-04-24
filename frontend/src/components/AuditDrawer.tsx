@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, Assignment, StatusHistoryEntry } from "../api";
 import Attachments from "./Attachments";
+import StatusPopover, { EffectiveStatusChip } from "./StatusPopover";
 
 function formatValue(field: string, v: string | null): string {
   if (v === null || v === undefined || v === "") return "—";
@@ -36,6 +37,8 @@ export default function AuditDrawer({
     queryKey: ["history", a.id],
     queryFn: () => api.assignmentHistory(a.id),
   });
+  const editBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [popover, setPopover] = useState<DOMRect | null>(null);
 
   useEffect(() => {
     function onEsc(e: KeyboardEvent) {
@@ -63,6 +66,20 @@ export default function AuditDrawer({
               {a.parent_status && <> · parent: <b>{a.parent_status}</b></>}
               {a.priority > 0 && <> · priority: {"★".repeat(a.priority)}</>}
               {a.snooze_until && <> · snoozed until {a.snooze_until}</>}
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <EffectiveStatusChip a={a} />
+              <button
+                ref={editBtnRef}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const r = (editBtnRef.current as HTMLButtonElement).getBoundingClientRect();
+                  setPopover(r);
+                }}
+                className="text-xs px-2 py-0.5 border border-blue-300 rounded text-blue-700 hover:bg-blue-50"
+              >
+                Edit status
+              </button>
             </div>
           </div>
           <button onClick={onClose} className="text-2xl text-gray-400 hover:text-gray-700 leading-none">×</button>
@@ -131,6 +148,13 @@ export default function AuditDrawer({
           </section>
         </div>
       </div>
+      {popover && (
+        <StatusPopover
+          a={a}
+          anchorRect={popover}
+          onClose={() => setPopover(null)}
+        />
+      )}
     </div>
   );
 }
