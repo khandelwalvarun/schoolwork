@@ -1,9 +1,10 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api, Assignment } from "../api";
 import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover";
 import AuditDrawer from "../components/AuditDrawer";
+import ChildHeader from "../components/ChildHeader";
 
 function PriorityStar({ n }: { n: number }) {
   if (n <= 0) return null;
@@ -45,11 +46,7 @@ export default function ChildAssignments() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4">
-        <Link to={`/child/${childId}`} className="text-gray-400 hover:text-gray-700">← </Link>
-        All assignments
-        <Link to={`/child/${childId}/board`} className="ml-4 text-sm text-blue-700 hover:underline font-normal">Open kanban →</Link>
-      </h2>
+      <ChildHeader title="All assignments" />
       <div className="flex gap-3 mb-4 text-sm">
         <select
           value={status}

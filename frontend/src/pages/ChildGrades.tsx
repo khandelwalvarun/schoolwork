@@ -1,10 +1,11 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, Assignment, AttachmentLink, GradeTrend } from "../api";
 import { useState } from "react";
 import Attachments from "../components/Attachments";
 import TitleBlock from "../components/TitleBlock";
 import AuditDrawer from "../components/AuditDrawer";
+import ChildHeader from "../components/ChildHeader";
 
 type GradeRow = {
   id: number;
@@ -41,11 +42,8 @@ export default function ChildGrades() {
 
   return (
     <div>
-      <div className="mb-5 flex items-center justify-between">
-        <h2 className="text-2xl font-bold">
-          <Link to={`/child/${childId}`} className="text-gray-400 hover:text-gray-700">← </Link>
-          Grades
-        </h2>
+      <ChildHeader title="Grades" />
+      <div className="flex justify-end mb-4">
         <label className="text-sm flex items-center gap-2">
           <input
             type="checkbox"

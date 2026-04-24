@@ -1,10 +1,11 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, Assignment, Comment } from "../api";
 import Attachments from "../components/Attachments";
 import TitleBlock from "../components/TitleBlock";
 import AuditDrawer from "../components/AuditDrawer";
+import ChildHeader from "../components/ChildHeader";
 
 export default function ChildComments() {
   const { id } = useParams();
@@ -18,10 +19,7 @@ export default function ChildComments() {
   const rows = data || [];
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4">
-        <Link to={`/child/${childId}`} className="text-gray-400 hover:text-gray-700">← </Link>
-        Teacher comments
-      </h2>
+      <ChildHeader title="Teacher comments" />
       {rows.length === 0 && (
         <div className="text-gray-500">No comments yet.</div>
       )}

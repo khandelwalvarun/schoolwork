@@ -1,6 +1,7 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import ChildHeader from "../components/ChildHeader";
 import {
   DndContext,
   DragEndEvent,
@@ -196,14 +197,9 @@ export default function ChildBoard() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="text-2xl font-bold">
-          <Link to={`/child/${childId}`} className="text-gray-400 hover:text-gray-700">← </Link>
-          Board
-        </h2>
-        <div className="text-xs text-gray-500">
-          Drag cards between columns · click status chip to edit priority/snooze/tags · click card for timeline
-        </div>
+      <ChildHeader title="Board" />
+      <div className="text-xs text-gray-500 mb-3">
+        Drag cards between columns · click status chip to edit priority/snooze/tags · click card for timeline
       </div>
 
       <DndContext sensors={sensors} onDragStart={onStart} onDragEnd={onEnd}>

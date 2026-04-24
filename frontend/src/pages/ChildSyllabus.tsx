@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api } from "../api";
+import ChildHeader from "../components/ChildHeader";
 
 export default function ChildSyllabus() {
   const { id } = useParams();
@@ -25,10 +26,7 @@ export default function ChildSyllabus() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4">
-        <Link to={`/child/${childId}`} className="text-gray-400 hover:text-gray-700">← </Link>
-        Syllabus — {child.child.display_name}
-      </h2>
+      <ChildHeader title="Syllabus" />
       <div className="text-sm text-gray-500 mb-3">
         Class {classLevel}, school year {syl.school_year || "?"} ·
         <Link to="/settings/syllabus" className="ml-2 text-blue-700 hover:underline">Calibrate cycles →</Link>

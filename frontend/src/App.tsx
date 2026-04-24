@@ -1,4 +1,5 @@
 import { Link, NavLink, Route, Routes } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import Today from "./pages/Today";
 import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
@@ -14,12 +15,13 @@ import Summaries from "./pages/Summaries";
 import SettingsChannels from "./pages/SettingsChannels";
 import SettingsSyllabus from "./pages/SettingsSyllabus";
 import AttachmentsPage from "./pages/AttachmentsPage";
+import { api } from "./api";
 
-function NavItem({ to, label }: { to: string; label: string }) {
+function NavItem({ to, label, end = true }: { to: string; label: string; end?: boolean }) {
   return (
     <NavLink
       to={to}
-      end
+      end={end}
       className={({ isActive }) =>
         "hover:text-blue-700 " + (isActive ? "text-blue-700 font-semibold" : "text-gray-700")
       }
@@ -29,16 +31,36 @@ function NavItem({ to, label }: { to: string; label: string }) {
   );
 }
 
+function ChildNavLink({ id, name }: { id: number; name: string }) {
+  // Active on any /child/:id* page, not just /child/:id.
+  return (
+    <NavLink
+      to={`/child/${id}`}
+      className={({ isActive }) =>
+        "hover:text-blue-700 " + (isActive ? "text-blue-700 font-semibold" : "text-gray-700")
+      }
+    >
+      {name}
+    </NavLink>
+  );
+}
+
 export default function App() {
+  const { data: children } = useQuery({ queryKey: ["children"], queryFn: api.children });
+
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between flex-wrap gap-3">
           <Link to="/" className="text-xl font-bold tracking-tight text-gray-900">
             🏫 Parent Cockpit
           </Link>
-          <nav className="flex gap-5 text-sm">
+          <nav className="flex gap-5 text-sm items-center flex-wrap">
             <NavItem to="/" label="Today" />
+            {(children || []).map((c) => (
+              <ChildNavLink key={c.id} id={c.id} name={c.display_name} />
+            ))}
+            <span className="text-gray-300">|</span>
             <NavItem to="/messages" label="Messages" />
             <NavItem to="/attachments" label="Files" />
             <NavItem to="/notes" label="Notes" />

@@ -6,6 +6,7 @@ import Attachments from "../components/Attachments";
 import TitleBlock from "../components/TitleBlock";
 import AuditDrawer from "../components/AuditDrawer";
 import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover";
+import ChildHeader from "../components/ChildHeader";
 
 function StatusChipButton({ a, onClick }: { a: Assignment; onClick: (rect: DOMRect) => void }) {
   const ref = useRef<HTMLButtonElement | null>(null);
@@ -71,25 +72,14 @@ export default function ChildDetail() {
   const c = data.child;
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h2 className="text-2xl font-bold">{c.display_name}</h2>
-          <div className="text-gray-500 text-sm">
-            Class {c.class_level}{c.class_section ? ` · ${c.class_section}` : ""}
-            {data.syllabus_cycle && (
-              <span className="ml-3 text-purple-700 bg-purple-50 border border-purple-200 rounded px-2 py-0.5 text-xs">
-                📚 {data.syllabus_cycle.name} · {data.syllabus_cycle.start} → {data.syllabus_cycle.end}
-              </span>
-            )}
-          </div>
-        </div>
-        <nav className="flex gap-3 text-sm">
-          <Link className="text-blue-700 hover:underline" to={`/child/${childId}/board`}>Board</Link>
-          <Link className="text-blue-700 hover:underline" to={`/child/${childId}/grades`}>Grades</Link>
-          <Link className="text-blue-700 hover:underline" to={`/child/${childId}/assignments`}>All assignments</Link>
-          <Link className="text-blue-700 hover:underline" to={`/child/${childId}/comments`}>Comments</Link>
-          <Link className="text-blue-700 hover:underline" to={`/child/${childId}/syllabus`}>Syllabus</Link>
-        </nav>
+      <ChildHeader title={c.display_name} />
+      <div className="text-gray-500 text-sm mb-4 -mt-2">
+        Class {c.class_level}{c.class_section ? ` · ${c.class_section}` : ""}
+        {data.syllabus_cycle && (
+          <span className="ml-3 text-purple-700 bg-purple-50 border border-purple-200 rounded px-2 py-0.5 text-xs">
+            📚 {data.syllabus_cycle.name} · {data.syllabus_cycle.start} → {data.syllabus_cycle.end}
+          </span>
+        )}
       </div>
 
       <div className="flex gap-3 mb-6">
