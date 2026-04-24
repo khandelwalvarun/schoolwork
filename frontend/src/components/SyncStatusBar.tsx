@@ -31,6 +31,12 @@ type Health = {
   storage_state_exists: boolean;
 };
 
+type AuthProbe = {
+  state: "valid" | "expired" | "never" | "unknown";
+  checked_at: string;
+  detail: string;
+};
+
 const AUTO_PROMPT_KEY = "pc:reauth-prompted";
 
 async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
@@ -48,19 +54,38 @@ export default function SyncStatusBar() {
     queryFn: () => fetchJson<Health>("/api/veracross/status"),
     refetchInterval: 30_000,
   });
+  // Live session probe — the source of truth for "do we actually need to
+  // re-login?" (the health flag is derived from the most recent sync error,
+  // which can be stale after a successful re-auth).
+  const { data: probe, refetch: refetchProbe } = useQuery({
+    queryKey: ["auth-probe-bar"],
+    queryFn: () => fetchJson<AuthProbe>("/api/veracross/auth-check", { method: "POST" }),
+    // Only probe when the health snapshot claims a reauth is needed — keeps
+    // this cheap on the happy path.
+    enabled: !!health?.needs_reauth,
+    staleTime: 30_000,
+  });
+
   const [dismissed, setDismissed] = useState(false);
   const [showReauth, setShowReauth] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
-  // Auto-prompt once per browser session when reauth is needed
+  // Live-gated needs_reauth: even if the last sync said "needs_reauth",
+  // don't nag the user if the portal is actually serving us an authed page.
+  const liveNeedsReauth =
+    !!health?.needs_reauth
+    && (probe?.state === "expired" || probe?.state === "never");
+
+  // Auto-prompt once per browser session when we've CONFIRMED (not just
+  // suspected) that the session is dead.
   useEffect(() => {
-    if (!health?.needs_reauth) return;
+    if (!liveNeedsReauth) return;
     try {
       if (sessionStorage.getItem(AUTO_PROMPT_KEY) === "1") return;
       sessionStorage.setItem(AUTO_PROMPT_KEY, "1");
       setShowReauth(true);
     } catch { /* private mode */ }
-  }, [health?.needs_reauth]);
+  }, [liveNeedsReauth]);
 
   if (!health) return null;
 
@@ -93,12 +118,17 @@ export default function SyncStatusBar() {
   if (health.currently_running) {
     cls = "bg-blue-50 border-blue-200 text-blue-800";
     label = <span><span className="animate-pulse">●</span> Syncing with Veracross…</span>;
-  } else if (health.needs_reauth) {
+  } else if (health.needs_reauth && !probe) {
+    // Reauth suspected by sync history; probing to confirm before we yell.
+    cls = "bg-gray-50 border-gray-200 text-gray-700";
+    label = <span><span className="animate-pulse">●</span> Verifying Veracross session…</span>;
+  } else if (liveNeedsReauth) {
     cls = "bg-amber-50 border-amber-300 text-amber-900";
     label = (
       <span>
         <b>{health.cause_label}</b>
         {health.cause_hint && <span className="text-amber-800 font-normal ml-2">{health.cause_hint}</span>}
+        {probe && <span className="text-amber-700 font-normal ml-2">· probe: {probe.state}</span>}
       </span>
     );
     cta = (
@@ -107,6 +137,25 @@ export default function SyncStatusBar() {
         className="px-3 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 font-medium"
       >
         Re-authenticate
+      </button>
+    );
+  } else if (health.needs_reauth && probe?.state === "valid") {
+    // Sync error said reauth, but the probe says the session is fine.
+    // Usually a transient portal hiccup. Show a neutral retry nudge
+    // instead of the full amber banner.
+    cls = "bg-gray-50 border-gray-200 text-gray-700";
+    label = (
+      <span>
+        <b>Session is valid</b>
+        <span className="ml-2 font-normal">
+          — the last sync reported an auth error but the portal accepts our cookies.
+        </span>
+      </span>
+    );
+    cta = (
+      <button onClick={tryNow} disabled={syncing}
+              className="px-3 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-800 font-medium disabled:opacity-50">
+        {syncing ? "…" : "Retry sync"}
       </button>
     );
   } else if (!health.healthy) {
@@ -160,7 +209,11 @@ export default function SyncStatusBar() {
         </div>
       </div>
       {showReauth && (
-        <RemoteLoginModal onClose={() => { setShowReauth(false); refetch(); }} />
+        <RemoteLoginModal onClose={() => {
+          setShowReauth(false);
+          refetch();
+          refetchProbe();
+        }} />
       )}
     </>
   );
