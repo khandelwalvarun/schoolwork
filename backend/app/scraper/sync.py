@@ -362,11 +362,29 @@ async def _sync_one_child(
         ).all()
     )
     in_scope_ids = {iid for ext, iid in new_or_active_items}
+    # Priority: any row whose title still has '?' placeholders (Devanagari
+    # mojibake) OR has no attachment yet.
+    mojibake_ids: set[int] = set()
+    mojibake_rows = (
+        await session.execute(
+            select(VeracrossItem.id, VeracrossItem.external_id)
+            .where(VeracrossItem.kind == "assignment")
+            .where(VeracrossItem.child_id == child.id)
+            .where(VeracrossItem.title.like("%?%"))
+        )
+    ).all()
+    priority: list[tuple[str, int]] = []
+    for iid, ext_id in mojibake_rows:
+        if iid not in in_scope_ids:
+            priority.append((ext_id, iid))
+            mojibake_ids.add(iid)
     backfill: list[tuple[str, int]] = [
         (ext_id, iid) for (iid, ext_id) in all_items
-        if iid not in items_with_att and iid not in in_scope_ids
+        if iid not in items_with_att
+        and iid not in in_scope_ids
+        and iid not in mojibake_ids
     ]
-    combined = list(new_or_active_items) + backfill
+    combined = list(new_or_active_items) + priority + backfill
     if extract_and_save is not None and combined:
         from ..services.translate import needs_translation, translate_to_english
         for ext_id, item_id in combined[:80]:
