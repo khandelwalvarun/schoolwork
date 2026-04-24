@@ -889,6 +889,50 @@ async def api_spellbee_linked_assignments(child_id: int | None = None) -> list[d
     return out
 
 
+@app.get("/api/resources")
+async def api_resources(child_id: int | None = None) -> dict[str, Any]:
+    """List every file under data/rawdata/, grouped by scope + category.
+    If child_id is set, only that kid's per-kid resources are returned
+    (schoolwide is always included). Used by the /resources UI page."""
+    from sqlalchemy import select
+    from .models import Child
+    from .services import resources_index as RI
+    async with get_async_session() as session:
+        q = select(Child).order_by(Child.id)
+        if child_id is not None:
+            q = q.where(Child.id == child_id)
+        children = list((await session.execute(q)).scalars().all())
+    return RI.list_everything(children)
+
+
+@app.get("/api/resources/file/schoolwide/{category}/{filename}")
+async def api_resources_file_schoolwide(category: str, filename: str):
+    from fastapi.responses import FileResponse
+    from .services import resources_index as RI
+    path = RI.resolve_schoolwide(category, filename)
+    if path is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"resource not found")
+    return FileResponse(path=str(path), media_type=RI._mime(path), filename=path.name)
+
+
+@app.get("/api/resources/file/kid/{child_id}/{category}/{filename}")
+async def api_resources_file_kid(child_id: int, category: str, filename: str):
+    from fastapi.responses import FileResponse
+    from sqlalchemy import select
+    from .models import Child
+    from .services import resources_index as RI
+    async with get_async_session() as session:
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+    if child is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+    path = RI.resolve_kid(child, category, filename)
+    if path is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"resource not found")
+    return FileResponse(path=str(path), media_type=RI._mime(path), filename=path.name)
+
+
 @app.get("/api/mcp-activity")
 async def api_mcp_activity(limit: int = 50) -> list[dict[str, Any]]:
     """Recent MCP tool-call audit entries (for the /notifications UI tab)."""

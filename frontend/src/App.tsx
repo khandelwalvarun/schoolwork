@@ -17,6 +17,7 @@ import SettingsSyllabus from "./pages/SettingsSyllabus";
 import SettingsVeracross from "./pages/SettingsVeracross";
 import AttachmentsPage from "./pages/AttachmentsPage";
 import SpellBee from "./pages/SpellBee";
+import Resources from "./pages/Resources";
 import CommandPalette from "./components/CommandPalette";
 import HelpPanel from "./components/HelpPanel";
 import SyncStatusBar from "./components/SyncStatusBar";
@@ -82,6 +83,7 @@ export default function App() {
             <span className="text-gray-300">|</span>
             <NavItem to="/messages" label="Messages" />
             <NavItem to="/attachments" label="Files" />
+            <NavItem to="/resources" label="📚 Resources" />
             <NavItem to="/spellbee" label="🐝 Spell Bee" />
             <NavItem to="/notes" label="Notes" />
             <NavItem to="/summaries" label="Summaries" />
@@ -113,6 +115,7 @@ export default function App() {
           <Route path="/messages" element={<Messages />} />
           <Route path="/attachments" element={<AttachmentsPage />} />
           <Route path="/spellbee" element={<SpellBee />} />
+          <Route path="/resources" element={<Resources />} />
           <Route path="/notes" element={<Notes />} />
           <Route path="/summaries" element={<Summaries />} />
           <Route path="/notifications" element={<Notifications />} />

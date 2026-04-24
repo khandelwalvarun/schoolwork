@@ -1369,6 +1369,123 @@ async def resolve_spellbee_path(
         )
 
 
+@server.tool()
+async def list_resources(
+    child_id: int | None = None,
+    category: str | None = None,
+    scope: str | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Directory listing of portal-harvested resources under data/rawdata/.
+
+    Returns {schoolwide: {category: [files]}, kids: [{child_id, by_category}]}
+    — same shape as the /resources UI page.
+
+    Filters (all optional):
+      - child_id : only this kid's per-kid bucket (schoolwide still included)
+      - category : only this category (e.g. 'spellbee', 'reading', 'news')
+      - scope    : 'schoolwide' or 'kid' — drops the other from the output
+
+    Each file entry carries download_url (serve via /api/resources/file/...)
+    plus modified_at + size_bytes so the caller can tell what's recent."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services import resources_index as RI
+        async with get_async_session() as session:
+            q = select(Child).order_by(Child.id)
+            if child_id is not None:
+                q = q.where(Child.id == child_id)
+            children = list((await session.execute(q)).scalars().all())
+        full = RI.list_everything(children)
+        if scope == "kid":
+            full["schoolwide"] = {}
+        elif scope == "schoolwide":
+            full["kids"] = []
+        if category:
+            full["schoolwide"] = {
+                k: v for k, v in full["schoolwide"].items() if k == category
+            }
+            for k in full["kids"]:
+                k["by_category"] = {
+                    kk: vv for kk, vv in k["by_category"].items() if kk == category
+                }
+        result = full
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "list_resources",
+            {"child_id": child_id, "category": category, "scope": scope},
+            {"schoolwide_cats": list(result.get("schoolwide", {}).keys()),
+             "kid_count": len(result.get("kids", []))},
+            err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def resolve_resource_path(
+    scope: str,
+    category: str,
+    filename: str,
+    child_id: int | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """For LOCAL clients — absolute filesystem path of a resource file so
+    Claude Desktop / OpenClaw can read the bytes directly.
+
+    scope must be 'schoolwide' or 'kid'. 'kid' requires child_id.
+    Path-traversal guarded: file must resolve under data/rawdata/."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services import resources_index as RI
+        if scope == "schoolwide":
+            path = RI.resolve_schoolwide(category, filename)
+        elif scope == "kid":
+            if child_id is None:
+                raise ValueError("child_id required for scope='kid'")
+            async with get_async_session() as session:
+                child = (
+                    await session.execute(select(Child).where(Child.id == child_id))
+                ).scalar_one_or_none()
+            if child is None:
+                raise ValueError(f"child {child_id} not found")
+            path = RI.resolve_kid(child, category, filename)
+        else:
+            raise ValueError(f"scope must be 'schoolwide' or 'kid', got {scope!r}")
+        if path is None:
+            raise ValueError(f"resource not found: {scope}/{category}/{filename}")
+        st = path.stat()
+        result = {
+            "absolute_path": str(path),
+            "filename": path.name,
+            "size_bytes": st.st_size,
+            "mime_type": RI._mime(path),
+            "scope": scope,
+            "category": category,
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "resolve_resource_path",
+            {"scope": scope, "category": category, "filename": filename, "child_id": child_id},
+            {"path": result.get("absolute_path")},
+            err, started, _client_id(ctx),
+        )
+
+
 def run_stdio() -> None:
     """Entry point for `schoolwork-mcp` — stdio transport, for Claude Desktop/Code."""
     asyncio.run(server.run_stdio_async())

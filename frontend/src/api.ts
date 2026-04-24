@@ -234,6 +234,28 @@ export type ReplayEvent = {
   }>;
 };
 
+export type ResourceFile = {
+  scope: "schoolwide" | "kid";
+  kid_slug: string | null;
+  child_id: number | null;
+  category: string;
+  filename: string;
+  size_bytes: number;
+  mime_type: string;
+  modified_at: number;
+  download_url: string;
+};
+
+export type ResourcesResponse = {
+  schoolwide: Record<string, ResourceFile[]>;
+  kids: Array<{
+    child_id: number;
+    display_name: string;
+    kid_slug: string;
+    by_category: Record<string, ResourceFile[]>;
+  }>;
+};
+
 export type SpellBeeList = {
   filename: string;
   number: number | null;
@@ -329,6 +351,8 @@ export const api = {
     fetchJson<StatusHistoryEntry[]>(`/api/assignments/${itemId}/history`),
   assignmentConstants: () =>
     fetchJson<AssignmentConstants>("/api/assignments/constants"),
+  resources: (childId?: number) =>
+    fetchJson<ResourcesResponse>(`/api/resources${childId ? `?child_id=${childId}` : ""}`),
   spellbeeLists: (childId: number) =>
     fetchJson<SpellBeeList[]>(`/api/spellbee/lists?child_id=${childId}`),
   spellbeeLinkedAssignments: (childId?: number) =>
