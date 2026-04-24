@@ -328,4 +328,32 @@ export const api = {
   assignmentConstants: () =>
     fetchJson<AssignmentConstants>("/api/assignments/constants"),
   spellbeeLists: () => fetchJson<SpellBeeList[]>("/api/spellbee/lists"),
+  spellbeeLinkedAssignments: () =>
+    fetchJson<SpellBeeLinkedAssignment[]>("/api/spellbee/linked-assignments"),
+  spellbeeUpload: async (files: File[]) => {
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f, f.name);
+    const r = await fetch("/api/spellbee/upload", { method: "POST", body: fd, credentials: "same-origin" });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return (await r.json()) as { saved: SpellBeeList[]; errors: Array<{ filename: string; error: string }> };
+  },
+  spellbeeDelete: (filename: string) =>
+    fetchJson<unknown>(`/api/spellbee/list/${encodeURIComponent(filename)}`, { method: "DELETE" }),
+  spellbeeRename: (filename: string, newName: string) =>
+    fetchJson<SpellBeeList>(`/api/spellbee/list/${encodeURIComponent(filename)}/rename`, {
+      method: "POST",
+      body: JSON.stringify({ new_name: newName }),
+    }),
+};
+
+export type SpellBeeLinkedAssignment = {
+  id: number;
+  child_id: number;
+  child_name: string;
+  subject: string | null;
+  title: string | null;
+  title_en: string | null;
+  due_or_date: string | null;
+  status: string | null;
+  detected_list_number: number | null;
 };

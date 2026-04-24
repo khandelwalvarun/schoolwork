@@ -13,7 +13,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Header, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Header, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -767,6 +767,92 @@ async def api_spellbee_download(filename: str):
     ext = path.suffix.lower()
     mime = SB._MIME_BY_EXT.get(ext, "application/octet-stream")
     return FileResponse(path=str(path), media_type=mime, filename=path.name)
+
+
+@app.post("/api/spellbee/upload")
+async def api_spellbee_upload(
+    files: list[UploadFile] = File(...),  # noqa: B008
+) -> dict[str, Any]:
+    """Upload one or more Spelling Bee list files into data/spellbee/.
+    Accepts multipart/form-data with field name `files`. Overwrites any
+    existing file with the same (sanitized) name."""
+    from .services import spellbee as SB
+    saved: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for f in files:
+        try:
+            data = await f.read()
+            row = SB.save_upload(f.filename or "unnamed", data)
+            saved.append(row.to_dict())
+        except ValueError as e:
+            errors.append({"filename": f.filename or "", "error": str(e)})
+    return {"saved": saved, "errors": errors}
+
+
+@app.delete("/api/spellbee/list/{filename}")
+async def api_spellbee_delete(filename: str) -> dict[str, Any]:
+    from .services import spellbee as SB
+    if not SB.delete_file(filename):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"spellbee list {filename!r} not found")
+    return {"status": "deleted", "filename": filename}
+
+
+@app.post("/api/spellbee/list/{filename}/rename")
+async def api_spellbee_rename(filename: str, payload: dict[str, Any]) -> dict[str, Any]:
+    from .services import spellbee as SB
+    new_name = (payload or {}).get("new_name") or ""
+    if not new_name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "new_name required")
+    try:
+        row = SB.rename_file(filename, new_name)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    return row.to_dict()
+
+
+@app.get("/api/spellbee/linked-assignments")
+async def api_spellbee_linked_assignments() -> list[dict[str, Any]]:
+    """Assignments whose title/body/notes reference the Spelling Bee, with
+    the detected list number (if any). Used by the /spellbee page to show
+    which current assignments map to which lists."""
+    from sqlalchemy import select, desc
+    from .models import VeracrossItem, Child
+    from .services import spellbee as SB
+    import json as _json
+    out: list[dict[str, Any]] = []
+    async with get_async_session() as session:
+        rows = (
+            await session.execute(
+                select(VeracrossItem, Child)
+                .join(Child, Child.id == VeracrossItem.child_id)
+                .where(VeracrossItem.kind == "assignment")
+                .order_by(desc(VeracrossItem.first_seen_at))
+                .limit(500)
+            )
+        ).all()
+        for item, child in rows:
+            body = ""
+            if item.normalized_json:
+                try:
+                    body = _json.loads(item.normalized_json).get("body") or ""
+                except Exception:
+                    body = ""
+            texts = (item.title, item.title_en, item.notes_en, body)
+            if not SB.is_spellbee_text(*texts):
+                continue
+            num = SB.detect_list_reference(*texts)
+            out.append({
+                "id": item.id,
+                "child_id": child.id,
+                "child_name": child.display_name,
+                "subject": item.subject,
+                "title": item.title,
+                "title_en": item.title_en,
+                "due_or_date": item.due_or_date,
+                "status": item.status,
+                "detected_list_number": num,
+            })
+    return out
 
 
 @app.get("/api/mcp-activity")
