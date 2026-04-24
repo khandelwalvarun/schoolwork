@@ -68,19 +68,36 @@ def cycle_for_date(class_level: int, d: date) -> LearningCycle | None:
     return None
 
 
+def normalize_subject(subject: str | None) -> str | None:
+    """Veracross often prefixes the subject with the class section,
+    e.g. "6B Mathematics" or "4C English". Strip that prefix so it matches
+    the keys in the syllabus JSON (which are just "Mathematics", "English", …).
+    """
+    if not subject:
+        return subject
+    import re
+    m = re.match(r"^\s*\d+[A-Z]\s+(.*)$", subject.strip())
+    if m:
+        return m.group(1).strip()
+    return subject.strip()
+
+
 def fuzzy_topic_for(class_level: int, subject: str | None, title: str | None) -> str | None:
     """Best-effort match of an assignment title to a syllabus topic in the same subject.
     Returns the first topic that shares ≥1 keyword (word ≥4 chars, case-insensitive).
     No-op if the syllabus file isn't loaded."""
     if not subject or not title:
         return None
+    subj = normalize_subject(subject) or subject
     syl = load_syllabus(class_level)
     cycles = syl.get("cycles", [])
     title_words = {w.lower() for w in title.split() if len(w) >= 4}
     if not title_words:
         return None
     for c in cycles:
-        topics = c.get("topics_by_subject", {}).get(subject, []) or []
+        topics_map = c.get("topics_by_subject", {}) or {}
+        # Match normalized or original subject key
+        topics = topics_map.get(subj, []) or topics_map.get(subject, []) or []
         for t in topics:
             t_words = {w.lower() for w in t.split() if len(w) >= 4}
             if title_words & t_words:

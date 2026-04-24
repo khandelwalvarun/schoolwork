@@ -147,6 +147,23 @@ async def _upsert_item(
     return False, changed, existing.id
 
 
+async def _discover_grading_periods(
+    client: ScraperClient, child_vc_id: str, class_id: str
+) -> list[int]:
+    """Veracross grading-period IDs differ per tier (MS=13, JS=25/27/31/33, etc.).
+    We read the parent-portal enrollment page for one class and pull out every
+    `grading_period=N` value we see."""
+    import re as _re
+    url = client.enrollment_grade_detail_url(child_vc_id, class_id)
+    try:
+        html = await client.get_html(url, wait_for="body")
+    except Exception as e:
+        log.warning("enrollment page fetch failed for %s: %s", class_id, e)
+        return []
+    periods = sorted({int(m) for m in _re.findall(r"grading_period=(\d+)", html)})
+    return periods
+
+
 async def _sync_grades_for_child(
     session: AsyncSession,
     client: ScraperClient,
@@ -157,16 +174,32 @@ async def _sync_grades_for_child(
     diff: DiffAggregator,
 ) -> None:
     today_iso = _today_iso()
+    # Discover real grading periods for this child, once, from the first class.
+    discovered: list[int] = []
+    if child.veracross_id and classes:
+        for cls in classes:
+            cid = cls.get("class_id")
+            if cid:
+                discovered = await _discover_grading_periods(
+                    client, child.veracross_id, cid
+                )
+                if discovered:
+                    break
+    periods_to_fetch: tuple[int, ...] = tuple(discovered) if discovered else grading_periods
+    log.info(
+        "child=%s grading periods used: %s (hardcoded fallback: %s)",
+        child.display_name, periods_to_fetch, grading_periods,
+    )
     for cls in classes:
         class_id = cls.get("class_id")
         subject = cls.get("subject")
         teacher = cls.get("teacher")
         if not class_id:
             continue
-        for period in grading_periods:
+        for period in periods_to_fetch:
             url = client.grade_report_url(class_id, period)
             try:
-                html = await client.get_html(url, wait_for="table")
+                html = await client.get_html(url, wait_for="body")
                 parsed = parse_grade_report(html, class_id, period)
             except Exception as e:
                 log.warning("grade fetch failed for %s p=%d: %s", class_id, period, e)
@@ -208,7 +241,7 @@ async def _sync_one_child(
     child: Child,
     counters: dict[str, int],
     diff: DiffAggregator,
-    include_grades: bool = False,
+    include_grades: bool = True,
     grading_periods: tuple[int, ...] = (21,),
 ) -> None:
     if not child.veracross_id:
@@ -222,9 +255,12 @@ async def _sync_one_child(
 
     today_iso = _today_iso()
 
+    # Track which assignments need a detail fetch for attachment download.
+    new_or_active_items: list[tuple[str, int]] = []  # (external_id, item_id)
+
     for a in planner["assignments"]:
         status = status_from_badge(a.get("status_badge"), a.get("due_date"), today_iso)
-        is_new, is_changed, _ = await _upsert_item(
+        is_new, is_changed, item_id = await _upsert_item(
             session,
             child_id=child.id,
             kind="assignment",
@@ -246,6 +282,13 @@ async def _sync_one_child(
             counters["items_new"] += 1
         elif is_changed:
             counters["items_updated"] += 1
+        # Fetch detail (→ attachments) for every new item AND any still-open one
+        # whose due is upcoming / recently overdue, so attachments added late
+        # still land on disk.
+        due = a.get("due_date")
+        open_enough = status not in ("submitted", "graded", "dismissed")
+        if item_id is not None and (is_new or (open_enough and due and due >= today_iso)):
+            new_or_active_items.append((a["external_id"], item_id))
 
     to_enrich = [
         a for a in planner["assignments"]
@@ -289,6 +332,59 @@ async def _sync_one_child(
         )
         if is_changed:
             counters["items_updated"] += 1
+
+    # ── Attachment pass: fetch assignment-detail pages and download any linked
+    # files. Covers (a) newly created items, (b) still-open upcoming/due items,
+    # and (c) a back-fill of anything that doesn't yet have an attachment row
+    # attached. Rate-limited to a sane cap per sync.
+    try:
+        from .attachments import extract_and_save
+    except Exception as _e:
+        log.warning("attachments module unavailable: %s", _e)
+        extract_and_save = None  # type: ignore[assignment]
+
+    # Back-fill: any assignment for this child without a recorded attachment
+    # row gets its detail fetched at least once. We don't re-fetch items that
+    # already have an attachment row attached.
+    from ..models import Attachment, VeracrossItem
+    already_have_attachments_q = (
+        select(VeracrossItem.id, VeracrossItem.external_id)
+        .where(VeracrossItem.kind == "assignment")
+        .where(VeracrossItem.child_id == child.id)
+    )
+    all_items = (await session.execute(already_have_attachments_q)).all()
+    items_with_att = set(
+        r[0] for r in (
+            await session.execute(
+                select(Attachment.item_id)
+                .where(Attachment.item_id.in_([i[0] for i in all_items] or [0]))
+            )
+        ).all()
+    )
+    in_scope_ids = {iid for ext, iid in new_or_active_items}
+    backfill: list[tuple[str, int]] = [
+        (ext_id, iid) for (iid, ext_id) in all_items
+        if iid not in items_with_att and iid not in in_scope_ids
+    ]
+    combined = list(new_or_active_items) + backfill
+    if extract_and_save is not None and combined:
+        for ext_id, item_id in combined[:80]:
+            detail_url = client.main_portal_url(f"/detail/assignment/{ext_id}")
+            try:
+                detail_html = await client.get_html(detail_url, wait_for=".detail-assignment")
+            except Exception as e:
+                log.warning("attachment detail fetch failed for %s: %s", ext_id, e)
+                continue
+            try:
+                n = await extract_and_save(
+                    session, client, item_id=item_id, child_id=child.id,
+                    detail_html=detail_html, source_kind="assignment",
+                )
+                if n:
+                    counters.setdefault("attachments_downloaded", 0)
+                    counters["attachments_downloaded"] += n
+            except Exception as e:
+                log.warning("attachment save failed for %s: %s", ext_id, e)
 
     if include_grades:
         await _sync_grades_for_child(
@@ -355,7 +451,7 @@ async def _sync_messages(
                     row["detail_url"], wait_for=".vx-record-title, .detail-email"
                 )
                 e = parse_email_detail(detail_html)
-                await _upsert_item(
+                _is_new2, _ch2, msg_item_id = await _upsert_item(
                     session,
                     child_id=owner.id,
                     kind="school_message",
@@ -373,13 +469,26 @@ async def _sync_messages(
                     },
                     diff=None,
                 )
+                # Download any files linked in the message body.
+                if msg_item_id is not None:
+                    try:
+                        from .attachments import extract_and_save
+                        n = await extract_and_save(
+                            session, client, item_id=msg_item_id, child_id=owner.id,
+                            detail_html=detail_html, source_kind="school_message",
+                        )
+                        if n:
+                            counters.setdefault("attachments_downloaded", 0)
+                            counters["attachments_downloaded"] += n
+                    except Exception as exc:
+                        log.warning("message attachments failed for %s: %s", row["external_id"], exc)
             except Exception as exc:
                 log.warning("message detail failed for %s: %s", row["external_id"], exc)
 
 
 async def run_sync(
     trigger: str = "manual",
-    include_grades: bool = False,
+    include_grades: bool = True,
     grading_periods: tuple[int, ...] | None = None,
 ) -> dict[str, Any]:
     """Orchestrate one sync pass. Returns a summary dict.

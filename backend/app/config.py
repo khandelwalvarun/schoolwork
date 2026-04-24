@@ -37,6 +37,7 @@ class Settings(BaseSettings):
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
     scraper_user_data_dir: str = str(REPO_ROOT / "recon" / "user-data")
+    scraper_storage_state_path: str = str(REPO_ROOT / "recon" / "storage_state.json")
 
     # Grades — period IDs for this school year (Veracross internal). Comma-separated.
     # 2026-27 Vasant Valley: 13=LC1, 15=LC2, 19=LC3, 21=LC4.
@@ -93,7 +94,7 @@ class Settings(BaseSettings):
 
     # App
     app_secret: str = "change-me-please"
-    app_host: str = "127.0.0.1"
+    app_host: str = "0.0.0.0"
     app_port: int = 7777
     log_level: str = "INFO"
 

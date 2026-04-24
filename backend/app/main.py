@@ -50,7 +50,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:7778", "http://127.0.0.1:7778"],
+    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -191,6 +191,42 @@ async def api_notifications(
         return await Q.get_events(
             session, since=since, child_id=child_id, limit=limit
         )
+
+
+@app.get("/api/attachments")
+async def api_attachments_list(
+    child_id: int | None = None,
+    source_kind: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    async with get_async_session() as session:
+        return await Q.list_attachments(
+            session, child_id=child_id, source_kind=source_kind, limit=limit
+        )
+
+
+@app.get("/api/attachments/{attachment_id}")
+async def api_attachment_download(attachment_id: int):
+    from fastapi.responses import FileResponse
+    from pathlib import Path as _P
+    async with get_async_session() as session:
+        att = await Q.get_attachment_row(session, attachment_id)
+    if att is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"attachment {attachment_id} not found")
+    repo_root = _P(__file__).resolve().parent.parent.parent
+    path = (repo_root / att.local_path).resolve()
+    if not path.exists():
+        raise HTTPException(status.HTTP_410_GONE, f"file vanished on disk: {att.local_path}")
+    # Guard path traversal: ensure the file is under data/attachments/
+    try:
+        path.relative_to((repo_root / "data" / "attachments").resolve())
+    except ValueError:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "attachment path escapes storage root")
+    return FileResponse(
+        path=str(path),
+        media_type=att.mime_type or "application/octet-stream",
+        filename=att.filename,
+    )
 
 
 @app.get("/api/assignments")

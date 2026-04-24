@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, Assignment, GradeTrend, SyllabusCycle } from "../api";
+import Attachments from "../components/Attachments";
 
 function StatusChip({ a }: { a: Assignment }) {
   const s = a.effective_status ?? a.status;
@@ -49,6 +50,7 @@ function AssignmentRow({ a, onChange }: { a: Assignment; onChange: () => void })
         {a.syllabus_context && (
           <div className="text-xs text-gray-500 mt-0.5">↳ {a.syllabus_context}</div>
         )}
+        <Attachments items={a.attachments} />
       </td>
       <td className="py-2 px-3 text-gray-500 text-sm whitespace-nowrap align-top">{a.normalized?.type}</td>
       <td className="py-2 px-3 whitespace-nowrap text-sm align-top">{a.due_or_date}</td>

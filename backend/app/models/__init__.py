@@ -1,5 +1,6 @@
 """All ORM models — imported here so Alembic autogenerate sees them."""
 
+from .attachments import Attachment
 from .channel_config import ChannelConfig
 from .children import Child
 from .events import Event
@@ -13,6 +14,7 @@ from .sync_runs import SyncRun
 from .veracross_items import VeracrossItem
 
 __all__ = [
+    "Attachment",
     "ChannelConfig",
     "Child",
     "Event",

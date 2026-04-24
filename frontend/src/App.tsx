@@ -12,6 +12,7 @@ import Notes from "./pages/Notes";
 import Summaries from "./pages/Summaries";
 import SettingsChannels from "./pages/SettingsChannels";
 import SettingsSyllabus from "./pages/SettingsSyllabus";
+import AttachmentsPage from "./pages/AttachmentsPage";
 
 function NavItem({ to, label }: { to: string; label: string }) {
   return (
@@ -38,6 +39,7 @@ export default function App() {
           <nav className="flex gap-5 text-sm">
             <NavItem to="/" label="Today" />
             <NavItem to="/messages" label="Messages" />
+            <NavItem to="/attachments" label="Files" />
             <NavItem to="/notes" label="Notes" />
             <NavItem to="/summaries" label="Summaries" />
             <NavItem to="/notifications" label="Notifications" />
@@ -54,6 +56,7 @@ export default function App() {
           <Route path="/child/:id/comments" element={<ChildComments />} />
           <Route path="/child/:id/syllabus" element={<ChildSyllabus />} />
           <Route path="/messages" element={<Messages />} />
+          <Route path="/attachments" element={<AttachmentsPage />} />
           <Route path="/notes" element={<Notes />} />
           <Route path="/summaries" element={<Summaries />} />
           <Route path="/notifications" element={<Notifications />} />

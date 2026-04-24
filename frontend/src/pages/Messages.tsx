@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api";
+import Attachments from "../components/Attachments";
 
 export default function Messages() {
   const [sinceDays, setSinceDays] = useState(30);
@@ -38,6 +39,7 @@ export default function Messages() {
             {m.normalized?.body && (
               <div className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{m.normalized.body}</div>
             )}
+            <Attachments items={m.attachments} />
           </div>
         ))}
       </div>

@@ -6,6 +6,18 @@ export type Child = {
   veracross_id: string | null;
 };
 
+export type AttachmentLink = {
+  id: number;
+  filename: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  kind: string | null;
+  source_kind: string;
+  download_url: string;
+  sha256?: string;
+  downloaded_at?: string | null;
+};
+
 export type Assignment = {
   id: number;
   child_id: number;
@@ -17,11 +29,20 @@ export type Assignment = {
   parent_marked_submitted_at: string | null;
   syllabus_context: string | null;
   external_id: string;
+  attachments?: AttachmentLink[];
   normalized?: {
     type?: string;
     teacher?: string;
     body?: string;
   };
+};
+
+export type AttachmentFull = AttachmentLink & {
+  item_id: number | null;
+  item_title: string | null;
+  item_subject: string | null;
+  item_kind: string | null;
+  child_id: number | null;
 };
 
 export type SyllabusCycle = {
@@ -115,6 +136,7 @@ export type MessageRow = {
   title: string | null;
   due_or_date: string | null;
   first_seen_at: string | null;
+  attachments?: AttachmentLink[];
   normalized?: { body?: string; teacher?: string };
 };
 
@@ -236,4 +258,6 @@ export const api = {
     fetchJson<unknown>(`/api/assignments/${itemId}/mark-submitted`, { method: "POST" }),
   unmarkSubmitted: (itemId: number) =>
     fetchJson<unknown>(`/api/assignments/${itemId}/mark-submitted`, { method: "DELETE" }),
+  attachments: (p: { child_id?: number; source_kind?: string; limit?: number } = {}) =>
+    fetchJson<AttachmentFull[]>(`/api/attachments${qs(p)}`),
 };

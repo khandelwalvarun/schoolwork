@@ -14,7 +14,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..models import Child, Event, Notification, ParentNote, Summary, SyncRun, VeracrossItem
+from ..models import Attachment, Child, Event, Notification, ParentNote, Summary, SyncRun, VeracrossItem
 from . import syllabus as syl
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -23,6 +23,88 @@ IST = ZoneInfo("Asia/Kolkata")
 async def _child_class_levels(session: AsyncSession) -> dict[int, int]:
     rows = (await session.execute(select(Child.id, Child.class_level))).all()
     return {cid: lvl for cid, lvl in rows}
+
+
+async def _attachments_for_items(
+    session: AsyncSession, item_ids: list[int]
+) -> dict[int, list[dict[str, Any]]]:
+    if not item_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(Attachment).where(Attachment.item_id.in_(item_ids))
+        )
+    ).scalars().all()
+    out: dict[int, list[dict[str, Any]]] = {}
+    for a in rows:
+        out.setdefault(a.item_id, []).append(
+            {
+                "id": a.id,
+                "filename": a.filename,
+                "mime_type": a.mime_type,
+                "size_bytes": a.size_bytes,
+                "kind": a.kind,
+                "source_kind": a.source_kind,
+                "download_url": f"/api/attachments/{a.id}",
+                "sha256": a.sha256,
+                "downloaded_at": a.downloaded_at.isoformat() if a.downloaded_at else None,
+            }
+        )
+    return out
+
+
+async def get_attachment_row(session: AsyncSession, att_id: int) -> Attachment | None:
+    return (
+        await session.execute(select(Attachment).where(Attachment.id == att_id))
+    ).scalar_one_or_none()
+
+
+async def list_attachments(
+    session: AsyncSession,
+    child_id: int | None = None,
+    source_kind: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    q = select(Attachment)
+    if child_id is not None:
+        q = q.where(Attachment.child_id == child_id)
+    if source_kind is not None:
+        q = q.where(Attachment.source_kind == source_kind)
+    q = q.order_by(Attachment.downloaded_at.desc()).limit(limit)
+    rows = (await session.execute(q)).scalars().all()
+    # Also join item title for context
+    item_ids = [r.item_id for r in rows if r.item_id]
+    item_titles: dict[int, tuple[str | None, str | None, str | None]] = {}
+    if item_ids:
+        item_rows = (
+            await session.execute(
+                select(VeracrossItem.id, VeracrossItem.title, VeracrossItem.subject, VeracrossItem.kind)
+                .where(VeracrossItem.id.in_(item_ids))
+            )
+        ).all()
+        item_titles = {rid: (rtitle, rsubj, rkind) for rid, rtitle, rsubj, rkind in item_rows}
+    out: list[dict[str, Any]] = []
+    for a in rows:
+        t = item_titles.get(a.item_id or 0, (None, None, None))
+        out.append(
+            {
+                "id": a.id,
+                "filename": a.filename,
+                "mime_type": a.mime_type,
+                "size_bytes": a.size_bytes,
+                "kind": a.kind,
+                "source_kind": a.source_kind,
+                "item_id": a.item_id,
+                "item_title": t[0],
+                "item_subject": syl.normalize_subject(t[1]),
+                "item_kind": t[2],
+                "child_id": a.child_id,
+                "download_url": f"/api/attachments/{a.id}",
+                "sha256": a.sha256,
+                "downloaded_at": a.downloaded_at.isoformat() if a.downloaded_at else None,
+            }
+        )
+    return out
 
 
 def _now_ist() -> datetime:
@@ -42,12 +124,14 @@ def _item_to_dict(
         "submitted" if parent_marked is not None and item.status not in {"graded", "dismissed"}
         else item.status
     )
+    subject_clean = syl.normalize_subject(item.subject)
     out: dict[str, Any] = {
         "id": item.id,
         "child_id": item.child_id,
         "kind": item.kind,
         "external_id": item.external_id,
-        "subject": item.subject,
+        "subject": subject_clean,          # prefer cleaned — strips "6B " prefix
+        "subject_raw": item.subject,       # keep the raw label if the UI ever needs it
         "title": item.title,
         "due_or_date": item.due_or_date,
         "status": item.status,
@@ -114,10 +198,14 @@ async def _assignments_query(
         q = q.limit(limit)
     if class_levels is None:
         class_levels = await _child_class_levels(session)
-    return [
-        _item_to_dict(r, class_level=class_levels.get(r.child_id))
-        for r in (await session.execute(q)).scalars().all()
-    ]
+    items = (await session.execute(q)).scalars().all()
+    att_map = await _attachments_for_items(session, [i.id for i in items])
+    dicts: list[dict[str, Any]] = []
+    for r in items:
+        d = _item_to_dict(r, class_level=class_levels.get(r.child_id))
+        d["attachments"] = att_map.get(r.id, [])
+        dicts.append(d)
+    return dicts
 
 
 async def get_overdue(session: AsyncSession, child_id: int | None = None) -> list[dict[str, Any]]:
@@ -155,9 +243,12 @@ async def get_upcoming(
         q = q.where(VeracrossItem.child_id == child_id)
     q = q.order_by(VeracrossItem.due_or_date)
     class_levels = await _child_class_levels(session)
+    items = (await session.execute(q)).scalars().all()
+    att_map = await _attachments_for_items(session, [i.id for i in items])
     return [
-        _item_to_dict(r, class_level=class_levels.get(r.child_id))
-        for r in (await session.execute(q)).scalars().all()
+        {**_item_to_dict(r, class_level=class_levels.get(r.child_id)),
+         "attachments": att_map.get(r.id, [])}
+        for r in items
     ]
 
 
@@ -172,7 +263,12 @@ async def get_messages(
     if unread_only:
         q = q.where(VeracrossItem.seen_at.is_(None))
     q = q.order_by(VeracrossItem.first_seen_at.desc())
-    return [_item_to_dict(r) for r in (await session.execute(q)).scalars().all()]
+    items = (await session.execute(q)).scalars().all()
+    att_map = await _attachments_for_items(session, [i.id for i in items])
+    return [
+        {**_item_to_dict(r), "attachments": att_map.get(r.id, [])}
+        for r in items
+    ]
 
 
 async def get_events(
@@ -483,7 +579,15 @@ async def get_all_assignments(
     if child_id is not None:
         q = q.where(VeracrossItem.child_id == child_id)
     if subject:
-        q = q.where(VeracrossItem.subject == subject)
+        # Match exact or "<class_section> <subject>" (e.g. "Mathematics" matches
+        # both "Mathematics" and "6B Mathematics")
+        from sqlalchemy import or_
+        q = q.where(
+            or_(
+                VeracrossItem.subject == subject,
+                VeracrossItem.subject.like(f"% {subject}"),
+            )
+        )
     if status:
         if status == "parent_submitted":
             q = q.where(VeracrossItem.parent_marked_submitted_at.is_not(None))

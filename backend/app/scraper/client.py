@@ -31,30 +31,51 @@ class ScraperClient:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
         self._pw: Playwright | None = None
+        self._browser: Any = None
         self._ctx: BrowserContext | None = None
         self._page: Page | None = None
         self._csrf: str | None = None
+        self._storage_path: Any = None
         self._lock = asyncio.Lock()
 
     async def __aenter__(self) -> "ScraperClient":
         self._pw = await async_playwright().start()
-        self._ctx = await self._pw.chromium.launch_persistent_context(
-            user_data_dir=self.settings.scraper_user_data_dir,
-            headless=True,
+        # Use a one-shot browser + new_context with storage_state loaded from disk.
+        # storage_state captures cookies (including session-scoped ones like
+        # _veracross_session) by value, so they survive browser restarts.
+        # manual_login.py writes the state; scraper reads + updates it.
+        self._browser = await self._pw.chromium.launch(
+            headless=False,
+            args=["--headless=new", "--disable-blink-features=AutomationControlled"],
+        )
+        ctx_kwargs: dict[str, Any] = dict(
             user_agent=self.settings.scraper_user_agent,
             viewport={"width": 1440, "height": 900},
             locale="en-US",
-            args=["--disable-blink-features=AutomationControlled"],
         )
+        from pathlib import Path as _P
+        storage_path = _P(self.settings.scraper_storage_state_path)
+        if storage_path.exists():
+            ctx_kwargs["storage_state"] = str(storage_path)
+        self._ctx = await self._browser.new_context(**ctx_kwargs)
+        self._storage_path = storage_path
         self._ctx.set_default_navigation_timeout(45_000)
-        self._page = self._ctx.pages[0] if self._ctx.pages else await self._ctx.new_page()
+        self._page = await self._ctx.new_page()
         await self._ensure_authenticated()
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
         try:
+            # Snapshot storage state so any refreshed session cookies survive.
+            if self._ctx and getattr(self, "_storage_path", None):
+                try:
+                    await self._ctx.storage_state(path=str(self._storage_path))
+                except Exception:
+                    pass
             if self._ctx:
                 await self._ctx.close()
+            if getattr(self, "_browser", None):
+                await self._browser.close()
         finally:
             if self._pw:
                 await self._pw.stop()
@@ -106,15 +127,15 @@ class ScraperClient:
         except Exception:
             logged_out = False
         if logged_out:
-            await self._login()
-            try:
-                still_out = await self._page.locator("input[type=password]").first.is_visible(
-                    timeout=2000
-                )
-            except Exception:
-                still_out = False
-            if still_out:
-                raise RuntimeError("Login failed — check credentials or portal availability")
+            # Veracross login has reCAPTCHA on the submit button. Automating a
+            # re-login just accumulates failed-attempt signals and makes future
+            # challenges harder. Bail out cleanly and let the UI show a
+            # "re-auth needed" banner that runs `scripts/manual_login.py`.
+            raise RuntimeError(
+                "needs_reauth: no valid Veracross session — "
+                "run `uv run python backend/scripts/manual_login.py` "
+                "and sign in manually (reCAPTCHA requires a human)."
+            )
 
         csrf = await self._page.evaluate(
             "() => document.querySelector('meta[name=csrf-token]')?.getAttribute('content')"
@@ -189,6 +210,15 @@ class ScraperClient:
         return (
             f"{DOCS_BASE}/vasantvalleyschool/grade_detail/{class_id}"
             f"?grading_period={grading_period}&key=_"
+        )
+
+    def enrollment_grade_detail_url(self, child_vc_id: str, class_id: str) -> str:
+        """Parent-portal iframe page listing all grading periods for a class.
+        We parse the grading_period hrefs out of this page to discover the
+        correct period IDs (they differ by tier: MS uses 13, JS uses 25/27/31/33)."""
+        return (
+            f"https://portals-embed.veracross.eu/vasantvalleyschool/parent/"
+            f"children/{child_vc_id}/classes/{class_id}/grade_detail"
         )
 
 

@@ -24,7 +24,14 @@ test-results/
 recon/output/
 recon/snapshots/
 recon/screenshots/
-recon/user-data/        # Chromium profile cache — per-machine, can be 100s of MB
+# Chromium profile cache — per-machine, can be 100s of MB
+recon/user-data/
+recon/storage_state.json
+
+# Downloaded attachments (scraped from Veracross)
+data/attachments/
+tmp-login-debug/
+tmp-probe.py
 
 # SQLite WAL/SHM files (transient, never commit)
 *.db-wal
