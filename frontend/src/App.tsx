@@ -5,6 +5,7 @@ import Settings from "./pages/Settings";
 import ChildDetail from "./pages/ChildDetail";
 import ChildGrades from "./pages/ChildGrades";
 import ChildAssignments from "./pages/ChildAssignments";
+import ChildBoard from "./pages/ChildBoard";
 import ChildComments from "./pages/ChildComments";
 import ChildSyllabus from "./pages/ChildSyllabus";
 import Messages from "./pages/Messages";
@@ -51,6 +52,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Today />} />
           <Route path="/child/:id" element={<ChildDetail />} />
+          <Route path="/child/:id/board" element={<ChildBoard />} />
           <Route path="/child/:id/grades" element={<ChildGrades />} />
           <Route path="/child/:id/assignments" element={<ChildAssignments />} />
           <Route path="/child/:id/comments" element={<ChildComments />} />

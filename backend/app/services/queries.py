@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..models import Attachment, Child, Event, Notification, ParentNote, Summary, SyncRun, VeracrossItem
+from . import assignment_state as ast
 from . import syllabus as syl
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -120,11 +121,9 @@ def _item_to_dict(
     class_level: int | None = None,
 ) -> dict[str, Any]:
     parent_marked = item.parent_marked_submitted_at
-    effective_status = (
-        "submitted" if parent_marked is not None and item.status not in {"graded", "dismissed"}
-        else item.status
-    )
     subject_clean = syl.normalize_subject(item.subject)
+    parent_status = getattr(item, "parent_status", None)
+    eff = ast.effective_status(item.status, parent_status)
     out: dict[str, Any] = {
         "id": item.id,
         "child_id": item.child_id,
@@ -136,8 +135,14 @@ def _item_to_dict(
         "title_en": item.title_en,
         "notes_en": item.notes_en,
         "due_or_date": item.due_or_date,
-        "status": item.status,
-        "effective_status": effective_status,
+        "status": item.status,               # raw portal_status
+        "portal_status": item.status,
+        "parent_status": parent_status,
+        "priority": getattr(item, "priority", 0) or 0,
+        "snooze_until": getattr(item, "snooze_until", None),
+        "status_notes": getattr(item, "status_notes", None),
+        "tags": ast.parse_tags(getattr(item, "tags_json", None)),
+        "effective_status": eff,
         "parent_marked_submitted_at": parent_marked.isoformat() if parent_marked else None,
         "first_seen_at": item.first_seen_at.isoformat() if item.first_seen_at else None,
         "last_seen_at": item.last_seen_at.isoformat() if item.last_seen_at else None,
@@ -188,7 +193,15 @@ async def _assignments_query(
     if status_not_in:
         q = q.where(~VeracrossItem.status.in_(status_not_in))
     if exclude_parent_marked:
+        # Exclude items that the parent has marked in any "terminal" state.
+        # Legacy parent_marked_submitted_at also kept for back-compat rows.
         q = q.where(VeracrossItem.parent_marked_submitted_at.is_(None))
+        q = q.where(
+            (VeracrossItem.parent_status.is_(None))
+            | (~VeracrossItem.parent_status.in_(
+                ("submitted", "done_at_home", "skipped", "blocked")
+            ))
+        )
     if due_before is not None:
         q = q.where(VeracrossItem.due_or_date < due_before.isoformat())
     if due_after is not None:
@@ -211,23 +224,31 @@ async def _assignments_query(
 
 
 async def get_overdue(session: AsyncSession, child_id: int | None = None) -> list[dict[str, Any]]:
-    return await _assignments_query(
+    rows = await _assignments_query(
         session,
         child_id=child_id,
         status_not_in=("submitted", "graded", "dismissed"),
         due_before=_today_ist(),
         exclude_parent_marked=True,
     )
+    return _filter_snooze(rows)
 
 
 async def get_due_today(session: AsyncSession, child_id: int | None = None) -> list[dict[str, Any]]:
-    return await _assignments_query(
+    rows = await _assignments_query(
         session,
         child_id=child_id,
         status_not_in=("submitted", "graded", "dismissed"),
         due_on=_today_ist(),
         exclude_parent_marked=True,
     )
+    return _filter_snooze(rows)
+
+
+def _filter_snooze(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Hide items whose snooze_until is in the future (compared to today in IST)."""
+    today_iso = _today_ist().isoformat()
+    return [r for r in rows if not (r.get("snooze_until") and r["snooze_until"] > today_iso)]
 
 
 async def get_upcoming(
@@ -247,11 +268,12 @@ async def get_upcoming(
     class_levels = await _child_class_levels(session)
     items = (await session.execute(q)).scalars().all()
     att_map = await _attachments_for_items(session, [i.id for i in items])
-    return [
+    rows = [
         {**_item_to_dict(r, class_level=class_levels.get(r.child_id)),
          "attachments": att_map.get(r.id, [])}
         for r in items
     ]
+    return _filter_snooze(rows)
 
 
 async def get_messages(
@@ -470,18 +492,22 @@ async def get_child_detail(session: AsyncSession, child_id: int) -> dict[str, An
 async def mark_assignment_submitted(
     session: AsyncSession, item_id: int, submitted: bool = True
 ) -> dict[str, Any]:
-    """Parent-side override for when the teacher hasn't updated the portal yet.
-    `submitted=False` clears the override."""
-    item = (
-        await session.execute(
-            select(VeracrossItem).where(VeracrossItem.id == item_id)
-        )
-    ).scalar_one_or_none()
-    if item is None or item.kind != "assignment":
+    """Back-compat shortcut — routes through the full state service so that
+    changes are audit-logged. `submitted=False` clears to unset.
+    """
+    r = await ast.update_assignment_state(
+        session,
+        item_id=item_id,
+        patch={"parent_status": "submitted" if submitted else None},
+        actor="mark-submitted-shortcut",
+    )
+    if r is None:
         return {"status": "not_found", "id": item_id}
-    item.parent_marked_submitted_at = datetime.now(tz=timezone.utc) if submitted else None
-    await session.commit()
-    await session.refresh(item)
+    item = (
+        await session.execute(select(VeracrossItem).where(VeracrossItem.id == item_id))
+    ).scalar_one_or_none()
+    if item is None:
+        return {"status": "not_found", "id": item_id}
     class_levels = await _child_class_levels(session)
     return {"status": "ok", "item": _item_to_dict(item, class_level=class_levels.get(item.child_id))}
 

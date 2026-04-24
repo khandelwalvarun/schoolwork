@@ -39,6 +39,7 @@ export default function ChildDetail() {
           </div>
         </div>
         <nav className="flex gap-3 text-sm">
+          <Link className="text-blue-700 hover:underline" to={`/child/${childId}/board`}>Board</Link>
           <Link className="text-blue-700 hover:underline" to={`/child/${childId}/grades`}>Grades</Link>
           <Link className="text-blue-700 hover:underline" to={`/child/${childId}/assignments`}>All assignments</Link>
           <Link className="text-blue-700 hover:underline" to={`/child/${childId}/comments`}>Comments</Link>

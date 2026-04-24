@@ -1,50 +1,63 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { useState, useRef } from "react";
 import { api, Assignment, GradeTrend, SyllabusCycle } from "../api";
 import Attachments from "../components/Attachments";
+import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover";
+import AuditDrawer from "../components/AuditDrawer";
 
-function StatusChip({ a }: { a: Assignment }) {
-  const s = a.effective_status ?? a.status;
-  const parentMarked = !!a.parent_marked_submitted_at;
-  const cls =
-    s === "overdue" ? "chip-red" :
-    s === "graded" ? "chip-green" :
-    s === "submitted" ? "chip-blue" :
-    "chip-amber";
+function PriorityStar({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return <span className="text-amber-500 text-sm">{"★".repeat(n)}</span>;
+}
+
+function TagChips({ tags }: { tags: string[] }) {
+  if (!tags || tags.length === 0) return null;
   return (
-    <span className={cls} title={parentMarked ? "Marked submitted by parent" : undefined}>
-      {parentMarked ? "submitted ✓" : (s || "unknown")}
-    </span>
+    <div className="flex flex-wrap gap-1 mt-1">
+      {tags.map((t) => (
+        <span key={t} className="px-1.5 py-0 rounded-full border border-gray-200 bg-gray-50 text-[10px] text-gray-700">
+          {t}
+        </span>
+      ))}
+    </div>
   );
 }
 
-function SubmitToggle({ a, onDone }: { a: Assignment; onDone: () => void }) {
-  const marked = !!a.parent_marked_submitted_at;
-  const click = async () => {
-    if (marked) await api.unmarkSubmitted(a.id);
-    else await api.markSubmitted(a.id);
-    onDone();
-  };
+function StatusChipButton({ a, onClick }: { a: Assignment; onClick: (rect: DOMRect) => void }) {
+  const ref = useRef<HTMLButtonElement | null>(null);
   return (
     <button
-      onClick={click}
-      className={
-        "text-xs rounded px-2 py-0.5 border " +
-        (marked
-          ? "bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100"
-          : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50")
-      }
-      title={marked ? "Undo — portal status will take over again" : "Mark submitted (teacher hasn't updated portal yet)"}
+      ref={ref}
+      onClick={(e) => {
+        e.stopPropagation();
+        const rect = (ref.current as HTMLButtonElement).getBoundingClientRect();
+        onClick(rect);
+      }}
+      title="Update status"
+      className="cursor-pointer"
     >
-      {marked ? "Undo" : "✓ Submitted"}
+      <EffectiveStatusChip a={a} />
     </button>
   );
 }
 
-function AssignmentRow({ a, onChange }: { a: Assignment; onChange: () => void }) {
+function AssignmentRow({
+  a,
+  onOpenPopover,
+  onOpenAudit,
+}: {
+  a: Assignment;
+  onOpenPopover: (a: Assignment, rect: DOMRect) => void;
+  onOpenAudit: (a: Assignment) => void;
+}) {
   return (
-    <tr className="border-t border-gray-100 hover:bg-gray-50">
-      <td className="py-2 px-3 whitespace-nowrap text-gray-600 text-sm align-top">{a.subject}</td>
+    <tr className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
+        onClick={() => onOpenAudit(a)}>
+      <td className="py-2 px-3 whitespace-nowrap text-gray-600 text-sm align-top">
+        {a.subject}
+        <PriorityStar n={a.priority} />
+      </td>
       <td className="py-2 px-3 align-top">
         <div>{a.title}</div>
         {a.title_en && a.title_en !== a.title && (
@@ -54,16 +67,30 @@ function AssignmentRow({ a, onChange }: { a: Assignment; onChange: () => void })
           <div className="text-xs text-gray-500 mt-0.5">↳ {a.syllabus_context}</div>
         )}
         <Attachments items={a.attachments} />
+        <TagChips tags={a.tags} />
       </td>
       <td className="py-2 px-3 text-gray-500 text-sm whitespace-nowrap align-top">{a.normalized?.type}</td>
       <td className="py-2 px-3 whitespace-nowrap text-sm align-top">{a.due_or_date}</td>
-      <td className="py-2 px-3 align-top"><StatusChip a={a} /></td>
-      <td className="py-2 px-3 align-top"><SubmitToggle a={a} onDone={onChange} /></td>
+      <td className="py-2 px-3 align-top" onClick={(e) => e.stopPropagation()}>
+        <StatusChipButton a={a} onClick={(rect) => onOpenPopover(a, rect)} />
+      </td>
     </tr>
   );
 }
 
-function AssignmentTable({ title, rows, accent, onChange }: { title: string; rows: Assignment[]; accent: string; onChange: () => void }) {
+function AssignmentTable({
+  title,
+  rows,
+  accent,
+  onOpenPopover,
+  onOpenAudit,
+}: {
+  title: string;
+  rows: Assignment[];
+  accent: string;
+  onOpenPopover: (a: Assignment, rect: DOMRect) => void;
+  onOpenAudit: (a: Assignment) => void;
+}) {
   if (!rows.length) return null;
   return (
     <div className="mt-4">
@@ -76,11 +103,12 @@ function AssignmentTable({ title, rows, accent, onChange }: { title: string; row
             <th className="py-1 px-3 font-medium">Type</th>
             <th className="py-1 px-3 font-medium">Due</th>
             <th className="py-1 px-3 font-medium">Status</th>
-            <th className="py-1 px-3 font-medium"></th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((a) => <AssignmentRow key={a.id} a={a} onChange={onChange} />)}
+          {rows.map((a) => (
+            <AssignmentRow key={a.id} a={a} onOpenPopover={onOpenPopover} onOpenAudit={onOpenAudit} />
+          ))}
         </tbody>
       </table>
     </div>
@@ -122,6 +150,9 @@ export default function Today() {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ["today"], queryFn: api.today });
 
+  const [popover, setPopover] = useState<{ a: Assignment; rect: DOMRect } | null>(null);
+  const [audit, setAudit] = useState<Assignment | null>(null);
+
   if (isLoading) return <div>Loading…</div>;
   if (error) return <div className="text-red-700">Error: {String(error)}</div>;
   if (!data) return null;
@@ -162,6 +193,7 @@ export default function Today() {
               <CycleBadge cycle={kid.syllabus_cycle} />
             </h3>
             <div className="text-xs flex gap-2 pt-1">
+              <Link className="text-blue-700 hover:underline" to={`/child/${kid.child.id}/board`}>Board</Link>
               <Link className="text-blue-700 hover:underline" to={`/child/${kid.child.id}/grades`}>Grades</Link>
               <Link className="text-blue-700 hover:underline" to={`/child/${kid.child.id}/assignments`}>Assignments</Link>
               <Link className="text-blue-700 hover:underline" to={`/child/${kid.child.id}/syllabus`}>Syllabus</Link>
@@ -173,9 +205,12 @@ export default function Today() {
               <span className="ml-2 text-gray-500">now {kid.overdue_trend[kid.overdue_trend.length - 1]?.count ?? 0}</span>
             </div>
           )}
-          <AssignmentTable title="🚨 Overdue" rows={kid.overdue} accent="text-red-700" onChange={refresh} />
-          <AssignmentTable title="📌 Due today" rows={kid.due_today} accent="text-amber-700" onChange={refresh} />
-          <AssignmentTable title="📅 Upcoming" rows={kid.upcoming} accent="text-blue-700" onChange={refresh} />
+          <AssignmentTable title="🚨 Overdue" rows={kid.overdue} accent="text-red-700"
+            onOpenPopover={(a, r) => setPopover({ a, rect: r })} onOpenAudit={(a) => setAudit(a)} />
+          <AssignmentTable title="📌 Due today" rows={kid.due_today} accent="text-amber-700"
+            onOpenPopover={(a, r) => setPopover({ a, rect: r })} onOpenAudit={(a) => setAudit(a)} />
+          <AssignmentTable title="📅 Upcoming" rows={kid.upcoming} accent="text-blue-700"
+            onOpenPopover={(a, r) => setPopover({ a, rect: r })} onOpenAudit={(a) => setAudit(a)} />
           <GradeTrendBlock trends={kid.grade_trends} />
         </section>
       ))}
@@ -193,6 +228,12 @@ export default function Today() {
           </ul>
         </section>
       )}
+
+      {popover && (
+        <StatusPopover a={popover.a} anchorRect={popover.rect}
+          onClose={() => setPopover(null)} onSaved={refresh} />
+      )}
+      {audit && <AuditDrawer a={audit} onClose={() => setAudit(null)} />}
     </div>
   );
 }

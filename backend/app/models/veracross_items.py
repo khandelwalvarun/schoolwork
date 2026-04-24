@@ -44,5 +44,11 @@ class VeracrossItem(Base):
     )
     title_en: Mapped[str | None] = mapped_column(String, nullable=True)
     notes_en: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Professional status tracking (migration 0006)
+    parent_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    snooze_until: Mapped[str | None] = mapped_column(String, nullable=True)
+    status_notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    tags_json: Mapped[str | None] = mapped_column(String, nullable=True)
 
     child = relationship("Child", back_populates="items")

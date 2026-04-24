@@ -359,6 +359,42 @@ async def api_syllabus_topic_put(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
 
+@app.patch("/api/assignments/{item_id}")
+async def api_patch_assignment(item_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    """Partial update of parent-side state (any subset of parent_status,
+    priority, snooze_until, status_notes, tags, note). Every changed field
+    is logged to assignment_status_history."""
+    from .services import assignment_state as ast
+    async with get_async_session() as session:
+        try:
+            r = await ast.update_assignment_state(
+                session, item_id, payload, actor=payload.get("actor"),
+            )
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    if r is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"assignment {item_id} not found")
+    return r
+
+
+@app.get("/api/assignments/{item_id}/history")
+async def api_assignment_history(item_id: int, limit: int = 200) -> list[dict[str, Any]]:
+    from .services import assignment_state as ast
+    async with get_async_session() as session:
+        return await ast.get_history(session, item_id, limit=limit)
+
+
+@app.get("/api/assignments/constants")
+async def api_assignment_constants() -> dict[str, Any]:
+    """Surface the fixed enums (parent-statuses + tag vocabulary) to the
+    frontend so the popover UI and the backend stay in sync."""
+    from .services import assignment_state as ast
+    return {
+        "parent_statuses": list(ast.PARENT_STATUSES),
+        "fixed_tags": list(ast.FIXED_TAGS),
+    }
+
+
 @app.post("/api/assignments/{item_id}/mark-submitted")
 async def api_mark_submitted(item_id: int) -> dict[str, Any]:
     """Parent-side submitted flag — used when the teacher hasn't updated the portal yet."""

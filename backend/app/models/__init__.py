@@ -8,12 +8,14 @@ from .llm_calls import LLMCall
 from .mcp_tool_calls import MCPToolCall
 from .notes import ParentNote
 from .notifications import Notification
+from .status_history import AssignmentStatusHistory
 from .summaries import Summary
 from .syllabus_overrides import SyllabusCycleOverride, SyllabusTopicStatus
 from .sync_runs import SyncRun
 from .veracross_items import VeracrossItem
 
 __all__ = [
+    "AssignmentStatusHistory",
     "Attachment",
     "ChannelConfig",
     "Child",

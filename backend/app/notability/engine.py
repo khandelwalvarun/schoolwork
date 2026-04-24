@@ -233,13 +233,20 @@ async def compute_aggregate_events(
         )
 
     # Per-child: open overdue snapshot → subject concentration + backlog acceleration.
-    # Parent-marked submitted items are excluded — the parent already said it's done.
+    # Parent-terminal items (submitted / done_at_home / skipped / blocked) are
+    # excluded — the parent already said it's effectively closed on their side.
     rows = (
         await session.execute(
             select(VeracrossItem.child_id, VeracrossItem.subject, VeracrossItem.due_or_date)
             .where(VeracrossItem.kind == "assignment")
             .where(~VeracrossItem.status.in_(("submitted", "graded", "dismissed")))
             .where(VeracrossItem.parent_marked_submitted_at.is_(None))
+            .where(
+                (VeracrossItem.parent_status.is_(None))
+                | (~VeracrossItem.parent_status.in_(
+                    ("submitted", "done_at_home", "skipped", "blocked")
+                ))
+            )
         )
     ).all()
     by_child: dict[int, list[tuple[str | None, str | None]]] = defaultdict(list)

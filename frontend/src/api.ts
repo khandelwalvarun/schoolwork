@@ -18,6 +18,14 @@ export type AttachmentLink = {
   downloaded_at?: string | null;
 };
 
+export type ParentStatus =
+  | "in_progress"
+  | "done_at_home"
+  | "submitted"
+  | "needs_help"
+  | "blocked"
+  | "skipped";
+
 export type Assignment = {
   id: number;
   child_id: number;
@@ -27,6 +35,12 @@ export type Assignment = {
   notes_en: string | null;
   due_or_date: string | null;
   status: string | null;
+  portal_status: string | null;
+  parent_status: ParentStatus | null;
+  priority: number;
+  snooze_until: string | null;
+  status_notes: string | null;
+  tags: string[];
   effective_status: string | null;
   parent_marked_submitted_at: string | null;
   syllabus_context: string | null;
@@ -37,6 +51,32 @@ export type Assignment = {
     teacher?: string;
     body?: string;
   };
+};
+
+export type AssignmentPatch = Partial<{
+  parent_status: ParentStatus | null;
+  priority: number;
+  snooze_until: string | null;
+  status_notes: string | null;
+  tags: string[];
+  note: string;
+  actor: string;
+}>;
+
+export type StatusHistoryEntry = {
+  id: number;
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  source: string;
+  actor: string | null;
+  note: string | null;
+  created_at: string | null;
+};
+
+export type AssignmentConstants = {
+  parent_statuses: ParentStatus[];
+  fixed_tags: string[];
 };
 
 export type AttachmentFull = AttachmentLink & {
@@ -262,4 +302,13 @@ export const api = {
     fetchJson<unknown>(`/api/assignments/${itemId}/mark-submitted`, { method: "DELETE" }),
   attachments: (p: { child_id?: number; source_kind?: string; limit?: number } = {}) =>
     fetchJson<AttachmentFull[]>(`/api/attachments${qs(p)}`),
+  patchAssignment: (itemId: number, patch: AssignmentPatch) =>
+    fetchJson<Record<string, unknown>>(`/api/assignments/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  assignmentHistory: (itemId: number) =>
+    fetchJson<StatusHistoryEntry[]>(`/api/assignments/${itemId}/history`),
+  assignmentConstants: () =>
+    fetchJson<AssignmentConstants>("/api/assignments/constants"),
 };
