@@ -332,6 +332,15 @@ async def api_vc_status() -> dict[str, Any]:
         return await snapshot(session)
 
 
+@app.post("/api/veracross/auth-check")
+async def api_vc_auth_check() -> dict[str, Any]:
+    """Quick, cheap live probe: loads storage_state cookies and does one
+    HTTPX GET to the portal to decide whether the session is currently
+    valid. Way faster than spinning Playwright for a full sync."""
+    from .services.auth_check import probe
+    return await probe()
+
+
 @app.post("/api/veracross/login/start")
 async def api_vc_login_start() -> dict[str, Any]:
     from .services.remote_login import start_session

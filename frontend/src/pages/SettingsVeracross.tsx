@@ -4,6 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import RemoteLoginModal from "../components/RemoteLoginModal";
 import { formatDateTime, formatRelative } from "../util/dates";
 
+type AuthProbe = {
+  state: "valid" | "expired" | "never" | "unknown";
+  checked_at: string;
+  detail: string;
+  storage_state_bytes: number | null;
+  cookie_count: number;
+  final_url: string | null;
+};
+
 type CredView = {
   portal_url: string;
   username: string;
@@ -41,6 +50,82 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
+}
+
+function AuthStatusCard({
+  probe,
+  onProbe,
+  probing,
+  onReauth,
+}: {
+  probe: AuthProbe | null;
+  onProbe: () => void;
+  probing: boolean;
+  onReauth: () => void;
+}) {
+  // Derive display state; "idle" = no probe yet this session.
+  const state = probe?.state ?? "idle";
+  const headline =
+      state === "valid"    ? { tone: "emerald", icon: "✓", title: "Session is valid", blurb: "The scraper can talk to Veracross right now." }
+    : state === "expired"  ? { tone: "amber",   icon: "✗", title: "Session expired",  blurb: "Cookies are on disk but Veracross is rejecting them." }
+    : state === "never"    ? { tone: "gray",    icon: "—", title: "Never authenticated", blurb: "No session cookies saved yet. Sign in once to set up the scraper." }
+    : state === "unknown"  ? { tone: "amber",   icon: "?", title: "Couldn't verify",  blurb: "Ran the probe but the portal's response was ambiguous." }
+    :                        { tone: "gray",    icon: "?", title: "Not checked yet",  blurb: 'Click "Check now" to run a live probe.' };
+
+  const toneClass =
+    headline.tone === "emerald" ? "bg-emerald-50 border-emerald-300 text-emerald-900"
+  : headline.tone === "amber"   ? "bg-amber-50 border-amber-300 text-amber-900"
+  : /* gray */                    "bg-gray-50 border-gray-300 text-gray-700";
+
+  return (
+    <section className={`surface p-5 mb-4 border-2 ${toneClass}`}>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-start gap-3">
+          <div className="text-4xl leading-none">{headline.icon}</div>
+          <div>
+            <div className="text-lg font-semibold">{headline.title}</div>
+            <div className="text-sm opacity-80 mt-0.5">{headline.blurb}</div>
+            {probe && (
+              <div className="text-xs opacity-70 mt-2">
+                Checked {formatRelative(probe.checked_at)} ·
+                {probe.storage_state_bytes != null && (
+                  <> cookies file {probe.storage_state_bytes} bytes ·</>
+                )}
+                {" "}{probe.cookie_count} cookie{probe.cookie_count === 1 ? "" : "s"} loaded
+                {probe.final_url && (
+                  <> · final url <code>{probe.final_url.replace(/^https?:\/\//, "")}</code></>
+                )}
+              </div>
+            )}
+            {probe?.detail && (
+              <div className="text-xs opacity-80 mt-1 italic">{probe.detail}</div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={onProbe}
+            disabled={probing}
+            className="px-3 py-1.5 border border-current rounded text-sm hover:opacity-80 disabled:opacity-50"
+          >
+            {probing ? "Checking…" : probe ? "Re-check" : "Check now"}
+          </button>
+          <button
+            onClick={onReauth}
+            className={
+              "px-3 py-1.5 rounded text-sm font-medium " +
+              (state === "valid"
+                ? "border border-current opacity-70 hover:opacity-100"
+                : "bg-amber-600 text-white hover:bg-amber-700 border border-amber-700")
+            }
+          >
+            {state === "valid" ? "Re-authenticate anyway" : "Re-authenticate"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function HealthCard({ health }: { health: HealthView }) {
@@ -132,6 +217,33 @@ export default function SettingsVeracross() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [probe, setProbe] = useState<AuthProbe | null>(null);
+  const [probing, setProbing] = useState(false);
+
+  const runProbe = async () => {
+    setProbing(true);
+    try {
+      const p = await api<AuthProbe>("/api/veracross/auth-check", { method: "POST" });
+      setProbe(p);
+    } catch (e) {
+      setProbe({
+        state: "unknown",
+        checked_at: new Date().toISOString(),
+        detail: `probe failed: ${String(e)}`,
+        storage_state_bytes: null,
+        cookie_count: 0,
+        final_url: null,
+      });
+    } finally {
+      setProbing(false);
+    }
+  };
+
+  // Run a probe as soon as the page loads so the user sees the live state
+  // without needing to click "Check now".
+  useEffect(() => {
+    runProbe();
+  }, []);
 
   useEffect(() => {
     if (creds) {
@@ -182,22 +294,14 @@ export default function SettingsVeracross() {
         Veracross
       </h2>
 
-      {health && <HealthCard health={health} />}
+      <AuthStatusCard
+        probe={probe}
+        probing={probing}
+        onProbe={runProbe}
+        onReauth={() => setModalOpen(true)}
+      />
 
-      {health?.needs_reauth && (
-        <div className="mb-4 p-4 rounded border border-amber-300 bg-amber-50 text-amber-900 text-sm flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <b>Veracross session expired.</b> Re-authenticate — the CAPTCHA
-            needs a human to solve it. Open the remote login window below.
-          </div>
-          <button
-            className="px-3 py-1.5 bg-amber-600 text-white rounded hover:bg-amber-700"
-            onClick={() => setModalOpen(true)}
-          >
-            Re-authenticate
-          </button>
-        </div>
-      )}
+      {health && <HealthCard health={health} />}
 
       <section className="surface p-5 mb-4">
         <div className="flex items-baseline justify-between mb-3">
@@ -258,25 +362,18 @@ export default function SettingsVeracross() {
         </div>
       </section>
 
-      <section className="surface p-5">
-        <div className="flex items-baseline justify-between mb-2">
-          <div>
-            <div className="font-semibold">Re-authenticate</div>
-            <div className="text-xs text-gray-500 mt-0.5">
-              Veracross requires reCAPTCHA on login — a human must solve it.
-              The browser runs on the server (headless), streams screenshots
-              here, and forwards your clicks/keys so you can sign in from any
-              device on the LAN.
-            </div>
-          </div>
-          <button onClick={() => { refetchHealth(); setModalOpen(true); }}
-                  className="px-3 py-1.5 border border-gray-300 text-sm rounded hover:bg-gray-50">
-            Open login window
-          </button>
-        </div>
-      </section>
-
-      {modalOpen && <RemoteLoginModal onClose={() => { setModalOpen(false); refetchHealth(); refetchCreds(); }} />}
+      {modalOpen && (
+        <RemoteLoginModal
+          onClose={() => {
+            setModalOpen(false);
+            refetchHealth();
+            refetchCreds();
+            // Re-probe immediately after the modal closes so the big status
+            // card flips to "valid" without the user re-clicking.
+            runProbe();
+          }}
+        />
+      )}
     </div>
   );
 }
