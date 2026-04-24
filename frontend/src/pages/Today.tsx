@@ -218,13 +218,24 @@ export default function Today() {
       {data.messages_last_7d.length > 0 && (
         <section className="mb-10 bg-white border border-gray-200 rounded p-5 shadow-sm">
           <h3 className="text-lg font-bold border-b border-gray-100 pb-2 mb-3">📬 School messages (last 7 days)</h3>
-          <ul className="space-y-1">
-            {data.messages_last_7d.slice(0, 15).map((m) => (
-              <li key={m.id} className="text-sm">
-                <b>{m.title || m.subject}</b>
-                <span className="text-gray-500 ml-2">{m.due_or_date}</span>
-              </li>
-            ))}
+          <ul className="space-y-2">
+            {data.messages_last_7d.slice(0, 15).map((m) => {
+              const mm = m as unknown as {
+                id: number; title: string | null; subject: string | null;
+                title_en?: string | null; due_or_date: string | null;
+                attachments?: import("../api").AttachmentLink[];
+              };
+              return (
+                <li key={mm.id} className="text-sm">
+                  <b>{mm.title || mm.subject}</b>
+                  <span className="text-gray-500 ml-2">{mm.due_or_date}</span>
+                  {mm.title_en && mm.title_en !== (mm.title || mm.subject) && (
+                    <div className="text-xs text-gray-600 italic">→ {mm.title_en}</div>
+                  )}
+                  <Attachments items={mm.attachments} />
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

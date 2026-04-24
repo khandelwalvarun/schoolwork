@@ -17,8 +17,15 @@ def _fmt_row_line(r: DigestAssignmentRow) -> str:
     subj = (r.subject or "").replace("|", "/").strip()
     title = (r.title or "").strip()
     base = f"  • {subj:<18}  {title[:46]:<46}  due {r.due or '—'}"
+    if r.title_en and r.title_en != r.title:
+        base += f"\n      → {r.title_en}"
     if r.syllabus_context:
         base += f"\n      ↳ {r.syllabus_context}"
+    if r.attachments:
+        names = ", ".join((a.get("filename") or "") for a in r.attachments[:4])
+        if len(r.attachments) > 4:
+            names += f", +{len(r.attachments)-4} more"
+        base += f"\n      📎 {names}"
     return base
 
 
@@ -95,6 +102,15 @@ def render_text(data: DigestData) -> str:
             title = m.get("title") or m.get("subject") or ""
             date_s = m.get("due_or_date") or ""
             lines.append(f"  • {title[:60]}   {date_s}")
+            t_en = m.get("title_en")
+            if t_en and t_en != title:
+                lines.append(f"      → {t_en}")
+            atts = m.get("attachments") or []
+            if atts:
+                names = ", ".join((a.get("filename") or "") for a in atts[:3])
+                if len(atts) > 3:
+                    names += f", +{len(atts)-3} more"
+                lines.append(f"      📎 {names}")
 
     return "\n".join(lines)
 
@@ -153,11 +169,35 @@ def render_html(data: DigestData) -> str:
             )
             for r in rows:
                 title_cell = _esc(r.title)
+                if r.title_en and r.title_en != r.title:
+                    title_cell += (
+                        f'<div style="color:#555;font-size:12px;font-style:italic;margin-top:2px">'
+                        f'→ {_esc(r.title_en)}</div>'
+                    )
                 if r.syllabus_context:
                     title_cell += (
                         f'<div style="color:#777;font-size:12px;margin-top:2px">'
                         f'↳ {_esc(r.syllabus_context)}</div>'
                     )
+                if r.attachments:
+                    chips = []
+                    for a in r.attachments[:6]:
+                        url = a.get("download_url") or ""
+                        name = a.get("filename") or "file"
+                        size = a.get("size_bytes") or 0
+                        size_s = (
+                            f"{size // 1024} KB" if size < 1024 * 1024
+                            else f"{size / 1024 / 1024:.1f} MB"
+                        ) if size else ""
+                        chips.append(
+                            f'<a href="{_esc(url)}" target="_blank" '
+                            f'style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;'
+                            f'background:#eef;color:#036;border:1px solid #ccd;border-radius:10px;'
+                            f'font-size:11px;text-decoration:none">📎 {_esc(name)}'
+                            + (f' <span style="color:#889">· {size_s}</span>' if size_s else '')
+                            + '</a>'
+                        )
+                    title_cell += f'<div style="margin-top:4px">{"".join(chips)}</div>'
                 parts.append(
                     '<tr style="border-top:1px solid #eee">'
                     f'<td style="padding:4px 8px;white-space:nowrap">{_esc(r.subject)}</td>'
@@ -202,8 +242,25 @@ def render_html(data: DigestData) -> str:
         for m in data.messages_last_7d[:15]:
             title = m.get("title") or m.get("subject") or ""
             date_s = m.get("due_or_date") or ""
+            t_en = m.get("title_en")
+            extra = ""
+            if t_en and t_en != title:
+                extra += f' <div style="color:#555;font-size:12px;font-style:italic;margin-top:2px">→ {_esc(t_en)}</div>'
+            atts = m.get("attachments") or []
+            if atts:
+                chips = []
+                for a in atts[:6]:
+                    url = a.get("download_url") or ""
+                    name = a.get("filename") or "file"
+                    chips.append(
+                        f'<a href="{_esc(url)}" target="_blank" '
+                        f'style="display:inline-block;margin:2px 4px 2px 0;padding:1px 6px;'
+                        f'background:#eef;color:#036;border:1px solid #ccd;border-radius:10px;'
+                        f'font-size:11px;text-decoration:none">📎 {_esc(name)}</a>'
+                    )
+                extra += f'<div style="margin-top:3px">{"".join(chips)}</div>'
             parts.append(
-                f'<li style="margin:3px 0"><b>{_esc(title[:80])}</b> <span style="color:#777">{_esc(date_s)}</span></li>'
+                f'<li style="margin:6px 0"><b>{_esc(title[:80])}</b> <span style="color:#777">{_esc(date_s)}</span>{extra}</li>'
             )
         parts.append('</ul>')
 

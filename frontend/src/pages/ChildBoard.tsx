@@ -223,6 +223,9 @@ export default function ChildBoard() {
             <div className="bg-white border border-gray-300 rounded p-2 shadow-lg text-sm">
               <div className="text-xs text-gray-500">{dragging.subject}</div>
               <div className="font-medium">{dragging.title}</div>
+              {dragging.title_en && dragging.title_en !== dragging.title && (
+                <div className="text-xs text-gray-600 italic">→ {dragging.title_en}</div>
+              )}
             </div>
           )}
         </DragOverlay>

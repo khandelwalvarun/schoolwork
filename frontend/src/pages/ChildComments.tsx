@@ -1,10 +1,15 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../api";
+import { useState } from "react";
+import { api, Assignment, Comment } from "../api";
+import Attachments from "../components/Attachments";
+import TitleBlock from "../components/TitleBlock";
+import AuditDrawer from "../components/AuditDrawer";
 
 export default function ChildComments() {
   const { id } = useParams();
   const childId = Number(id);
+  const [audit, setAudit] = useState<Comment | null>(null);
   const { data } = useQuery({
     queryKey: ["comments", childId],
     queryFn: () => api.comments(childId),
@@ -22,7 +27,11 @@ export default function ChildComments() {
       )}
       <div className="space-y-3">
         {rows.map((c) => (
-          <div key={c.id} className="bg-white border border-gray-200 rounded shadow-sm p-4">
+          <div
+            key={c.id}
+            className="bg-white border border-gray-200 rounded shadow-sm p-4 cursor-pointer hover:bg-gray-50"
+            onClick={() => setAudit(c)}
+          >
             <div className="flex items-baseline justify-between">
               <div>
                 <b>{c.subject ?? "—"}</b>
@@ -32,13 +41,17 @@ export default function ChildComments() {
               </div>
               <div className="text-xs text-gray-500">{c.due_or_date || c.first_seen_at}</div>
             </div>
-            <div className="text-sm text-gray-800 mt-1 whitespace-pre-wrap">{c.title}</div>
+            <div className="mt-1">
+              <TitleBlock title={c.title} titleEn={c.title_en} className="text-sm text-gray-800 whitespace-pre-wrap" />
+            </div>
             {c.normalized?.body && (
               <div className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{c.normalized.body}</div>
             )}
+            <Attachments items={c.attachments} />
           </div>
         ))}
       </div>
+      {audit && <AuditDrawer a={audit as unknown as Assignment} onClose={() => setAudit(null)} />}
     </div>
   );
 }

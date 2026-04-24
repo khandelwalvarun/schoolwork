@@ -582,6 +582,7 @@ async def get_grades(
     if subject:
         q = q.where(VeracrossItem.subject == subject)
     rows = (await session.execute(q)).scalars().all()
+    att_map = await _attachments_for_items(session, [r.id for r in rows])
     out: list[dict[str, Any]] = []
     for r in rows:
         d = _item_to_dict(r)
@@ -591,6 +592,7 @@ async def get_grades(
         d["points_possible"] = normalized.get("points_possible")
         d["score_text"] = normalized.get("score_text")
         d["graded_date"] = _parse_grade_date(d.get("due_or_date"))
+        d["attachments"] = att_map.get(r.id, [])
         out.append(d)
     out.sort(key=lambda x: x.get("graded_date") or "")
     return out
@@ -637,9 +639,12 @@ async def get_comments(
         q = q.where(VeracrossItem.child_id == child_id)
     q = q.order_by(VeracrossItem.first_seen_at.desc()).limit(limit)
     class_levels = await _child_class_levels(session)
+    items = (await session.execute(q)).scalars().all()
+    att_map = await _attachments_for_items(session, [i.id for i in items])
     return [
-        _item_to_dict(r, class_level=class_levels.get(r.child_id))
-        for r in (await session.execute(q)).scalars().all()
+        {**_item_to_dict(r, class_level=class_levels.get(r.child_id)),
+         "attachments": att_map.get(r.id, [])}
+        for r in items
     ]
 
 

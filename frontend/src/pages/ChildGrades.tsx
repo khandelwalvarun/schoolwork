@@ -1,15 +1,20 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api, GradeTrend } from "../api";
+import { api, Assignment, AttachmentLink, GradeTrend } from "../api";
 import { useState } from "react";
+import Attachments from "../components/Attachments";
+import TitleBlock from "../components/TitleBlock";
+import AuditDrawer from "../components/AuditDrawer";
 
 type GradeRow = {
   id: number;
   subject: string | null;
   title: string | null;
+  title_en?: string | null;
   graded_date?: string | null;
   grade_pct?: number | null;
   score_text?: string | null;
+  attachments?: AttachmentLink[];
   normalized?: Record<string, unknown>;
 };
 
@@ -18,6 +23,7 @@ export default function ChildGrades() {
   const childId = Number(id);
   const [subject, setSubject] = useState<string | undefined>();
   const [annotate, setAnnotate] = useState(false);
+  const [audit, setAudit] = useState<Assignment | null>(null);
 
   const { data: trends } = useQuery<GradeTrend[]>({
     queryKey: ["grade-trends", childId, annotate],
@@ -96,18 +102,32 @@ export default function ChildGrades() {
             {rows.length === 0 && (
               <tr><td colSpan={5} className="py-4 text-center text-gray-400">No grades yet.</td></tr>
             )}
-            {rows.map((g) => (
-              <tr key={g.id} className="border-t border-gray-100">
-                <td className="py-1 px-2 whitespace-nowrap">{g.graded_date ?? "—"}</td>
-                <td className="py-1 px-2">{g.subject}</td>
-                <td className="py-1 px-2">{g.title}</td>
-                <td className="py-1 px-2 text-gray-600">{g.score_text ?? "—"}</td>
-                <td className="py-1 px-2 font-mono">{g.grade_pct !== null && g.grade_pct !== undefined ? `${Number(g.grade_pct).toFixed(0)}%` : "—"}</td>
-              </tr>
-            ))}
+            {rows.map((g) => {
+              const hasAttach = (g.attachments?.length ?? 0) > 0;
+              return (
+                <tr
+                  key={g.id}
+                  className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer align-top"
+                  onClick={() => setAudit(g as unknown as Assignment)}
+                >
+                  <td className="py-1 px-2 whitespace-nowrap align-top">{g.graded_date ?? "—"}</td>
+                  <td className="py-1 px-2 align-top">{g.subject}</td>
+                  <td className="py-1 px-2 align-top">
+                    <TitleBlock title={g.title} titleEn={g.title_en} className="text-sm" />
+                    {hasAttach && <Attachments items={g.attachments} />}
+                  </td>
+                  <td className="py-1 px-2 text-gray-600 align-top">{g.score_text ?? "—"}</td>
+                  <td className="py-1 px-2 font-mono align-top">
+                    {g.grade_pct !== null && g.grade_pct !== undefined ? `${Number(g.grade_pct).toFixed(0)}%` : "—"}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </section>
+
+      {audit && <AuditDrawer a={audit} onClose={() => setAudit(null)} />}
     </div>
   );
 }

@@ -1,13 +1,28 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { api, Assignment, GradeTrend } from "../api";
+import Attachments from "../components/Attachments";
+import TitleBlock from "../components/TitleBlock";
+import AuditDrawer from "../components/AuditDrawer";
+import { EffectiveStatusChip } from "../components/StatusPopover";
 
-function Row({ a }: { a: Assignment }) {
+function Row({ a, onClick }: { a: Assignment; onClick: (a: Assignment) => void }) {
   return (
-    <tr className="border-t border-gray-100">
-      <td className="py-1 px-2 text-gray-600 text-sm">{a.subject}</td>
-      <td className="py-1 px-2">{a.title}</td>
-      <td className="py-1 px-2 text-sm whitespace-nowrap">{a.due_or_date}</td>
+    <tr className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => onClick(a)}>
+      <td className="py-1 px-2 text-gray-600 text-sm whitespace-nowrap align-top">
+        {a.subject}
+        {a.priority > 0 && <span className="ml-1 text-amber-500 text-xs">{"★".repeat(a.priority)}</span>}
+      </td>
+      <td className="py-1 px-2 align-top">
+        <TitleBlock title={a.title} titleEn={a.title_en} className="text-sm" />
+        {a.syllabus_context && (
+          <div className="text-xs text-gray-500 mt-0.5">↳ {a.syllabus_context}</div>
+        )}
+        <Attachments items={a.attachments} />
+      </td>
+      <td className="py-1 px-2 text-sm whitespace-nowrap align-top">{a.due_or_date}</td>
+      <td className="py-1 px-2 align-top"><EffectiveStatusChip a={a} /></td>
     </tr>
   );
 }
@@ -15,6 +30,7 @@ function Row({ a }: { a: Assignment }) {
 export default function ChildDetail() {
   const { id } = useParams();
   const childId = Number(id);
+  const [audit, setAudit] = useState<Assignment | null>(null);
   const { data, isLoading, error } = useQuery({
     queryKey: ["child-detail", childId],
     queryFn: () => api.childDetail(childId),
@@ -68,19 +84,19 @@ export default function ChildDetail() {
       {data.overdue.length > 0 && (
         <section className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
           <h3 className="font-semibold text-red-700 mb-2">Overdue — {data.overdue.length}</h3>
-          <table className="w-full text-sm"><tbody>{data.overdue.map((a) => <Row key={a.id} a={a} />)}</tbody></table>
+          <table className="w-full text-sm"><tbody>{data.overdue.map((a) => <Row key={a.id} a={a} onClick={setAudit} />)}</tbody></table>
         </section>
       )}
       {data.due_today.length > 0 && (
         <section className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
           <h3 className="font-semibold text-amber-700 mb-2">Due today — {data.due_today.length}</h3>
-          <table className="w-full text-sm"><tbody>{data.due_today.map((a) => <Row key={a.id} a={a} />)}</tbody></table>
+          <table className="w-full text-sm"><tbody>{data.due_today.map((a) => <Row key={a.id} a={a} onClick={setAudit} />)}</tbody></table>
         </section>
       )}
       {data.upcoming.length > 0 && (
         <section className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
           <h3 className="font-semibold text-blue-700 mb-2">Upcoming — {data.upcoming.length}</h3>
-          <table className="w-full text-sm"><tbody>{data.upcoming.slice(0, 20).map((a) => <Row key={a.id} a={a} />)}</tbody></table>
+          <table className="w-full text-sm"><tbody>{data.upcoming.slice(0, 20).map((a) => <Row key={a.id} a={a} onClick={setAudit} />)}</tbody></table>
         </section>
       )}
 
@@ -103,6 +119,8 @@ export default function ChildDetail() {
           </div>
         </section>
       )}
+
+      {audit && <AuditDrawer a={audit} onClose={() => setAudit(null)} />}
     </div>
   );
 }

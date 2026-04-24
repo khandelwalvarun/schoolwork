@@ -107,6 +107,13 @@ async def _upsert_item(
         return True, False, item.id
 
     old_status = existing.status
+    # DON'T downgrade a clean title to a mojibake one. The planner feed serves
+    # Hindi/Sanskrit titles as '?' placeholders; if we already have a good
+    # Devanagari value (refreshed from the detail page), keep it.
+    incoming_title_has_mojibake = bool(title) and "?" in (title or "")
+    stored_title_clean = bool(existing.title) and "?" not in (existing.title or "")
+    if incoming_title_has_mojibake and stored_title_clean:
+        title = existing.title  # preserve clean title
     changed = (
         existing.subject != subject
         or existing.title != title

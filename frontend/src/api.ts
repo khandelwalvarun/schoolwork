@@ -114,7 +114,10 @@ export type TodayData = {
     id: number;
     subject: string | null;
     title: string | null;
+    title_en?: string | null;
     due_or_date: string | null;
+    attachments?: AttachmentLink[];
+    normalized?: { body?: string; teacher?: string };
   }>;
   last_sync: {
     id: number;
@@ -157,8 +160,10 @@ export type Comment = {
   child_id: number;
   subject: string | null;
   title: string | null;
+  title_en?: string | null;
   due_or_date: string | null;
   first_seen_at: string | null;
+  attachments?: AttachmentLink[];
   normalized?: { teacher?: string; body?: string };
 };
 

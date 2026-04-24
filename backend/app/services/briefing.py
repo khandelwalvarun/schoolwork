@@ -37,6 +37,8 @@ class DigestAssignmentRow:
     external_id: str | None
     syllabus_context: str | None = None
     item_id: int | None = None
+    title_en: str | None = None
+    attachments: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -87,6 +89,8 @@ def _row(item: dict[str, Any]) -> DigestAssignmentRow:
         external_id=item.get("external_id"),
         syllabus_context=item.get("syllabus_context"),
         item_id=item.get("id"),
+        title_en=item.get("title_en"),
+        attachments=item.get("attachments") or [],
     )
 
 
