@@ -5,6 +5,7 @@ import { api, Assignment, GradeTrend, SyllabusCycle } from "../api";
 import Attachments from "../components/Attachments";
 import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover";
 import AuditDrawer from "../components/AuditDrawer";
+import QuickActions from "../components/QuickActions";
 
 function PriorityStar({ n }: { n: number }) {
   if (n <= 0) return null;
@@ -71,8 +72,11 @@ function AssignmentRow({
       </td>
       <td className="py-2 px-3 text-gray-500 text-sm whitespace-nowrap align-top">{a.normalized?.type}</td>
       <td className="py-2 px-3 whitespace-nowrap text-sm align-top">{a.due_or_date}</td>
-      <td className="py-2 px-3 align-top" onClick={(e) => e.stopPropagation()}>
-        <StatusChipButton a={a} onClick={(rect) => onOpenPopover(a, rect)} />
+      <td className="py-2 px-3 align-top whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <StatusChipButton a={a} onClick={(rect) => onOpenPopover(a, rect)} />
+          <QuickActions a={a} />
+        </div>
       </td>
     </tr>
   );

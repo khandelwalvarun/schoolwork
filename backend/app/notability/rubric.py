@@ -40,6 +40,7 @@ SCRAPER_DRIFT = EventKind("scraper_drift", 0.8, "Scraper saw fewer-than-expected
 SYNC_FAILED = EventKind("sync_failed", 1.0, "Sync errored out entirely")
 DIGEST_4PM = EventKind("digest_4pm", 1.0, "Scheduled daily digest")
 DIGEST_WEEKLY = EventKind("digest_weekly", 1.0, "Scheduled weekly digest")
+SYLLABUS_CHANGED = EventKind("syllabus_changed", 0.8, "School updated the syllabus")
 
 ALL_KINDS: dict[str, EventKind] = {
     e.name: e
@@ -61,5 +62,6 @@ ALL_KINDS: dict[str, EventKind] = {
         SYNC_FAILED,
         DIGEST_4PM,
         DIGEST_WEEKLY,
+        SYLLABUS_CHANGED,
     )
 }

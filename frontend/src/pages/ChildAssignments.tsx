@@ -5,6 +5,7 @@ import { api, Assignment } from "../api";
 import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover";
 import AuditDrawer from "../components/AuditDrawer";
 import ChildHeader from "../components/ChildHeader";
+import QuickActions from "../components/QuickActions";
 
 function PriorityStar({ n }: { n: number }) {
   if (n <= 0) return null;
@@ -103,8 +104,11 @@ export default function ChildAssignments() {
                 )}
               </td>
               <td className="py-2 px-3 whitespace-nowrap">{a.due_or_date}</td>
-              <td className="py-2 px-3" onClick={(e) => e.stopPropagation()}>
-                <StatusChipButton a={a} onClick={(rect) => setPopover({ a, rect })} />
+              <td className="py-2 px-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-2">
+                  <StatusChipButton a={a} onClick={(rect) => setPopover({ a, rect })} />
+                  <QuickActions a={a} />
+                </div>
               </td>
               <td className="py-2 px-3 text-xs text-gray-500">{a.syllabus_context ?? "—"}</td>
             </tr>

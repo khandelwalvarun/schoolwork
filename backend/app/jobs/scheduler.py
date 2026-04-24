@@ -12,6 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 from ..config import get_settings
 from .digest_job import run_daily_digest, run_weekly_digest
 from .sync_job import run_hourly_sync
+from .syllabus_job import run_weekly_syllabus_check
 
 log = logging.getLogger(__name__)
 _scheduler: AsyncIOScheduler | None = None
@@ -58,6 +59,17 @@ def start_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         max_instances=1,
         misfire_grace_time=600,
+    )
+    # Weekly syllabus recheck — Sunday 07:30 IST (early, before Monday
+    # assignments get set against the new week's cycle).
+    s.add_job(
+        run_weekly_syllabus_check,
+        CronTrigger(day_of_week="sun", hour=7, minute=30),
+        id="weekly_syllabus_check",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
     )
     s.start()
     log.info("scheduler started; jobs: %s", [j.id for j in s.get_jobs()])

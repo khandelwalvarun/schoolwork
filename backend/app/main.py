@@ -311,6 +311,15 @@ async def api_notifications_replay(payload: dict[str, Any] | None = None) -> dic
         )
 
 
+@app.post("/api/syllabus/check-now")
+async def api_syllabus_check_now() -> dict[str, Any]:
+    """Run the weekly syllabus recheck immediately — re-downloads + re-parses
+    each class's syllabus, diffs against the stored JSON, persists a
+    `syllabus_changed` event when anything differs."""
+    from .jobs.syllabus_job import check_syllabus_updates
+    return await check_syllabus_updates()
+
+
 @app.get("/api/syllabus/{class_level}")
 async def api_syllabus(class_level: int) -> dict[str, Any]:
     from .services.syllabus import merged_syllabus

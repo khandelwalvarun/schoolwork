@@ -16,6 +16,7 @@ import {
 import { api, Assignment, ParentStatus } from "../api";
 import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover";
 import AuditDrawer from "../components/AuditDrawer";
+import QuickActions from "../components/QuickActions";
 
 type ColumnKey = "not_started" | "in_progress" | "done_at_home" | "submitted" | "graded";
 
@@ -82,17 +83,19 @@ function Card({
       {a.title_en && a.title_en !== a.title && (
         <div className="text-xs text-gray-600 italic">→ {a.title_en}</div>
       )}
-      <div className="flex items-center justify-between mt-1">
+      <div className="flex items-center justify-between mt-1 gap-2">
         <div className="text-xs text-gray-500">{a.due_or_date}</div>
-        <span
-          data-chip
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenPopover(a, (e.currentTarget as HTMLElement).getBoundingClientRect());
-          }}
-        >
-          <EffectiveStatusChip a={a} />
-        </span>
+        <div className="flex items-center gap-1" data-chip onClick={(e) => e.stopPropagation()}>
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenPopover(a, (e.currentTarget as HTMLElement).getBoundingClientRect());
+            }}
+          >
+            <EffectiveStatusChip a={a} />
+          </span>
+          <QuickActions a={a} />
+        </div>
       </div>
       {a.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1">

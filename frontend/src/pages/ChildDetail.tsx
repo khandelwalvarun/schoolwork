@@ -7,6 +7,7 @@ import TitleBlock from "../components/TitleBlock";
 import AuditDrawer from "../components/AuditDrawer";
 import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover";
 import ChildHeader from "../components/ChildHeader";
+import QuickActions from "../components/QuickActions";
 
 function StatusChipButton({ a, onClick }: { a: Assignment; onClick: (rect: DOMRect) => void }) {
   const ref = useRef<HTMLButtonElement | null>(null);
@@ -49,8 +50,11 @@ function Row({
         <Attachments items={a.attachments} />
       </td>
       <td className="py-1 px-2 text-sm whitespace-nowrap align-top">{a.due_or_date}</td>
-      <td className="py-1 px-2 align-top" onClick={(e) => e.stopPropagation()}>
-        <StatusChipButton a={a} onClick={(r) => onOpenPopover(a, r)} />
+      <td className="py-1 px-2 align-top whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1.5">
+          <StatusChipButton a={a} onClick={(r) => onOpenPopover(a, r)} />
+          <QuickActions a={a} />
+        </div>
       </td>
     </tr>
   );
