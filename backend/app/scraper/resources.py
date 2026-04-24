@@ -147,6 +147,97 @@ async def harvest_home_tiles(client) -> list[ResourceTile]:
     return tiles
 
 
+async def harvest_class_pages(client, children: list[Any]) -> list[tuple[ResourceTile, Any]]:
+    """For every class each child is enrolled in, visit the per-class
+    website / documents / announcements / files tabs and harvest document
+    links. Returns [(tile, child)] so the caller can route each hit to the
+    right kid's rawdata tree.
+
+    We read class_ids from the DB (captured earlier by the planner). Each
+    hit becomes a ResourceTile with category='class_<subject>' + schoolwide
+    False so it lands per-kid.
+    """
+    from sqlalchemy import select
+    from ..db import get_async_session
+    from ..models import Child, VeracrossItem
+    import json as _json
+
+    # Build {child_id: [(subject, class_id)]}
+    classes_by_child: dict[int, list[tuple[str, str]]] = {}
+    async with get_async_session() as session:
+        rows = (await session.execute(
+            select(VeracrossItem.child_id, VeracrossItem.subject, VeracrossItem.raw_json)
+            .where(VeracrossItem.kind == "assignment")
+        )).all()
+    seen: set[tuple[int, str]] = set()
+    for child_id, subject, raw in rows:
+        if not subject or not raw:
+            continue
+        try:
+            r = _json.loads(raw)
+        except Exception:
+            continue
+        rid = r.get("row_id") or r.get("class_id")
+        if not rid:
+            continue
+        key = (child_id, str(rid))
+        if key in seen:
+            continue
+        seen.add(key)
+        classes_by_child.setdefault(child_id, []).append((subject, str(rid)))
+
+    tabs = ("website", "documents", "announcements", "files", "resources", "")
+    hits: list[tuple[ResourceTile, Any]] = []
+
+    children_by_id = {c.id: c for c in children}
+    page = client._page  # pylint: disable=protected-access
+
+    for child_id, class_list in classes_by_child.items():
+        child = children_by_id.get(child_id)
+        if child is None:
+            continue
+        for subject, cid in class_list:
+            for tab in tabs:
+                base = f"https://portals-embed.veracross.eu/vasantvalleyschool/parent/classes/{cid}"
+                url = f"{base}/{tab}".rstrip("/")
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                    await page.wait_for_timeout(1500)
+                    html = await page.content()
+                except Exception as e:
+                    log.debug("class page %s: %s", url, e)
+                    continue
+                if len(html) < 500:
+                    continue
+                # Harvest every link that looks like a file
+                soup = BeautifulSoup(html, "lxml")
+                saw_any = False
+                for a in soup.select("a[href]"):
+                    href = (a.get("href") or "").strip()
+                    if not href or href.startswith(("#", "mailto:", "javascript:")):
+                        continue
+                    abs_url = urljoin(url, href)
+                    kind = _kind_of(abs_url)
+                    if kind not in ("drive", "direct-file"):
+                        continue
+                    title = a.get_text(" ", strip=True) or abs_url.rsplit("/", 1)[-1]
+                    # Category from the subject (drop the class prefix)
+                    subj_slug = re.sub(r"^\d{1,2}[A-Za-z]?\s+", "", subject).strip().lower().replace(" ", "_") or "class"
+                    tile = ResourceTile(
+                        title=title[:120],
+                        href=href,
+                        resolved_url=abs_url,
+                        category=f"class_{subj_slug}",
+                        schoolwide=False,
+                        kind=kind,
+                    )
+                    hits.append((tile, child))
+                    saw_any = True
+                if saw_any:
+                    log.info("class page hit: %s %s tab=%r", subject, cid, tab)
+    return hits
+
+
 async def expand_portal_page(client, tile: ResourceTile) -> list[ResourceTile]:
     """Follow a portal `/pages/<slug>` link one hop and harvest any document
     anchors on that page. The returned ResourceTile entries inherit the
@@ -338,8 +429,44 @@ async def harvest_all(client, children: list[Any]) -> dict[str, Any]:
     all_tiles = tiles + expanded
     log.info("harvest: %d total after expansion", len(all_tiles))
 
+    # Class-page sweep — per-kid. Each (tile, child) is downloaded + routed
+    # to that child's rawdata tree only.
+    class_hits = await harvest_class_pages(client, children)
+    log.info("harvest: %d class-page hits", len(class_hits))
+
     saved: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
+
+    # Handle class-page hits first so the per-kid docs land before any
+    # collisions with schoolwide tiles of the same filename.
+    seen_by_child: dict[int, set[str]] = {}
+    for tile, child in class_hits:
+        try:
+            fetched = await fetch_tile(client, tile)
+        except Exception as e:
+            skipped.append({"title": tile.title, "url": tile.resolved_url, "kind": tile.kind, "reason": f"class:{e}"})
+            continue
+        if fetched is None:
+            skipped.append({"title": tile.title, "url": tile.resolved_url, "kind": tile.kind, "reason": "class:non-file"})
+            continue
+        body, ctype, suggested = fetched
+        key = (child.id, tile.resolved_url)
+        if key in seen_by_child.get(child.id, set()):
+            continue
+        seen_by_child.setdefault(child.id, set()).add(tile.resolved_url)
+        try:
+            paths = await save_for_children(body, ctype, suggested, tile, [child])
+        except Exception as e:
+            skipped.append({"title": tile.title, "url": tile.resolved_url, "kind": tile.kind, "reason": f"class-save:{e}"})
+            continue
+        saved.append({
+            "title": tile.title, "url": tile.resolved_url, "kind": tile.kind,
+            "category": tile.category, "schoolwide": False,
+            "paths": [P.repo_relative(p) for p in paths],
+            "bytes": len(body), "content_type": ctype,
+            "source": "class-page", "child_id": child.id,
+        })
+
     for t in all_tiles:
         try:
             fetched = await fetch_tile(client, t)
