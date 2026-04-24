@@ -6,6 +6,7 @@ import Attachments from "../components/Attachments";
 import TitleBlock from "../components/TitleBlock";
 import AuditDrawer from "../components/AuditDrawer";
 import ChildHeader from "../components/ChildHeader";
+import { formatDate } from "../util/dates";
 
 type GradeRow = {
   id: number;
@@ -108,7 +109,7 @@ export default function ChildGrades() {
                   className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer align-top"
                   onClick={() => setAudit(g as unknown as Assignment)}
                 >
-                  <td className="py-1 px-2 whitespace-nowrap align-top">{g.graded_date ?? "—"}</td>
+                  <td className="py-1 px-2 whitespace-nowrap align-top" title={g.graded_date ?? ""}>{formatDate(g.graded_date)}</td>
                   <td className="py-1 px-2 align-top">{g.subject}</td>
                   <td className="py-1 px-2 align-top">
                     <TitleBlock title={g.title} titleEn={g.title_en} className="text-sm" />

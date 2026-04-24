@@ -1,9 +1,12 @@
 import { useRef } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Assignment } from "../api";
 import TitleBlock from "./TitleBlock";
 import Attachments from "./Attachments";
 import QuickActions from "./QuickActions";
 import { EffectiveStatusChip } from "./StatusPopover";
+import { formatDate } from "../util/dates";
 
 function PriorityStar({ n }: { n: number }) {
   if (n <= 0) return null;
@@ -107,7 +110,9 @@ export function AssignmentRow({
           </div>
         )}
       </div>
-      <div className="text-gray-500 text-xs whitespace-nowrap">{a.due_or_date ?? "—"}</div>
+      <div className="text-gray-500 text-xs whitespace-nowrap" title={a.due_or_date ?? ""}>
+        {formatDate(a.due_or_date)}
+      </div>
       <div className="flex items-center gap-2 justify-end" onClick={(e) => e.stopPropagation()}>
         <StatusChipButton a={a} onOpenPopover={onOpenPopover} />
         <div className="hover-reveal">
@@ -125,6 +130,9 @@ export function BucketHeader({
   onSelectAll,
   onDeselectAll,
   tone = "default",
+  collapsed,
+  onToggleCollapsed,
+  dragHandle,
 }: {
   label: string;
   count: number;
@@ -132,6 +140,9 @@ export function BucketHeader({
   onSelectAll: () => void;
   onDeselectAll: () => void;
   tone?: "red" | "amber" | "blue" | "default";
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+  dragHandle?: React.ReactNode;
 }) {
   const toneClass =
     tone === "red"   ? "text-red-700"
@@ -139,11 +150,33 @@ export function BucketHeader({
   : tone === "blue"  ? "text-blue-700"
   : "text-gray-700";
   return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-[color:var(--bg-muted)] border-t border-b border-[color:var(--line-soft)]">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onToggleCollapsed}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggleCollapsed?.();
+        }
+      }}
+      className="w-full flex items-center gap-3 px-3 py-2 bg-[color:var(--bg-muted)] border-t border-b border-[color:var(--line-soft)] hover:bg-[color:var(--bg-sunken)] transition-colors text-left cursor-pointer select-none"
+      aria-expanded={!collapsed}
+      title={collapsed ? "Expand" : "Collapse"}
+    >
+      {dragHandle}
+      <span
+        className={"inline-block text-gray-400 transition-transform " + (collapsed ? "" : "rotate-90")}
+        style={{ width: 10 }}
+        aria-hidden
+      >
+        ▶
+      </span>
       <input
         type="checkbox"
         checked={allSelected}
         onChange={allSelected ? onDeselectAll : onSelectAll}
+        onClick={(e) => e.stopPropagation()}
         aria-label={allSelected ? "Deselect all" : "Select all"}
         className="h-4 w-4 accent-blue-700 cursor-pointer"
       />
@@ -161,6 +194,10 @@ export function AssignmentList({
   selection,
   onOpenAudit,
   onOpenPopover,
+  bucketId,
+  collapsed,
+  onToggleCollapsed,
+  sortableId,
 }: {
   rows: Assignment[];
   label: string;
@@ -173,11 +210,43 @@ export function AssignmentList({
   };
   onOpenAudit: (a: Assignment) => void;
   onOpenPopover: (a: Assignment, rect: DOMRect) => void;
+  bucketId?: string;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+  sortableId?: string;
 }) {
   if (!rows.length) return null;
   const allSelected = rows.every((r) => selection.ids.has(r.id));
+
+  // Optional drag support — when `sortableId` provided, the bucket can be
+  // reordered inside a parent SortableContext.
+  const sortable = useSortable({ id: sortableId || `__noop__${bucketId || label}` });
+  const dragProps = sortableId
+    ? {
+        ref: sortable.setNodeRef,
+        style: {
+          transform: CSS.Transform.toString(sortable.transform),
+          transition: sortable.transition,
+          opacity: sortable.isDragging ? 0.5 : 1,
+        } as React.CSSProperties,
+      }
+    : {};
+  const dragHandle = sortableId ? (
+    <span
+      {...sortable.attributes}
+      {...sortable.listeners}
+      className="text-gray-300 hover:text-gray-600 cursor-grab active:cursor-grabbing select-none"
+      style={{ width: 12 }}
+      onClick={(e) => e.stopPropagation()}
+      title="Drag to reorder"
+      aria-label="Drag handle"
+    >
+      ⋮⋮
+    </span>
+  ) : null;
+
   return (
-    <div>
+    <div {...dragProps}>
       <BucketHeader
         label={label}
         count={rows.length}
@@ -185,8 +254,11 @@ export function AssignmentList({
         onSelectAll={() => selection.selectMany(rows.map((r) => r.id))}
         onDeselectAll={() => selection.deselectMany(rows.map((r) => r.id))}
         tone={tone}
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+        dragHandle={dragHandle}
       />
-      {rows.map((a) => (
+      {!collapsed && rows.map((a) => (
         <AssignmentRow
           key={a.id}
           a={a}

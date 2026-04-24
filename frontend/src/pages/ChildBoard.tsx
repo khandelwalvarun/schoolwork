@@ -17,6 +17,7 @@ import { api, Assignment, ParentStatus } from "../api";
 import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover";
 import AuditDrawer from "../components/AuditDrawer";
 import QuickActions from "../components/QuickActions";
+import { formatDate } from "../util/dates";
 
 type ColumnKey = "not_started" | "in_progress" | "done_at_home" | "submitted" | "graded";
 
@@ -84,7 +85,7 @@ function Card({
         <div className="text-xs text-gray-600 italic">→ {a.title_en}</div>
       )}
       <div className="flex items-center justify-between mt-1 gap-2">
-        <div className="text-xs text-gray-500">{a.due_or_date}</div>
+        <div className="text-xs text-gray-500" title={a.due_or_date ?? ""}>{formatDate(a.due_or_date)}</div>
         <div className="flex items-center gap-1" data-chip onClick={(e) => e.stopPropagation()}>
           <span
             onClick={(e) => {

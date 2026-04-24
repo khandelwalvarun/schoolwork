@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api";
+import { formatDate } from "../util/dates";
 
 export default function Summaries() {
   const [kind, setKind] = useState<string>("");
@@ -37,7 +38,7 @@ export default function Summaries() {
                 onClick={() => setOpenId(open ? null : s.id)}
               >
                 <div>
-                  <b>{s.period_start}</b>
+                  <b title={s.period_start}>{formatDate(s.period_start)}</b>
                   <span className="text-xs text-gray-500 ml-2">· {s.kind}</span>
                 </div>
                 <div className="text-xs text-gray-500">{s.model_used}</div>

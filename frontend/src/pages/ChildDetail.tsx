@@ -8,6 +8,7 @@ import ChildHeader from "../components/ChildHeader";
 import BulkActionBar from "../components/BulkActionBar";
 import { AssignmentList } from "../components/AssignmentList";
 import { useSelection } from "../components/useSelection";
+import { useUiPrefs } from "../components/useUiPrefs";
 
 export default function ChildDetail() {
   const { id } = useParams();
@@ -15,6 +16,7 @@ export default function ChildDetail() {
   const [audit, setAudit] = useState<Assignment | null>(null);
   const [popover, setPopover] = useState<{ a: Assignment; rect: DOMRect } | null>(null);
   const selection = useSelection();
+  const prefs = useUiPrefs();
   const { data, isLoading, error } = useQuery({
     queryKey: ["child-detail", childId],
     queryFn: () => api.childDetail(childId),
@@ -67,30 +69,30 @@ export default function ChildDetail() {
       )}
 
       <section className="surface mb-6 overflow-hidden">
-        <AssignmentList
-          rows={data.overdue}
-          label="Overdue"
-          tone="red"
-          selection={selection}
-          onOpenAudit={setAudit}
-          onOpenPopover={(a, r) => setPopover({ a, rect: r })}
-        />
-        <AssignmentList
-          rows={data.due_today}
-          label="Due today"
-          tone="amber"
-          selection={selection}
-          onOpenAudit={setAudit}
-          onOpenPopover={(a, r) => setPopover({ a, rect: r })}
-        />
-        <AssignmentList
-          rows={data.upcoming}
-          label="Upcoming"
-          tone="blue"
-          selection={selection}
-          onOpenAudit={setAudit}
-          onOpenPopover={(a, r) => setPopover({ a, rect: r })}
-        />
+        {(["overdue", "due_today", "upcoming"] as const).map((bk) => {
+          const meta: Record<string, { label: string; tone: "red" | "amber" | "blue" }> = {
+            overdue:   { label: "Overdue",    tone: "red"   },
+            due_today: { label: "Due today",  tone: "amber" },
+            upcoming:  { label: "Upcoming",   tone: "blue"  },
+          };
+          const rows = (data as unknown as Record<string, Assignment[]>)[bk] ?? [];
+          const bucketId = `bucket-${childId}-${bk}-detail`;
+          const collapsed = prefs.isCollapsed(bucketId, true);
+          return (
+            <AssignmentList
+              key={bk}
+              rows={rows}
+              label={meta[bk].label}
+              tone={meta[bk].tone}
+              selection={selection}
+              onOpenAudit={setAudit}
+              onOpenPopover={(a, r) => setPopover({ a, rect: r })}
+              bucketId={bucketId}
+              collapsed={collapsed}
+              onToggleCollapsed={() => prefs.toggleCollapsed(bucketId)}
+            />
+          );
+        })}
       </section>
 
       {data.grade_trends.length > 0 && (

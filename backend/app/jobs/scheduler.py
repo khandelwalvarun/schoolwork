@@ -10,6 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from ..config import get_settings
+from ..services.ui_prefs import load_prefs
 from .digest_job import run_daily_digest, run_weekly_digest
 from .sync_job import run_hourly_sync
 from .syllabus_job import run_weekly_syllabus_check
@@ -26,14 +27,42 @@ def get_scheduler() -> AsyncIOScheduler:
     return _scheduler
 
 
+def _sync_cron_trigger() -> CronTrigger:
+    """Build the sync CronTrigger from the user-configurable prefs."""
+    prefs = load_prefs()
+    interval_h = max(1, int(prefs.get("sync_interval_hours") or 1))
+    start = max(0, min(23, int(prefs.get("sync_window_start_hour") or 8)))
+    end = max(0, min(23, int(prefs.get("sync_window_end_hour") or 22)))
+    if end < start:
+        start, end = 8, 22
+    hours = ",".join(str(h) for h in range(start, end + 1, interval_h))
+    return CronTrigger(hour=hours, minute=5)
+
+
+def reschedule_sync_job() -> None:
+    """Re-register hourly_sync with the latest trigger from prefs. Safe to
+    call anytime — APScheduler replaces the existing job by id."""
+    s = get_scheduler()
+    s.add_job(
+        run_hourly_sync,
+        _sync_cron_trigger(),
+        id="hourly_sync",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=60,
+    )
+    log.info("rescheduled hourly_sync with trigger: %s", s.get_job("hourly_sync").trigger)
+
+
 def start_scheduler() -> AsyncIOScheduler:
     s = get_scheduler()
     if s.running:
         return s
-    # Hourly sync 08:00–22:00 IST
+    # Sync — user-configurable interval and window (default: hourly 08–22 IST)
     s.add_job(
         run_hourly_sync,
-        CronTrigger(hour="8-22", minute=5),
+        _sync_cron_trigger(),
         id="hourly_sync",
         replace_existing=True,
         coalesce=True,

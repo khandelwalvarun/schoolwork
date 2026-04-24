@@ -30,6 +30,8 @@ recon/storage_state.json
 
 # Downloaded attachments (scraped from Veracross)
 data/attachments/
+# Per-install UI prefs (collapsed sections, ordering, etc.)
+data/ui_prefs.json
 tmp-login-debug/
 tmp-probe.py
 

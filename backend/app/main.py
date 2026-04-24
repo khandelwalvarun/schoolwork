@@ -311,6 +311,31 @@ async def api_notifications_replay(payload: dict[str, Any] | None = None) -> dic
         )
 
 
+@app.get("/api/ui-prefs")
+async def api_ui_prefs_get() -> dict[str, Any]:
+    """Returns the full UI-preferences blob: collapsed sections, bucket
+    ordering, kid ordering, etc. Single-user app — no auth scoping."""
+    from .services.ui_prefs import load_prefs
+    return load_prefs()
+
+
+@app.put("/api/ui-prefs")
+async def api_ui_prefs_put(payload: dict[str, Any]) -> dict[str, Any]:
+    """Merge-update the prefs blob and return the canonical result.
+    If any sync-cron keys changed, re-register the APScheduler job
+    so the new cadence takes effect immediately."""
+    from .services.ui_prefs import save_prefs
+    r = save_prefs(payload or {})
+    sync_keys = {"sync_interval_hours", "sync_window_start_hour", "sync_window_end_hour"}
+    if payload and any(k in payload for k in sync_keys):
+        try:
+            from .jobs.scheduler import reschedule_sync_job
+            reschedule_sync_job()
+        except Exception:
+            pass
+    return r
+
+
 @app.post("/api/syllabus/check-now")
 async def api_syllabus_check_now() -> dict[str, Any]:
     """Run the weekly syllabus recheck immediately — re-downloads + re-parses

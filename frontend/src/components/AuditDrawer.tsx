@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, Assignment, StatusHistoryEntry } from "../api";
 import Attachments from "./Attachments";
 import StatusPopover, { EffectiveStatusChip } from "./StatusPopover";
+import { formatDate, formatDateTime } from "../util/dates";
 
 function formatValue(field: string, v: string | null): string {
   if (v === null || v === undefined || v === "") return "—";
@@ -62,7 +63,7 @@ export default function AuditDrawer({
               <div className="text-sm text-gray-600 italic">→ {a.title_en}</div>
             )}
             <div className="text-xs text-gray-500 mt-1">
-              due {a.due_or_date ?? "—"} · portal: <b>{a.portal_status || "pending"}</b>
+              due {formatDate(a.due_or_date)} · portal: <b>{a.portal_status || "pending"}</b>
               {a.parent_status && <> · parent: <b>{a.parent_status}</b></>}
               {a.priority > 0 && <> · priority: {"★".repeat(a.priority)}</>}
               {a.snooze_until && <> · snoozed until {a.snooze_until}</>}
@@ -131,7 +132,7 @@ export default function AuditDrawer({
                 {history.map((h: StatusHistoryEntry) => (
                   <li key={h.id} className="border-l-2 border-gray-200 pl-3 pb-2">
                     <div className="text-xs text-gray-500">
-                      {h.created_at ? new Date(h.created_at).toLocaleString() : ""} ·{" "}
+                      {formatDateTime(h.created_at)} ·{" "}
                       <span className="font-medium">{h.source}</span>
                       {h.actor ? ` (${h.actor})` : ""}
                     </div>

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, AttachmentFull } from "../api";
+import { formatDateShort } from "../util/dates";
 
 function fmtSize(n: number | null | undefined): string {
   if (!n) return "";
@@ -86,7 +87,7 @@ export default function AttachmentsPage() {
               <td className="py-2 px-3 text-gray-600">{a.source_kind}</td>
               <td className="py-2 px-3 text-gray-600 whitespace-nowrap">{fmtSize(a.size_bytes)}</td>
               <td className="py-2 px-3 text-gray-500 whitespace-nowrap text-xs">
-                {a.downloaded_at ? new Date(a.downloaded_at).toLocaleDateString() : ""}
+                {formatDateShort(a.downloaded_at)}
               </td>
             </tr>
           ))}

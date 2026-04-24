@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ReplayResult } from "../api";
+import { formatDateTime } from "../util/dates";
 
 type Notif = { channel: string; status: string; error?: string; delivered_at?: string };
 type Event = {
@@ -126,7 +127,7 @@ export default function Notifications() {
         <tbody>
           {events.map((e) => (
             <tr key={e.id} className="border-t border-gray-100 hover:bg-gray-50 align-top">
-              <td className="py-2 px-3 text-gray-500 whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</td>
+              <td className="py-2 px-3 text-gray-500 whitespace-nowrap" title={e.created_at}>{formatDateTime(e.created_at)}</td>
               <td className="py-2 px-3 font-mono text-xs">{e.kind}</td>
               <td className="py-2 px-3">{e.notability.toFixed(2)}</td>
               <td className="py-2 px-3">{e.child_id ?? "—"}</td>

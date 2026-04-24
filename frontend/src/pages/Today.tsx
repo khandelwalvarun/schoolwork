@@ -1,13 +1,31 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useState } from "react";
-import { api, Assignment, GradeTrend, SyllabusCycle } from "../api";
+import {
+  DndContext,
+  DragEndEvent,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { api, Assignment, GradeTrend, SyllabusCycle, ChildBlock } from "../api";
 import AuditDrawer from "../components/AuditDrawer";
 import StatusPopover from "../components/StatusPopover";
 import BulkActionBar from "../components/BulkActionBar";
 import Attachments from "../components/Attachments";
 import { AssignmentList } from "../components/AssignmentList";
 import { useSelection } from "../components/useSelection";
+import { useUiPrefs } from "../components/useUiPrefs";
+import { formatDate, formatRelative } from "../util/dates";
+
+const BUCKET_DEFS: Record<string, { key: keyof ChildBlock; label: string; tone: "red" | "amber" | "blue" }> = {
+  overdue:   { key: "overdue",   label: "Overdue",    tone: "red"   },
+  due_today: { key: "due_today", label: "Due today",  tone: "amber" },
+  upcoming:  { key: "upcoming",  label: "Upcoming · next 14 days", tone: "blue" },
+};
+const DEFAULT_BUCKET_ORDER = ["overdue", "due_today", "upcoming"];
 
 function HeroBand({
   totals,
@@ -99,14 +117,93 @@ function CycleBadge({ cycle }: { cycle: SyllabusCycle | null }) {
   );
 }
 
+function KidSection({
+  kid,
+  selection,
+  onOpenAudit,
+  onOpenPopover,
+  prefs,
+}: {
+  kid: ChildBlock;
+  selection: ReturnType<typeof useSelection>;
+  onOpenAudit: (a: Assignment) => void;
+  onOpenPopover: (a: Assignment, rect: DOMRect) => void;
+  prefs: ReturnType<typeof useUiPrefs>;
+}) {
+  const order = prefs.bucketOrderFor(kid.child.id, DEFAULT_BUCKET_ORDER);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const ids = order.map((k) => `bucket-${kid.child.id}-${k}`);
+
+  const onEnd = (e: DragEndEvent) => {
+    if (!e.over || e.active.id === e.over.id) return;
+    const fromIdx = ids.indexOf(String(e.active.id));
+    const toIdx = ids.indexOf(String(e.over.id));
+    if (fromIdx < 0 || toIdx < 0) return;
+    const nextOrder = arrayMove(order, fromIdx, toIdx);
+    prefs.setBucketOrder(kid.child.id, nextOrder);
+  };
+
+  return (
+    <section className="surface mb-6 overflow-hidden">
+      <header className="px-4 py-3 border-b border-[color:var(--line)] flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Link to={`/child/${kid.child.id}`} className="text-lg font-semibold hover:text-blue-700">
+            {kid.child.display_name}
+          </Link>
+          <span className="text-sm text-gray-500">· {kid.child.class_section}</span>
+          <CycleBadge cycle={kid.syllabus_cycle} />
+        </div>
+        <div className="flex items-center gap-4">
+          <KidBacklog sparkline={kid.overdue_sparkline}
+            latest={kid.overdue_trend[kid.overdue_trend.length - 1]?.count ?? 0} />
+          <nav className="text-xs text-gray-500 flex gap-3">
+            <Link to={`/child/${kid.child.id}/board`} className="hover:text-blue-700">Board</Link>
+            <Link to={`/child/${kid.child.id}/assignments`} className="hover:text-blue-700">All</Link>
+            <Link to={`/child/${kid.child.id}/grades`} className="hover:text-blue-700">Grades</Link>
+            <Link to={`/child/${kid.child.id}/syllabus`} className="hover:text-blue-700">Syllabus</Link>
+          </nav>
+        </div>
+      </header>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onEnd}>
+        <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+          {order.map((bk) => {
+            const def = BUCKET_DEFS[bk];
+            if (!def) return null;
+            const rows = (kid as unknown as Record<string, Assignment[]>)[def.key] ?? [];
+            const bucketId = `bucket-${kid.child.id}-${bk}`;
+            const collapsed = prefs.isCollapsed(bucketId, true);
+            return (
+              <AssignmentList
+                key={bucketId}
+                rows={rows}
+                label={def.label}
+                tone={def.tone}
+                selection={selection}
+                onOpenAudit={onOpenAudit}
+                onOpenPopover={onOpenPopover}
+                bucketId={bucketId}
+                collapsed={collapsed}
+                onToggleCollapsed={() => prefs.toggleCollapsed(bucketId)}
+                sortableId={bucketId}
+              />
+            );
+          })}
+        </SortableContext>
+      </DndContext>
+      <GradeTrendsMini trends={kid.grade_trends} />
+    </section>
+  );
+}
+
 export default function Today() {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ["today"], queryFn: api.today });
   const selection = useSelection();
+  const prefs = useUiPrefs();
   const [popover, setPopover] = useState<{ a: Assignment; rect: DOMRect } | null>(null);
   const [audit, setAudit] = useState<Assignment | null>(null);
 
-  if (isLoading) return <div className="text-gray-500">Loading…</div>;
+  if (isLoading || !prefs.loaded) return <div className="text-gray-500">Loading…</div>;
   if (error) return <div className="text-red-700">Error: {String(error)}</div>;
   if (!data) return null;
 
@@ -115,7 +212,7 @@ export default function Today() {
   const sendDigest = async () => { await api.digestRun(); };
 
   const lastSyncLabel = data.last_sync
-    ? `${data.last_sync.status} · ${data.last_sync.ended_at?.slice(0, 16).replace("T", " ") || "…"}`
+    ? `${data.last_sync.status} · ${formatRelative(data.last_sync.ended_at)}`
     : "never";
 
   return (
@@ -128,85 +225,18 @@ export default function Today() {
       />
 
       {data.children.map((kid) => (
-        <section key={kid.child.id} className="surface mb-6 overflow-hidden">
-          <header className="px-4 py-3 border-b border-[color:var(--line)] flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3">
-              <Link to={`/child/${kid.child.id}`} className="text-lg font-semibold hover:text-blue-700">
-                {kid.child.display_name}
-              </Link>
-              <span className="text-sm text-gray-500">· {kid.child.class_section}</span>
-              <CycleBadge cycle={kid.syllabus_cycle} />
-            </div>
-            <div className="flex items-center gap-4">
-              <KidBacklog sparkline={kid.overdue_sparkline}
-                latest={kid.overdue_trend[kid.overdue_trend.length - 1]?.count ?? 0} />
-              <nav className="text-xs text-gray-500 flex gap-3">
-                <Link to={`/child/${kid.child.id}/board`} className="hover:text-blue-700">Board</Link>
-                <Link to={`/child/${kid.child.id}/assignments`} className="hover:text-blue-700">All</Link>
-                <Link to={`/child/${kid.child.id}/grades`} className="hover:text-blue-700">Grades</Link>
-                <Link to={`/child/${kid.child.id}/syllabus`} className="hover:text-blue-700">Syllabus</Link>
-              </nav>
-            </div>
-          </header>
-
-          <AssignmentList
-            rows={kid.overdue}
-            label="Overdue"
-            tone="red"
-            selection={selection}
-            onOpenAudit={setAudit}
-            onOpenPopover={(a, r) => setPopover({ a, rect: r })}
-          />
-          <AssignmentList
-            rows={kid.due_today}
-            label="Due today"
-            tone="amber"
-            selection={selection}
-            onOpenAudit={setAudit}
-            onOpenPopover={(a, r) => setPopover({ a, rect: r })}
-          />
-          <AssignmentList
-            rows={kid.upcoming}
-            label="Upcoming · next 14 days"
-            tone="blue"
-            selection={selection}
-            onOpenAudit={setAudit}
-            onOpenPopover={(a, r) => setPopover({ a, rect: r })}
-          />
-
-          <GradeTrendsMini trends={kid.grade_trends} />
-        </section>
+        <KidSection
+          key={kid.child.id}
+          kid={kid}
+          selection={selection}
+          onOpenAudit={setAudit}
+          onOpenPopover={(a, r) => setPopover({ a, rect: r })}
+          prefs={prefs}
+        />
       ))}
 
       {data.messages_last_7d.length > 0 && (
-        <section className="surface mb-6 overflow-hidden">
-          <header className="px-4 py-3 border-b border-[color:var(--line)]">
-            <h3 className="text-sm font-semibold">School messages · last 7 days · {data.messages_last_7d.length}</h3>
-          </header>
-          <ul>
-            {data.messages_last_7d.slice(0, 15).map((m) => {
-              const mm = m as unknown as {
-                id: number; title: string | null; subject: string | null;
-                title_en?: string | null; due_or_date: string | null;
-                attachments?: import("../api").AttachmentLink[];
-              };
-              return (
-                <li key={mm.id} className="px-4 py-2 border-t border-[color:var(--line-soft)] text-sm">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="font-medium">{mm.title || mm.subject}</span>
-                    <span className="text-xs text-gray-500 whitespace-nowrap">{mm.due_or_date}</span>
-                  </div>
-                  {mm.title_en && mm.title_en !== (mm.title || mm.subject) && (
-                    <div className="text-xs text-gray-600 italic">→ {mm.title_en}</div>
-                  )}
-                  {mm.attachments && mm.attachments.length > 0 && (
-                    <Attachments items={mm.attachments} />
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+        <MessagesSection data={data.messages_last_7d} prefs={prefs} />
       )}
 
       <BulkActionBar
@@ -220,5 +250,55 @@ export default function Today() {
       )}
       {audit && <AuditDrawer a={audit} onClose={() => setAudit(null)} />}
     </div>
+  );
+}
+
+function MessagesSection({
+  data,
+  prefs,
+}: {
+  data: Array<{
+    id: number; title: string | null; subject: string | null;
+    title_en?: string | null; due_or_date: string | null;
+    attachments?: import("../api").AttachmentLink[];
+  }>;
+  prefs: ReturnType<typeof useUiPrefs>;
+}) {
+  const bucketId = "section-messages-today";
+  const collapsed = prefs.isCollapsed(bucketId, true);
+  return (
+    <section className="surface mb-6 overflow-hidden">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => prefs.toggleCollapsed(bucketId)}
+        className="w-full flex items-center gap-3 px-4 py-3 border-b border-[color:var(--line)] cursor-pointer hover:bg-[color:var(--bg-muted)] select-none"
+      >
+        <span className={"inline-block text-gray-400 transition-transform " + (collapsed ? "" : "rotate-90")} style={{ width: 10 }}>▶</span>
+        <h3 className="text-sm font-semibold">
+          School messages · last 7 days · {data.length}
+        </h3>
+      </div>
+      {!collapsed && (
+        <ul>
+          {data.slice(0, 15).map((mm) => (
+            <li key={mm.id} className="px-4 py-2 border-t border-[color:var(--line-soft)] text-sm">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-medium">{mm.title || mm.subject}</span>
+                <span className="text-xs text-gray-500 whitespace-nowrap" title={mm.due_or_date ?? ""}>
+                  {formatDate(mm.due_or_date)}
+                </span>
+              </div>
+              {mm.title_en && mm.title_en !== (mm.title || mm.subject) && (
+                <div className="text-xs text-gray-600 italic">→ {mm.title_en}</div>
+              )}
+              {mm.attachments && mm.attachments.length > 0 && (
+                <Attachments items={mm.attachments} />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

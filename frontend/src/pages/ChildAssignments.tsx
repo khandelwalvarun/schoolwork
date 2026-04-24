@@ -8,6 +8,7 @@ import ChildHeader from "../components/ChildHeader";
 import BulkActionBar from "../components/BulkActionBar";
 import { AssignmentList } from "../components/AssignmentList";
 import { useSelection } from "../components/useSelection";
+import { useUiPrefs } from "../components/useUiPrefs";
 
 export default function ChildAssignments() {
   const { id } = useParams();
@@ -17,6 +18,7 @@ export default function ChildAssignments() {
   const [popover, setPopover] = useState<{ a: Assignment; rect: DOMRect } | null>(null);
   const [audit, setAudit] = useState<Assignment | null>(null);
   const selection = useSelection();
+  const prefs = useUiPrefs();
 
   const { data } = useQuery({
     queryKey: ["assignments", childId, status, subject],
@@ -60,6 +62,9 @@ export default function ChildAssignments() {
           selection={selection}
           onOpenAudit={setAudit}
           onOpenPopover={(a, r) => setPopover({ a, rect: r })}
+          bucketId={`bucket-${childId}-all`}
+          collapsed={prefs.isCollapsed(`bucket-${childId}-all`, false)}
+          onToggleCollapsed={() => prefs.toggleCollapsed(`bucket-${childId}-all`, false)}
         />
       </section>
 

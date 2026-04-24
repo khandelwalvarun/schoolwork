@@ -6,6 +6,7 @@ import Attachments from "../components/Attachments";
 import TitleBlock from "../components/TitleBlock";
 import AuditDrawer from "../components/AuditDrawer";
 import ChildHeader from "../components/ChildHeader";
+import { formatDate } from "../util/dates";
 
 export default function ChildComments() {
   const { id } = useParams();
@@ -37,7 +38,7 @@ export default function ChildComments() {
                   <span className="text-sm text-gray-500 ml-2">· {c.normalized.teacher}</span>
                 )}
               </div>
-              <div className="text-xs text-gray-500">{c.due_or_date || c.first_seen_at}</div>
+              <div className="text-xs text-gray-500" title={c.due_or_date || c.first_seen_at || ""}>{formatDate(c.due_or_date || c.first_seen_at)}</div>
             </div>
             <div className="mt-1">
               <TitleBlock title={c.title} titleEn={c.title_en} className="text-sm text-gray-800 whitespace-pre-wrap" />

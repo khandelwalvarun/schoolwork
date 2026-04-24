@@ -4,6 +4,7 @@ import { api, Assignment, MessageRow } from "../api";
 import Attachments from "../components/Attachments";
 import TitleBlock from "../components/TitleBlock";
 import AuditDrawer from "../components/AuditDrawer";
+import { formatDate } from "../util/dates";
 
 export default function Messages() {
   const [sinceDays, setSinceDays] = useState(30);
@@ -44,7 +45,7 @@ export default function Messages() {
                   className="font-bold"
                 />
               </div>
-              <div className="text-xs text-gray-500 whitespace-nowrap">{m.due_or_date || m.first_seen_at}</div>
+              <div className="text-xs text-gray-500 whitespace-nowrap" title={m.due_or_date || m.first_seen_at || ""}>{formatDate(m.due_or_date || m.first_seen_at)}</div>
             </div>
             {m.normalized?.teacher && (
               <div className="text-xs text-gray-500 mt-0.5">from {m.normalized.teacher}</div>

@@ -16,6 +16,7 @@ import SettingsChannels from "./pages/SettingsChannels";
 import SettingsSyllabus from "./pages/SettingsSyllabus";
 import AttachmentsPage from "./pages/AttachmentsPage";
 import CommandPalette from "./components/CommandPalette";
+import HelpPanel from "./components/HelpPanel";
 import { api } from "./api";
 
 function NavItem({ to, label, end = true }: { to: string; label: string; end?: boolean }) {
@@ -82,10 +83,19 @@ export default function App() {
             <NavItem to="/summaries" label="Summaries" />
             <NavItem to="/notifications" label="Notifications" />
             <NavItem to="/settings" label="Settings" />
+            <button
+              onClick={() => document.dispatchEvent(new CustomEvent("pc:help:toggle"))}
+              className="text-xs text-gray-500 hover:text-gray-800 inline-flex items-center gap-1 border border-[color:var(--line)] rounded-full w-6 h-6 justify-center bg-[color:var(--bg-muted)]"
+              title="Keyboard shortcuts & tips (? key)"
+              aria-label="Help"
+            >
+              ?
+            </button>
           </nav>
         </div>
       </header>
       <CommandPalette />
+      <HelpPanel />
       <main className="flex-1 max-w-6xl mx-auto w-full px-5 py-6">
         <Routes>
           <Route path="/" element={<Today />} />
