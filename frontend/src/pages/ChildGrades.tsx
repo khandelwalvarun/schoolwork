@@ -6,6 +6,7 @@ import Attachments from "../components/Attachments";
 import TitleBlock from "../components/TitleBlock";
 import AuditDrawer from "../components/AuditDrawer";
 import ChildHeader from "../components/ChildHeader";
+import { SortableTH, useSortable } from "../components/useSortable";
 import { formatDate } from "../util/dates";
 
 type GradeRow = {
@@ -40,6 +41,17 @@ export default function ChildGrades() {
   });
 
   const rows = (grades || []) as GradeRow[];
+
+  const sort = useSortable<GradeRow>(rows, "graded_date", "desc", (g, key) => {
+    switch (key) {
+      case "graded_date": return g.graded_date ?? null;
+      case "subject":     return g.subject ?? null;
+      case "title":       return (g.title ?? null);
+      case "score_text":  return g.score_text ?? null;
+      case "grade_pct":   return g.grade_pct ?? null;
+      default:            return null;
+    }
+  });
 
   return (
     <div>
@@ -89,19 +101,19 @@ export default function ChildGrades() {
         </h3>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase text-gray-500">
-              <th className="py-1 px-2">Date</th>
-              <th className="py-1 px-2">Subject</th>
-              <th className="py-1 px-2">Assignment</th>
-              <th className="py-1 px-2">Score</th>
-              <th className="py-1 px-2">%</th>
+            <tr className="text-xs uppercase border-b border-[color:var(--line-soft)]">
+              <SortableTH label="Date"       k="graded_date" s={sort} />
+              <SortableTH label="Subject"    k="subject"     s={sort} />
+              <SortableTH label="Assignment" k="title"       s={sort} />
+              <SortableTH label="Score"      k="score_text"  s={sort} />
+              <SortableTH label="%"          k="grade_pct"   s={sort} align="right" />
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
+            {sort.sorted.length === 0 && (
               <tr><td colSpan={5} className="py-4 text-center text-gray-400">No grades yet.</td></tr>
             )}
-            {rows.map((g) => {
+            {sort.sorted.map((g) => {
               const hasAttach = (g.attachments?.length ?? 0) > 0;
               return (
                 <tr
@@ -116,7 +128,7 @@ export default function ChildGrades() {
                     {hasAttach && <Attachments items={g.attachments} />}
                   </td>
                   <td className="py-1 px-2 text-gray-600 align-top">{g.score_text ?? "—"}</td>
-                  <td className="py-1 px-2 font-mono align-top">
+                  <td className="py-1 px-2 font-mono align-top text-right">
                     {g.grade_pct !== null && g.grade_pct !== undefined ? `${Number(g.grade_pct).toFixed(0)}%` : "—"}
                   </td>
                 </tr>
