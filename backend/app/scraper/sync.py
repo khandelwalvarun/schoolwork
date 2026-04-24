@@ -179,19 +179,39 @@ async def _sync_grades_for_child(
     grading_periods: tuple[int, ...],
     counters: dict[str, int],
     diff: DiffAggregator,
+    force_rediscover: bool = False,
 ) -> None:
     today_iso = _today_iso()
-    # Discover real grading periods for this child, once, from the first class.
+    # Prefer the cache; only re-probe Veracross when cache missing/stale or
+    # the caller forced a rediscover (heavy tier).
+    from ..services import veracross_cache as vc_cache
+    cached = vc_cache.get_for_child(child.id)
     discovered: list[int] = []
-    if child.veracross_id and classes:
-        for cls in classes:
-            cid = cls.get("class_id")
-            if cid:
-                discovered = await _discover_grading_periods(
-                    client, child.veracross_id, cid
+    if cached and not force_rediscover and not vc_cache.is_stale(child.id):
+        discovered = list(cached.get("grading_periods") or [])
+        log.info("child=%s grading periods from cache: %s", child.display_name, discovered)
+    else:
+        if child.veracross_id and classes:
+            for cls in classes:
+                cid = cls.get("class_id")
+                if cid:
+                    discovered = await _discover_grading_periods(
+                        client, child.veracross_id, cid
+                    )
+                    if discovered:
+                        break
+        if discovered:
+            # Persist — also refresh the class list since we had to probe anyway
+            try:
+                vc_cache.set_for_child(
+                    child_pk=child.id,
+                    vc_id=child.veracross_id or "",
+                    class_ids=[c["class_id"] for c in classes if c.get("class_id")],
+                    grading_periods=discovered,
                 )
-                if discovered:
-                    break
+                log.info("cached grading periods for %s: %s", child.display_name, discovered)
+            except Exception as e:
+                log.warning("couldn't update cache: %s", e)
     periods_to_fetch: tuple[int, ...] = tuple(discovered) if discovered else grading_periods
     log.info(
         "child=%s grading periods used: %s (hardcoded fallback: %s)",
@@ -250,6 +270,7 @@ async def _sync_one_child(
     diff: DiffAggregator,
     include_grades: bool = True,
     grading_periods: tuple[int, ...] = (21,),
+    tier: str = "medium",
 ) -> None:
     if not child.veracross_id:
         log.warning("child %s has no veracross_id", child.display_name)
@@ -369,32 +390,58 @@ async def _sync_one_child(
         ).all()
     )
     in_scope_ids = {iid for ext, iid in new_or_active_items}
-    # Priority: any row whose title still has '?' placeholders (Devanagari
-    # mojibake) OR has no attachment yet.
-    mojibake_ids: set[int] = set()
-    mojibake_rows = (
-        await session.execute(
-            select(VeracrossItem.id, VeracrossItem.external_id)
-            .where(VeracrossItem.kind == "assignment")
-            .where(VeracrossItem.child_id == child.id)
-            .where(VeracrossItem.title.like("%?%"))
-        )
-    ).all()
+    # Tier-aware detail-fetch scope:
+    #  light:   NEW items only (mojibake repair deferred to background task)
+    #  medium:  NEW + items whose detail_fetched_at is NULL or >24h old
+    #  heavy:   NEW + EVERYTHING (full rebuild)
+    from datetime import timedelta
+    now_ts = _now()
+    stale_cutoff = now_ts - timedelta(hours=24)
+
     priority: list[tuple[str, int]] = []
-    for iid, ext_id in mojibake_rows:
-        if iid not in in_scope_ids:
-            priority.append((ext_id, iid))
-            mojibake_ids.add(iid)
-    backfill: list[tuple[str, int]] = [
-        (ext_id, iid) for (iid, ext_id) in all_items
-        if iid not in items_with_att
-        and iid not in in_scope_ids
-        and iid not in mojibake_ids
-    ]
+    backfill: list[tuple[str, int]] = []
+    mojibake_ids: set[int] = set()
+
+    if tier in ("medium", "heavy"):
+        mojibake_rows = (
+            await session.execute(
+                select(VeracrossItem.id, VeracrossItem.external_id)
+                .where(VeracrossItem.kind == "assignment")
+                .where(VeracrossItem.child_id == child.id)
+                .where(VeracrossItem.title.like("%?%"))
+            )
+        ).all()
+        for iid, ext_id in mojibake_rows:
+            if iid not in in_scope_ids:
+                priority.append((ext_id, iid))
+                mojibake_ids.add(iid)
+
+        # Staleness-aware backfill: items never detail-fetched, or not in >24h.
+        stale_q = select(
+            VeracrossItem.id, VeracrossItem.external_id, VeracrossItem.detail_fetched_at
+        ).where(VeracrossItem.kind == "assignment").where(VeracrossItem.child_id == child.id)
+        if tier == "medium":
+            # Items whose detail_fetched_at is null OR older than 24h
+            from sqlalchemy import or_
+            stale_q = stale_q.where(
+                or_(
+                    VeracrossItem.detail_fetched_at.is_(None),
+                    VeracrossItem.detail_fetched_at < stale_cutoff,
+                )
+            )
+        # heavy: no filter — re-fetch everything
+        stale_rows = (await session.execute(stale_q)).all()
+        for iid, ext_id, _dfa in stale_rows:
+            if iid not in items_with_att and iid not in in_scope_ids and iid not in mojibake_ids:
+                backfill.append((ext_id, iid))
+
+    # light: only new_or_active (the planner-fresh ones)
     combined = list(new_or_active_items) + priority + backfill
+    cap = 80 if tier == "heavy" else (40 if tier == "medium" else 15)
     if extract_and_save is not None and combined:
+        combined = combined[:cap]
         from ..services.translate import needs_translation, translate_to_english
-        for ext_id, item_id in combined[:80]:
+        for ext_id, item_id in combined:
             detail_url = client.main_portal_url(f"/detail/assignment/{ext_id}")
             try:
                 detail_html = await client.get_html(detail_url, wait_for=".detail-assignment")
@@ -415,6 +462,9 @@ async def _sync_one_child(
                 ).scalar_one_or_none()
                 if item_row is not None:
                     changed_any = False
+                    # Stamp successful detail fetch so future light/medium
+                    # syncs can skip this item.
+                    item_row.detail_fetched_at = _now()
                     # Prefer detail title if it has fewer placeholder '?'s
                     if detail_title and (
                         (item_row.title or "").count("?") > detail_title.count("?")
@@ -472,6 +522,7 @@ async def _sync_one_child(
             grading_periods=grading_periods,
             counters=counters,
             diff=diff,
+            force_rediscover=(tier == "heavy"),
         )
 
 
@@ -606,31 +657,46 @@ async def _cleanup_stale_runs(older_than_min: int = STALE_RUN_MIN) -> int:
 
 async def run_sync(
     trigger: str = "manual",
-    include_grades: bool = True,
+    tier: str = "light",
+    include_grades: bool | None = None,
     grading_periods: tuple[int, ...] | None = None,
 ) -> dict[str, Any]:
     """Orchestrate one sync pass. Returns a summary dict.
 
-    Serialised: only one sync executes at a time. If called while another
-    is running, the overlap is refused with status='skipped_concurrent' —
-    we don't queue a second run because the newer state is what matters.
+    Tiered:
+      light:   hourly — planner + messages + detail fetch for NEW items
+               only. No grade probing. Mojibake repair runs as a background
+               task AFTER this returns.
+      medium:  daily — light + grades (using cached periods) + attachment
+               repair pass for items whose detail_fetched_at is null/stale.
+      heavy:   weekly — medium + grading-period rediscovery +
+               class-roster revalidation + full attachment re-fetch.
 
-    `include_grades=True` adds a grade-report scan (one request per class per
-    grading period). Keep off by default for hourly syncs; enable weekly or
-    on-demand.
+    Serialised: only one sync executes at a time. If called while another
+    is running, the overlap is refused with status='skipped_concurrent'.
+
+    Legacy `include_grades=True` forces medium behaviour (kept for back-compat).
     """
     from ..config import get_settings
     s = get_settings()
     if grading_periods is None:
         grading_periods = (s.grading_period_current,)
 
+    # Back-compat shim: if caller passed include_grades explicitly, use it
+    # to pick a tier. Otherwise honour the `tier` argument.
+    if include_grades is True and tier == "light":
+        tier = "medium"
+    resolved_include_grades = tier in ("medium", "heavy")
+
     # Concurrency guard: refuse overlapping in-process calls.
     if _SYNC_LOCK.locked():
-        log.warning("sync refused: another run is already in progress (trigger=%s)", trigger)
+        log.warning("sync refused: another run is already in progress (trigger=%s tier=%s)",
+                    trigger, tier)
         return {
             "sync_run_id": None,
             "status": "skipped_concurrent",
             "trigger": trigger,
+            "tier": tier,
             "error": "another sync is already running",
         }
 
@@ -641,11 +707,12 @@ async def run_sync(
         log.exception("stale-run cleanup failed (non-fatal)")
 
     async with _SYNC_LOCK:
-        return await _run_sync_locked(trigger, include_grades, grading_periods)
+        return await _run_sync_locked(trigger, tier, resolved_include_grades, grading_periods)
 
 
 async def _run_sync_locked(
     trigger: str,
+    tier: str,
     include_grades: bool,
     grading_periods: tuple[int, ...],
 ) -> dict[str, Any]:
@@ -688,8 +755,8 @@ async def _run_sync_locked(
         lg.addHandler(buf_handler)
     # Sentinel — lets the frontend confirm log capture plumbing is intact
     # even when the sync itself was a no-op.
-    log.info("=== sync started (id=%s trigger=%s include_grades=%s) ===",
-             sync_run_id, trigger, include_grades)
+    log.info("=== sync started (id=%s trigger=%s tier=%s include_grades=%s) ===",
+             sync_run_id, trigger, tier, include_grades)
 
     diff = DiffAggregator()
     event_ids: list[int] = []
@@ -706,6 +773,7 @@ async def _run_sync_locked(
                             session, client, child, counters, diff,
                             include_grades=include_grades,
                             grading_periods=grading_periods,
+                            tier=tier,
                         )
                         await session.commit()
                     except Exception as e:

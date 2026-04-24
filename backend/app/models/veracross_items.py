@@ -50,5 +50,8 @@ class VeracrossItem(Base):
     snooze_until: Mapped[str | None] = mapped_column(String, nullable=True)
     status_notes: Mapped[str | None] = mapped_column(String, nullable=True)
     tags_json: Mapped[str | None] = mapped_column(String, nullable=True)
+    detail_fetched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     child = relationship("Child", back_populates="items")

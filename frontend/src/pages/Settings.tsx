@@ -42,15 +42,35 @@ function SyncCadence() {
   };
 
   if (!loaded) return null;
+  const TIERS: { tier: string; title: string; when: string; what: string; tone: string }[] = [
+    {
+      tier: "light", title: "Light",
+      when: `Every ${interval}h between ${String(startH).padStart(2,"0")}:00 and ${String(endH).padStart(2,"0")}:00 IST`,
+      what: "Planner + messages. New-item detail only. Devanagari repair runs async after.",
+      tone: "bg-blue-50 border-blue-200",
+    },
+    {
+      tier: "medium", title: "Medium",
+      when: "Daily at 06:00 IST",
+      what: "Light + grades (using cached period IDs) + attachment repair for items with stale detail (>24h).",
+      tone: "bg-amber-50 border-amber-200",
+    },
+    {
+      tier: "heavy", title: "Heavy",
+      when: "Sunday 07:30 IST",
+      what: "Medium + grading-period rediscovery + class-roster revalidation + full attachment re-fetch + syllabus recheck.",
+      tone: "bg-purple-50 border-purple-200",
+    },
+  ];
   return (
     <section className="surface p-5 mb-4">
       <div className="flex items-baseline justify-between mb-3">
         <div>
           <div className="font-semibold">Veracross sync cadence</div>
           <div className="text-xs text-gray-500 mt-0.5">
-            How often the scraper polls the portal. Runs inside the active
-            window (IST). Survives server restarts — stored in
-            <code className="mx-1">data/ui_prefs.json</code>.
+            Three tiers — light for freshness, medium for grades, heavy to
+            re-verify stable data once a week. Only the light tier's cadence
+            is tunable.
           </div>
         </div>
         <div className="flex gap-2 items-center">
@@ -59,6 +79,7 @@ function SyncCadence() {
             className="px-3 py-1 border border-gray-300 text-sm rounded hover:bg-gray-50"
             onClick={syncNow}
             disabled={syncing}
+            title="Run a light sync immediately"
           >
             {syncing ? "Syncing…" : "Sync now"}
           </button>
@@ -70,9 +91,9 @@ function SyncCadence() {
           </button>
         </div>
       </div>
-      <div className="flex items-center gap-6 text-sm flex-wrap">
+      <div className="flex items-center gap-6 text-sm flex-wrap mb-4">
         <label className="flex items-center gap-2">
-          Every
+          Light tier: every
           <select
             className="border border-gray-300 rounded px-2 py-1"
             value={interval}
@@ -106,6 +127,16 @@ function SyncCadence() {
           </select>
           <span className="text-xs text-gray-500">IST</span>
         </label>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {TIERS.map((t) => (
+          <div key={t.tier} className={`rounded border p-3 text-sm ${t.tone}`}>
+            <div className="font-semibold mb-1">{t.title}</div>
+            <div className="text-xs text-gray-700 mb-1">{t.when}</div>
+            <div className="text-xs text-gray-600">{t.what}</div>
+          </div>
+        ))}
       </div>
     </section>
   );
