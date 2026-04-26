@@ -141,11 +141,24 @@ async def _upsert_item(
     existing.raw_json = raw_s
     existing.normalized_json = norm_s
     existing.last_seen_at = now
-    # Update body when a richer one arrives. The planner-only path passes
-    # body=None (or just the title), so we don't clobber an existing
-    # detail-fetched body with a thinner re-parse.
-    if body_val and (not existing.body or len(body_val) > len(existing.body or "")):
-        existing.body = body_val
+    # Update body when a richer one arrives. Rules in priority order:
+    #   1. existing is empty → take it
+    #   2. new is longer → take it
+    #   3. same length AND new has fewer `?`s → mojibake repair (the planner
+    #      serves Devanagari as same-count `?`s; the clean detail-page parse
+    #      replaces it)
+    #   4. existing is mostly `?`s and new has fewer → repair
+    if body_val:
+        existing_body = existing.body or ""
+        new_q = body_val.count("?")
+        old_q = existing_body.count("?")
+        if (
+            not existing_body
+            or len(body_val) > len(existing_body)
+            or (len(body_val) == len(existing_body) and new_q < old_q)
+            or (new_q < old_q and old_q > len(existing_body) // 2)
+        ):
+            existing.body = body_val
     parent_marked = existing.parent_marked_submitted_at is not None
     if diff is not None and (changed or (old_status != status)):
         diff.record(
@@ -491,9 +504,20 @@ async def _sync_one_child(
                     if detail_notes:
                         body_clean = detail_notes.strip()
                         if body_clean and body_clean != (item_row.title or "").strip():
+                            existing = item_row.body or ""
+                            new_q = body_clean.count("?")
+                            old_q = existing.count("?")
+                            # Same length, fewer ?s → mojibake repair
+                            #   (planner-encoded Devanagari arrives as `?`s of
+                            #   identical character count to the clean Devanagari
+                            #   from the detail page, so the old "longer wins"
+                            #   rule wouldn't replace).
+                            # Empty / longer / cleaner → write.
                             if (
-                                not item_row.body
-                                or len(body_clean) > len(item_row.body or "")
+                                not existing
+                                or len(body_clean) > len(existing)
+                                or (len(body_clean) == len(existing) and new_q < old_q)
+                                or (new_q < old_q and old_q > len(existing) // 2)
                             ):
                                 item_row.body = body_clean
                                 changed_any = True
