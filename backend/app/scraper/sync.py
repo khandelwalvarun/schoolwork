@@ -79,6 +79,17 @@ async def _upsert_item(
     raw_s = json.dumps(raw, default=str, ensure_ascii=False)
     norm_s = json.dumps(normalized, default=str, ensure_ascii=False)
 
+    # `normalized["body"]` is the parsed homework description from the
+    # assignment-detail popup (Veracross "Notes"). Persist as a column so
+    # the UI can render it without re-parsing JSON. We only treat it as a
+    # real body when it's distinct from the title — otherwise the value is
+    # just a fallback the enrichment branch wrote.
+    body_val = normalized.get("body") if isinstance(normalized, dict) else None
+    if body_val and isinstance(body_val, str):
+        body_val = body_val.strip() or None
+        if body_val and body_val == (title or "").strip():
+            body_val = None
+
     if existing is None:
         item = VeracrossItem(
             child_id=child_id,
@@ -92,6 +103,7 @@ async def _upsert_item(
             status=status,
             first_seen_at=now,
             last_seen_at=now,
+            body=body_val,
         )
         session.add(item)
         await session.flush()
@@ -129,6 +141,11 @@ async def _upsert_item(
     existing.raw_json = raw_s
     existing.normalized_json = norm_s
     existing.last_seen_at = now
+    # Update body when a richer one arrives. The planner-only path passes
+    # body=None (or just the title), so we don't clobber an existing
+    # detail-fetched body with a thinner re-parse.
+    if body_val and (not existing.body or len(body_val) > len(existing.body or "")):
+        existing.body = body_val
     parent_marked = existing.parent_marked_submitted_at is not None
     if diff is not None and (changed or (old_status != status)):
         diff.record(
@@ -466,6 +483,20 @@ async def _sync_one_child(
                     # Stamp successful detail fetch so future light/medium
                     # syncs can skip this item.
                     item_row.detail_fetched_at = _now()
+                    # Persist the description body — UNCONDITIONALLY, not
+                    # gated on translation. The translator path only ran
+                    # for non-Latin notes, so English bodies were silently
+                    # discarded. We now keep the original on `body`; the
+                    # translation, if any, lands on `notes_en` separately.
+                    if detail_notes:
+                        body_clean = detail_notes.strip()
+                        if body_clean and body_clean != (item_row.title or "").strip():
+                            if (
+                                not item_row.body
+                                or len(body_clean) > len(item_row.body or "")
+                            ):
+                                item_row.body = body_clean
+                                changed_any = True
                     # Prefer detail title if it has fewer placeholder '?'s
                     if detail_title and (
                         (item_row.title or "").count("?") > detail_title.count("?")

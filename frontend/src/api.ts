@@ -33,6 +33,10 @@ export type Assignment = {
   title: string | null;
   title_en: string | null;
   notes_en: string | null;
+  /** Original-language description from the assignment-detail popup. May
+   *  be multi-paragraph. Empty/null when the planner-only path was the
+   *  only source (no detail fetch). */
+  body?: string | null;
   due_or_date: string | null;
   status: string | null;
   portal_status: string | null;

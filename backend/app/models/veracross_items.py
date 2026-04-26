@@ -44,6 +44,11 @@ class VeracrossItem(Base):
     )
     title_en: Mapped[str | None] = mapped_column(String, nullable=True)
     notes_en: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Phase 12.5 — the multi-paragraph description from the assignment-detail
+    # popup (Veracross's "Notes" field). The parser was already extracting
+    # this; we just weren't persisting it. Stays in original language —
+    # `notes_en` carries the translated-to-English copy when needed.
+    body: Mapped[str | None] = mapped_column(String, nullable=True)
     # Professional status tracking (migration 0006)
     parent_status: Mapped[str | None] = mapped_column(String, nullable=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

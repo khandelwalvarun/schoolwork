@@ -130,6 +130,7 @@ def _item_to_dict(
         "title": item.title,
         "title_en": item.title_en,
         "notes_en": item.notes_en,
+        "body": getattr(item, "body", None),
         "due_or_date": item.due_or_date,
         "status": item.status,               # raw portal_status
         "portal_status": item.status,

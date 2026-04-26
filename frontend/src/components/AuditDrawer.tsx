@@ -168,6 +168,20 @@ export default function AuditDrawer({
             </section>
           )}
 
+          {/* Description from the Veracross homework popup. The school
+              packs the actual instructions here, not in the title. */}
+          {a.body && a.body.trim() && a.body.trim() !== (a.title ?? "").trim() && (
+            <section>
+              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Description</div>
+              <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                {a.body}
+              </div>
+              {a.notes_en && a.notes_en !== a.body && (
+                <div className="text-xs text-gray-500 italic mt-1">→ {a.notes_en}</div>
+              )}
+            </section>
+          )}
+
           {a.tags.length > 0 && (
             <section>
               <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Tags</div>
