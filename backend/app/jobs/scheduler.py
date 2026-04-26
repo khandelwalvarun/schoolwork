@@ -11,6 +11,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from ..config import get_settings
 from ..services.ui_prefs import load_prefs
+from .brief_warmup_job import run_brief_warmup
 from .digest_job import run_daily_digest, run_weekly_digest
 from .retention_job import run_daily_retention
 from .sync_job import run_light_sync, run_medium_sync, run_heavy_sync
@@ -118,6 +119,20 @@ def start_scheduler() -> AsyncIOScheduler:
         s.remove_job("weekly_syllabus_check")
     except Exception:
         pass
+    # Nightly brief warmup at 02:00 IST. Pre-generates the Sunday and
+    # PTM briefs for both kids and writes JSON + MD to
+    # data/cached_briefs/ so the next morning's page load serves
+    # instantly. Each brief takes ~30s of Claude time × 2 kids × 2
+    # kinds → ~2 minutes total.
+    s.add_job(
+        run_brief_warmup,
+        CronTrigger(hour=2, minute=0),
+        id="brief_warmup",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
     # Daily retention: drop sync_runs older than 7 days so log_text doesn't
     # accumulate forever.
     s.add_job(

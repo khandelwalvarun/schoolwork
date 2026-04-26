@@ -916,20 +916,24 @@ async def api_explain_grade_anomaly(
 async def api_sunday_brief(
     child_id: int | None = None,
     format: str = "json",
+    refresh: bool = False,
 ) -> Any:
     """Sunday brief — 4-section synthesis (cycle shape / one ask / teacher
     asks / what to ignore). Backed by services/sunday_brief.py with
     Claude as the synthesizer; falls back to rule-driven generation.
 
-    Returns a single brief if child_id is set, else a list. `format=md`
-    returns rendered markdown for the matched scope.
+    Reads from data/cached_briefs/sunday/ first (pre-warmed nightly at
+    02:00 IST). `refresh=true` skips the cache and re-runs Claude live.
     """
     from sqlalchemy import select
     from fastapi.responses import PlainTextResponse
     from .models import Child
+    from .services import cached_briefs as CB
     from .services.sunday_brief import (
         build_brief, build_brief_for_all, render_markdown,
     )
+    today = today_ist()
+
     async with get_async_session() as session:
         if child_id is not None:
             child = (
@@ -937,15 +941,69 @@ async def api_sunday_brief(
             ).scalar_one_or_none()
             if child is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+            slug = CB.child_slug_for(child.display_name, child.id)
+            if not refresh:
+                if format == "md":
+                    cached_md = CB.read_latest_markdown("sunday", slug, today=today)
+                    if cached_md is not None:
+                        return PlainTextResponse(cached_md, media_type="text/markdown")
+                else:
+                    cached = CB.read_latest("sunday", slug, today=today)
+                    if cached is not None:
+                        cached["_cache"] = {
+                            "hit": True,
+                            "freshness": CB.freshness_label(today, cached.get("generated_for")),
+                        }
+                        return cached
+            # Cache miss / refresh — build live and write back.
             brief = await build_brief(session, child)
+            md = render_markdown(brief)
+            payload = brief.to_dict()
+            try:
+                CB.write_brief("sunday", slug, today, payload, md)
+            except Exception:
+                pass
             if format == "md":
-                return PlainTextResponse(render_markdown(brief), media_type="text/markdown")
-            return brief.to_dict()
-        briefs = await build_brief_for_all(session)
+                return PlainTextResponse(md, media_type="text/markdown")
+            payload["_cache"] = {"hit": False, "freshness": "today"}
+            return payload
+
+        # All-kids path: try cache for each, fall back to a single
+        # build_brief_for_all batch (slow path; usually cache hits).
+        briefs_payload: list[dict[str, Any]] = []
+        md_chunks: list[str] = []
+        children = (await session.execute(select(Child))).scalars().all()
+        all_hit = True
+        for c in children:
+            slug = CB.child_slug_for(c.display_name, c.id)
+            cached = None if refresh else CB.read_latest("sunday", slug, today=today)
+            cached_md = (
+                None if refresh else CB.read_latest_markdown("sunday", slug, today=today)
+            )
+            if cached and cached_md:
+                briefs_payload.append(cached)
+                md_chunks.append(cached_md)
+                continue
+            all_hit = False
+            brief = await build_brief(session, c)
+            payload = brief.to_dict()
+            md = render_markdown(brief)
+            try:
+                CB.write_brief("sunday", slug, today, payload, md)
+            except Exception:
+                pass
+            briefs_payload.append(payload)
+            md_chunks.append(md)
         if format == "md":
-            md = "\n\n---\n\n".join(render_markdown(b) for b in briefs)
-            return PlainTextResponse(md, media_type="text/markdown")
-        return [b.to_dict() for b in briefs]
+            return PlainTextResponse(
+                "\n\n---\n\n".join(md_chunks), media_type="text/markdown",
+            )
+        for p in briefs_payload:
+            p.setdefault(
+                "_cache",
+                {"hit": all_hit, "freshness": CB.freshness_label(today, p.get("generated_for"))},
+            )
+        return briefs_payload
 
 
 @app.get("/api/ptm-brief")
@@ -953,28 +1011,56 @@ async def api_ptm_brief(
     child_id: int,
     refresh: bool = False,
     format: str = "json",
-) -> dict[str, Any] | str:
+) -> dict[str, Any] | Any:
     """Per-kid Parent-Teacher Meeting prep brief. Per-subject talking
     points + teacher-facing questions, plus cross-subject general
     questions and a "what to ignore" section. Backed by Claude
     (claude_cli) on a structured data pack — see services/ptm_brief.py.
 
-    `format=md` returns rendered markdown in `text/markdown` rather
-    than the JSON dict — useful for download/copy."""
+    Reads from data/cached_briefs/ptm/ first (pre-warmed nightly at
+    02:00 IST). `refresh=true` re-runs Claude live (~30-60s).
+    `format=md` returns rendered markdown in `text/markdown`."""
     from sqlalchemy import select
     from fastapi.responses import PlainTextResponse
     from .models import Child
+    from .services import cached_briefs as CB
     from .services.ptm_brief import build_ptm_brief, render_markdown
+    today = today_ist()
+
     async with get_async_session() as session:
         child = (
             await session.execute(select(Child).where(Child.id == child_id))
         ).scalar_one_or_none()
         if child is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        slug = CB.child_slug_for(child.display_name, child.id)
+
+        if not refresh:
+            if format == "md":
+                cached_md = CB.read_latest_markdown("ptm", slug, today=today)
+                if cached_md is not None:
+                    return PlainTextResponse(cached_md, media_type="text/markdown")
+            else:
+                cached = CB.read_latest("ptm", slug, today=today)
+                if cached is not None:
+                    cached["_cache"] = {
+                        "hit": True,
+                        "freshness": CB.freshness_label(today, cached.get("as_of")),
+                    }
+                    return cached
+
         brief = await build_ptm_brief(session, child)
+    md = render_markdown(brief)
+    payload = brief.to_dict()
+    try:
+        CB.write_brief("ptm", slug, today, payload, md)
+    except Exception:
+        pass
+
     if format == "md":
-        return PlainTextResponse(render_markdown(brief), media_type="text/markdown")
-    return brief.to_dict()
+        return PlainTextResponse(md, media_type="text/markdown")
+    payload["_cache"] = {"hit": False, "freshness": "today"}
+    return payload
 
 
 @app.get("/api/anomalies")
