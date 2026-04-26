@@ -1,79 +1,59 @@
+/**
+ * Syllabus page — three-tab redesign.
+ *
+ *   Subjects (default)  subject-as-row, cycles-as-columns; the at-a-
+ *                       glance trajectory view
+ *   Cycle               this-week focus: cycle progress + decaying list
+ *                       + per-subject coverage progress
+ *   List                everything in one scroll, subject-grouped
+ *
+ * Filter strip (language + state) applies to all three tabs.
+ * Persistent legend strip at viewport bottom.
+ * Click any topic → TopicDetailPanel slide-over.
+ *
+ * Keyboard:
+ *   1/2/3   switch tab
+ *   /       focus filter (placeholder; filter strip is button-driven)
+ *   Esc     close detail panel
+ */
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
-import { api, TopicStateRow } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api";
 import ChildHeader from "../components/ChildHeader";
-import { PortfolioBadge } from "../components/PortfolioBadge";
+import { TopicDetailPanel } from "../components/TopicDetailPanel";
+import { MasteryLegend } from "../components/MasteryLegend";
+import {
+  emptyFilters,
+  SyllabusFilters,
+  SyllabusFilterState,
+  langOf,
+  filterTopic,
+} from "../components/SyllabusFilters";
+import { SubjectsView } from "../components/syllabus/SubjectsView";
+import { CycleView } from "../components/syllabus/CycleView";
+import { ListView } from "../components/syllabus/ListView";
 import { todayISOInIST } from "../util/ist";
 
-/** Visual treatment for the per-topic mastery state. Tuned for OKLCH
- *  palette + colour-blind safe (paired with text label on hover). */
-const STATE_DOT: Record<TopicStateRow["state"], { color: string; label: string }> = {
-  attempted:  { color: "oklch(60% 0.005 280)",  label: "Attempted" },
-  familiar:   { color: "oklch(55% 0.14 60)",    label: "Familiar (≥75%)" },
-  proficient: { color: "oklch(48% 0.17 255)",   label: "Proficient (2× ≥75%)" },
-  mastered:   { color: "oklch(50% 0.13 150)",   label: "Mastered (3× ≥85%)" },
-  decaying:   { color: "oklch(55% 0.18 25)",    label: "Decaying (>30 d)" },
-};
+type Tab = "subjects" | "cycle" | "list";
 
-/** Phase 15: derive language from subject name. Mirrors backend
- *  services/language.py — kept in sync manually. */
-function languageOf(subject: string | null | undefined): "en" | "hi" | "sa" | null {
-  if (!subject) return null;
-  const s = subject.toLowerCase();
-  if (s.includes("sanskrit")) return "sa";
-  if (s.includes("hindi")) return "hi";
-  if (s.includes("english")) return "en";
-  return null;
-}
-
-const LANG_CHIP: Record<"en" | "hi" | "sa", { label: string; tone: string }> = {
-  en: { label: "EN", tone: "border-blue-300 text-blue-800 bg-blue-50" },
-  hi: { label: "हिन्दी", tone: "border-amber-300 text-amber-800 bg-amber-50" },
-  sa: { label: "संस्कृत", tone: "border-purple-300 text-purple-800 bg-purple-50" },
-};
-
-function LanguageChip({ subject }: { subject: string | null | undefined }) {
-  const code = languageOf(subject);
-  if (!code) return null;
-  const { label, tone } = LANG_CHIP[code];
-  return (
-    <span
-      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border ml-2 ${tone}`}
-      title={`Language track: ${code === "en" ? "English" : code === "hi" ? "Hindi" : "Sanskrit"}`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function MasteryDot({ row }: { row: TopicStateRow }) {
-  const { color, label } = STATE_DOT[row.state];
-  const score = row.last_score != null ? ` · ${row.last_score.toFixed(0)}%` : "";
-  return (
-    <span
-      title={`${label}${score} · ${row.attempt_count} item${row.attempt_count === 1 ? "" : "s"}`}
-      style={{
-        display: "inline-block",
-        width: 10,
-        height: 10,
-        borderRadius: 999,
-        background: color,
-      }}
-      aria-label={`${row.state}${score}`}
-    />
-  );
-}
+const TAB_META: Array<{ key: Tab; label: string; key_hint: string }> = [
+  { key: "subjects", label: "Subjects", key_hint: "1" },
+  { key: "cycle",    label: "Cycle",    key_hint: "2" },
+  { key: "list",     label: "List",     key_hint: "3" },
+];
 
 export default function ChildSyllabus() {
   const { id } = useParams();
   const childId = Number(id);
+
   const { data: child } = useQuery({
     queryKey: ["child-detail", childId],
     queryFn: () => api.childDetail(childId),
     enabled: !isNaN(childId),
   });
   const classLevel = child?.child.class_level;
+
   const { data: syl } = useQuery({
     queryKey: ["syllabus", classLevel],
     queryFn: () => api.syllabus(classLevel!),
@@ -85,16 +65,55 @@ export default function ChildSyllabus() {
     enabled: !isNaN(childId),
   });
 
-  // Index by (subject, topic) for O(1) lookup while rendering.
-  const stateBy = useMemo(() => {
-    const m = new Map<string, TopicStateRow>();
-    for (const r of topicStates || []) m.set(`${r.subject}::${r.topic}`, r);
-    return m;
-  }, [topicStates]);
+  const [tab, setTab] = useState<Tab>("subjects");
+  const [filters, setFilters] = useState<SyllabusFilterState>(emptyFilters());
+  const [openTopic, setOpenTopic] = useState<{
+    subject: string;
+    topic: string;
+  } | null>(null);
 
   const todayISO = useMemo(() => todayISOInIST(), []);
 
-  if (!child || !syl) {
+  // Tab keyboard shortcuts: 1, 2, 3.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (e.key === "1") setTab("subjects");
+      else if (e.key === "2") setTab("cycle");
+      else if (e.key === "3") setTab("list");
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Topic count + shown count for the filter strip readout.
+  const { totalTopics, shownTopics } = useMemo(() => {
+    if (!syl || !topicStates) return { totalTopics: 0, shownTopics: 0 };
+    const stateBy = new Map<string, (typeof topicStates)[number]>();
+    for (const r of topicStates) stateBy.set(`${r.subject}::${r.topic}`, r);
+    let total = 0;
+    let shown = 0;
+    for (const c of syl.cycles) {
+      for (const [subj, topics] of Object.entries(c.topics_by_subject || {})) {
+        for (const t of topics) {
+          total++;
+          const ms = stateBy.get(`${subj}::${t}`);
+          const cov = (c.topic_status?.[subj]?.[t]?.status ?? null) as
+            | "covered"
+            | "in_progress"
+            | "delayed"
+            | "skipped"
+            | null;
+          if (filterTopic(filters, langOf, subj, ms?.state ?? null, cov)) shown++;
+        }
+      }
+    }
+    return { totalTopics: total, shownTopics: shown };
+  }, [syl, topicStates, filters]);
+
+  if (!child || !syl || !topicStates) {
     return (
       <div>
         <ChildHeader title="Syllabus" />
@@ -115,70 +134,87 @@ export default function ChildSyllabus() {
   }
 
   return (
-    <div>
+    <div className="pb-12">
       <ChildHeader title="Syllabus" />
       <div className="text-sm text-gray-500 mb-3">
         Class {classLevel}, school year {syl.school_year || "?"} ·
-        <Link to="/settings/syllabus" className="ml-2 text-blue-700 hover:underline">Calibrate cycles →</Link>
+        <Link to="/settings/syllabus" className="ml-2 text-blue-700 hover:underline">
+          Calibrate cycles →
+        </Link>
       </div>
 
-      <div className="space-y-4">
-        {syl.cycles.map((c) => {
-          const isCurrent = c.start <= todayISO && todayISO <= c.end;
+      {/* Tab strip */}
+      <div className="flex items-center gap-1 mb-3 border-b border-[color:var(--line-soft)]">
+        {TAB_META.map((t) => {
+          const active = t.key === tab;
           return (
-            <section key={c.name} className={`bg-white border rounded shadow-sm p-4 ${isCurrent ? "border-purple-400" : "border-gray-200"}`}>
-              <div className="flex items-baseline justify-between">
-                <h3 className="font-semibold">
-                  {c.name}
-                  {isCurrent && <span className="ml-2 text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded px-2 py-0.5">Current</span>}
-                  {c.overridden && <span className="ml-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">Overridden</span>}
-                </h3>
-                <div className="text-sm text-gray-600">{c.start} → {c.end}</div>
-              </div>
-              {c.override_note && (
-                <div className="text-xs text-amber-700 mt-1">Note: {c.override_note}</div>
-              )}
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                {Object.entries(c.topics_by_subject || {}).map(([subj, topics]) => (
-                  <div key={subj} className="text-sm">
-                    <div className="font-medium text-gray-800 mb-1 flex items-center">
-                      <span>{subj}</span>
-                      <LanguageChip subject={subj} />
-                    </div>
-                    <ul className="space-y-0.5 text-gray-700">
-                      {topics.map((t) => {
-                        const st = c.topic_status?.[subj]?.[t]?.status;
-                        // Topic state lookup. Topics are stored in the
-                        // syllabus as e.g. "LC1: Snake Trouble..." — that's
-                        // also the format `fuzzy_topic_for` returns, so the
-                        // keys line up.
-                        const ms = stateBy.get(`${subj}::${t}`);
-                        return (
-                          <li key={t} className="flex items-center gap-2">
-                            <span className="w-4 text-xs">
-                              {st === "covered" ? "✅" :
-                                st === "skipped" ? "⏭️" :
-                                  st === "delayed" ? "⏳" :
-                                    st === "in_progress" ? "🟡" : "·"}
-                            </span>
-                            {ms ? <MasteryDot row={ms} /> : <span style={{ width: 10 }} aria-hidden />}
-                            <span className="flex-1">{t}</span>
-                            <PortfolioBadge
-                              childId={childId}
-                              subject={subj}
-                              topic={t}
-                            />
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </section>
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={
+                "px-3 py-1.5 text-sm border-b-2 -mb-px " +
+                (active
+                  ? "border-purple-600 text-purple-800 font-semibold"
+                  : "border-transparent text-gray-600 hover:text-gray-900")
+              }
+              aria-current={active ? "page" : undefined}
+            >
+              {t.label}
+              <span className="ml-1.5 kbd">{t.key_hint}</span>
+            </button>
           );
         })}
       </div>
+
+      <SyllabusFilters
+        filters={filters}
+        onChange={setFilters}
+        topicCount={totalTopics}
+        shownCount={shownTopics}
+      />
+
+      {tab === "subjects" && (
+        <SubjectsView
+          syllabus={syl}
+          states={topicStates}
+          childId={childId}
+          todayISO={todayISO}
+          filters={filters}
+          onTopicClick={(s, t) => setOpenTopic({ subject: s, topic: t })}
+        />
+      )}
+      {tab === "cycle" && (
+        <CycleView
+          syllabus={syl}
+          states={topicStates}
+          todayISO={todayISO}
+          filters={filters}
+          onTopicClick={(s, t) => setOpenTopic({ subject: s, topic: t })}
+          onSwitchTab={setTab}
+        />
+      )}
+      {tab === "list" && (
+        <ListView
+          syllabus={syl}
+          states={topicStates}
+          childId={childId}
+          todayISO={todayISO}
+          filters={filters}
+          onTopicClick={(s, t) => setOpenTopic({ subject: s, topic: t })}
+        />
+      )}
+
+      <MasteryLegend />
+
+      {openTopic && (
+        <TopicDetailPanel
+          childId={childId}
+          subject={openTopic.subject}
+          topic={openTopic.topic}
+          onClose={() => setOpenTopic(null)}
+        />
+      )}
     </div>
   );
 }

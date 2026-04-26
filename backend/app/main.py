@@ -348,6 +348,101 @@ async def api_excellence(child_id: int | None = None) -> list[dict[str, Any]] | 
         return (await status_for_child(session, child)).to_dict()
 
 
+@app.get("/api/topic-detail")
+async def api_topic_detail(
+    child_id: int, subject: str, topic: str,
+) -> dict[str, Any]:
+    """Composite payload for the syllabus topic-detail side panel.
+
+    Joins five sources in one round-trip: the topic_state row, every
+    grade VeracrossItem whose `fuzzy_topic_for(class_level, subject,
+    title)` resolves to this topic, every assignment that does the
+    same, every portfolio attachment tagged to (subject, topic), and
+    the syllabus topic_status (covered/skipped/delayed/in_progress).
+
+    Subject matching uses the *cleaned* subject name (no class prefix)
+    — that's also what the topic_state table stores, so frontend keys
+    line up.
+    """
+    from sqlalchemy import select
+    from .models import Child, TopicState, VeracrossItem
+    from .services.syllabus import fuzzy_topic_for
+    from .services.portfolio import list_portfolio
+    from .services.queries import _item_to_dict
+
+    def _strip_lc(t: str) -> str:
+        if t and ": " in t:
+            head, tail = t.split(": ", 1)
+            if head.strip().upper().startswith("LC"):
+                return tail.strip()
+        return t.strip() if t else t
+
+    async with get_async_session() as session:
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+
+        # Strip the LC1: prefix so a topic like "LC1: Friend's Prayer"
+        # matches the bare "Friend's Prayer" stored on topic_state.
+        bare_topic = _strip_lc(topic)
+
+        ts = (
+            await session.execute(
+                select(TopicState)
+                .where(TopicState.child_id == child_id)
+                .where(TopicState.subject == subject)
+                .where(TopicState.topic == bare_topic)
+            )
+        ).scalar_one_or_none()
+
+        # Every assignment + grade for this kid; filter in Python via
+        # fuzzy_topic_for to mirror the topic_state recompute logic.
+        items = (
+            await session.execute(
+                select(VeracrossItem)
+                .where(VeracrossItem.child_id == child_id)
+                .where(VeracrossItem.kind.in_(("assignment", "grade")))
+            )
+        ).scalars().all()
+
+        linked_grades: list[dict[str, Any]] = []
+        linked_assignments: list[dict[str, Any]] = []
+        for it in items:
+            t = fuzzy_topic_for(child.class_level, it.subject, it.title)
+            if t is None:
+                continue
+            t_bare = _strip_lc(t)
+            if t_bare != bare_topic:
+                continue
+            d = _item_to_dict(it, class_level=child.class_level)
+            if it.kind == "grade":
+                linked_grades.append(d)
+            else:
+                linked_assignments.append(d)
+
+        portfolio = await list_portfolio(
+            session, child_id=child_id, subject=subject, topic=topic,
+        )
+
+        return {
+            "child_id": child_id,
+            "subject": subject,
+            "topic": topic,
+            "bare_topic": bare_topic,
+            "state": ts.state if ts else None,
+            "last_assessed_at": ts.last_assessed_at if ts else None,
+            "last_score": ts.last_score if ts else None,
+            "attempt_count": ts.attempt_count if ts else 0,
+            "proficient_count": ts.proficient_count if ts else 0,
+            "language_code": ts.language_code if ts else None,
+            "linked_grades": linked_grades,
+            "linked_assignments": linked_assignments,
+            "portfolio_items": portfolio,
+        }
+
+
 @app.get("/api/topic-state")
 async def api_topic_state(child_id: int) -> list[dict[str, Any]]:
     """Per-(subject × topic) mastery state for one kid. Driven by

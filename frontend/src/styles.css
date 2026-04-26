@@ -193,4 +193,85 @@
     @apply inline-flex items-center justify-center px-1.5 h-5 text-[10px] font-mono
            border border-[color:var(--line)] rounded bg-white text-gray-600;
   }
+
+  /* ---- Mastery pellet palette (syllabus redesign) ----
+     Six visual states applied as background-color on a 14×14 round dot.
+     `decaying` is the only state that pulses (slow) because it's the
+     only action class — every other state is static.
+
+     Topic coverage status (covered / skipped / delayed / in_progress)
+     becomes a thin top-bar (2px) on a wrapper, set via the
+     `--cov-color` custom property. Empty if topic isn't yet covered. */
+  .pellet {
+    @apply inline-flex items-center justify-center;
+    width: 14px; height: 14px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    position: relative;
+    background: var(--pellet-bg, oklch(94% 0.005 250));
+    border: 1px solid var(--pellet-ring, oklch(85% 0.01 250));
+  }
+  .pellet--none      { --pellet-bg: transparent;
+                       --pellet-ring: oklch(82% 0.01 250); }
+  .pellet--attempted { --pellet-bg: oklch(60% 0.005 280);
+                       --pellet-ring: oklch(50% 0.01 280); }
+  .pellet--familiar  { --pellet-bg: oklch(70% 0.13 60);
+                       --pellet-ring: oklch(55% 0.14 60); }
+  .pellet--proficient{ --pellet-bg: oklch(60% 0.16 255);
+                       --pellet-ring: oklch(48% 0.17 255); }
+  .pellet--mastered  { --pellet-bg: oklch(60% 0.13 150);
+                       --pellet-ring: oklch(50% 0.13 150); }
+  .pellet--decaying  { --pellet-bg: oklch(60% 0.18 25);
+                       --pellet-ring: oklch(50% 0.18 25);
+                       animation: pellet-pulse 2.4s ease-in-out infinite; }
+
+  @keyframes pellet-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 oklch(60% 0.18 25 / 0.4); }
+    50%      { box-shadow: 0 0 0 4px oklch(60% 0.18 25 / 0); }
+  }
+
+  /* Coverage strip — wraps the pellet so a 2px bar can sit above it. */
+  .pellet-coverage {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+  .pellet-coverage::before {
+    content: "";
+    display: block;
+    width: 14px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--cov-color, transparent);
+  }
+  .cov-covered     { --cov-color: oklch(55% 0.13 150); }
+  .cov-in_progress { --cov-color: oklch(60% 0.14 235); }
+  .cov-delayed     { --cov-color: oklch(65% 0.13 70);  }
+  .cov-skipped     { --cov-color: oklch(60% 0.005 280); }
+
+  /* Slide-over (right-side panel) — 360px on desktop, full-width on mobile. */
+  .slide-over {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: min(420px, 100vw);
+    background: white;
+    border-left: 1px solid var(--line);
+    box-shadow: -8px 0 24px oklch(0% 0 0 / 0.08);
+    z-index: 60;
+    overflow-y: auto;
+    animation: slide-over-in 0.18s ease-out;
+  }
+  @keyframes slide-over-in {
+    from { transform: translateX(8px); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+  }
+
+  /* Persistent legend strip at bottom of viewport on Syllabus page. */
+  .legend-strip {
+    @apply fixed bottom-0 left-0 right-0 z-30;
+    @apply flex items-center gap-3 px-4 py-1.5 text-[11px];
+    background: oklch(99% 0.005 250 / 0.92);
+    backdrop-filter: blur(6px);
+    border-top: 1px solid var(--line);
+  }
 }

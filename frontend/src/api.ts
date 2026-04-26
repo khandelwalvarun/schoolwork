@@ -490,6 +490,30 @@ export type ExcellenceStatus = {
 
 export type LanguageCode = "en" | "hi" | "sa" | null;
 
+export type MasteryState =
+  | "attempted"
+  | "familiar"
+  | "proficient"
+  | "mastered"
+  | "decaying"
+  | null;
+
+export type TopicDetail = {
+  child_id: number;
+  subject: string;
+  topic: string;
+  bare_topic: string;
+  state: MasteryState;
+  last_assessed_at: string | null;
+  last_score: number | null;
+  attempt_count: number;
+  proficient_count: number;
+  language_code: LanguageCode;
+  linked_grades: Assignment[];
+  linked_assignments: Assignment[];
+  portfolio_items: PortfolioItem[];
+};
+
 export type TopicStateRow = {
   subject: string;
   topic: string;
@@ -693,6 +717,14 @@ export const api = {
     fetchJson<ResourcesResponse>(`/api/resources${childId ? `?child_id=${childId}` : ""}`),
   topicState: (childId: number) =>
     fetchJson<TopicStateRow[]>(`/api/topic-state?child_id=${childId}`),
+  topicDetail: (childId: number, subject: string, topic: string) => {
+    const p = new URLSearchParams({
+      child_id: String(childId),
+      subject,
+      topic,
+    });
+    return fetchJson<TopicDetail>(`/api/topic-detail?${p.toString()}`);
+  },
   excellence: (childId: number) =>
     fetchJson<ExcellenceStatus>(`/api/excellence?child_id=${childId}`),
   shakyTopics: (limit = 3) =>
