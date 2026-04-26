@@ -1618,6 +1618,72 @@ async def rename_spellbee_list(
 
 
 @server.tool()
+async def get_topic_state(
+    child_id: int, ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Per-(subject × topic) mastery state for one kid. State ∈
+    {attempted, familiar, proficient, mastered, decaying} based on
+    grades + assignments tagged to each syllabus topic via
+    `fuzzy_topic_for`. Khan-style heuristics + Cepeda 30-day decay.
+    Recomputed weekly by heavy-tier sync; on-demand via
+    /api/topic-state/recompute."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from ..services.topic_state import list_topic_state
+        async with get_async_session() as session:
+            result = await list_topic_state(session, child_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_topic_state",
+            {"child_id": child_id},
+            {"rows": len(result)},
+            err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def recompute_topic_state(
+    child_id: int | None = None, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Rebuild topic_state rows from current grades + assignments.
+    Idempotent. Pass child_id to limit to one kid; otherwise rebuilds
+    all kids."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services.topic_state import recompute_for_child, recompute_all
+        async with get_async_session() as session:
+            if child_id is None:
+                result = await recompute_all(session)
+            else:
+                child = (
+                    await session.execute(select(Child).where(Child.id == child_id))
+                ).scalar_one_or_none()
+                if child is None:
+                    raise ValueError(f"child {child_id} not found")
+                result = await recompute_for_child(session, child)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "recompute_topic_state",
+            {"child_id": child_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
 async def match_grades_to_assignments(
     child_id: int | None = None,
     use_llm_tiebreaker: bool = True,

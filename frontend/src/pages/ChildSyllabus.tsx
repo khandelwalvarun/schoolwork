@@ -1,9 +1,37 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { api } from "../api";
+import { api, TopicStateRow } from "../api";
 import ChildHeader from "../components/ChildHeader";
 import { todayISOInIST } from "../util/ist";
+
+/** Visual treatment for the per-topic mastery state. Tuned for OKLCH
+ *  palette + colour-blind safe (paired with text label on hover). */
+const STATE_DOT: Record<TopicStateRow["state"], { color: string; label: string }> = {
+  attempted:  { color: "oklch(60% 0.005 280)",  label: "Attempted" },
+  familiar:   { color: "oklch(55% 0.14 60)",    label: "Familiar (≥75%)" },
+  proficient: { color: "oklch(48% 0.17 255)",   label: "Proficient (2× ≥75%)" },
+  mastered:   { color: "oklch(50% 0.13 150)",   label: "Mastered (3× ≥85%)" },
+  decaying:   { color: "oklch(55% 0.18 25)",    label: "Decaying (>30 d)" },
+};
+
+function MasteryDot({ row }: { row: TopicStateRow }) {
+  const { color, label } = STATE_DOT[row.state];
+  const score = row.last_score != null ? ` · ${row.last_score.toFixed(0)}%` : "";
+  return (
+    <span
+      title={`${label}${score} · ${row.attempt_count} item${row.attempt_count === 1 ? "" : "s"}`}
+      style={{
+        display: "inline-block",
+        width: 10,
+        height: 10,
+        borderRadius: 999,
+        background: color,
+      }}
+      aria-label={`${row.state}${score}`}
+    />
+  );
+}
 
 export default function ChildSyllabus() {
   const { id } = useParams();
@@ -19,6 +47,18 @@ export default function ChildSyllabus() {
     queryFn: () => api.syllabus(classLevel!),
     enabled: classLevel !== undefined,
   });
+  const { data: topicStates } = useQuery({
+    queryKey: ["topic-state", childId],
+    queryFn: () => api.topicState(childId),
+    enabled: !isNaN(childId),
+  });
+
+  // Index by (subject, topic) for O(1) lookup while rendering.
+  const stateBy = useMemo(() => {
+    const m = new Map<string, TopicStateRow>();
+    for (const r of topicStates || []) m.set(`${r.subject}::${r.topic}`, r);
+    return m;
+  }, [topicStates]);
 
   const todayISO = useMemo(() => todayISOInIST(), []);
 
@@ -73,14 +113,20 @@ export default function ChildSyllabus() {
                     <ul className="space-y-0.5 text-gray-700">
                       {topics.map((t) => {
                         const st = c.topic_status?.[subj]?.[t]?.status;
+                        // Topic state lookup. Topics are stored in the
+                        // syllabus as e.g. "LC1: Snake Trouble..." — that's
+                        // also the format `fuzzy_topic_for` returns, so the
+                        // keys line up.
+                        const ms = stateBy.get(`${subj}::${t}`);
                         return (
-                          <li key={t} className="flex gap-2">
+                          <li key={t} className="flex items-center gap-2">
                             <span className="w-4 text-xs">
                               {st === "covered" ? "✅" :
                                 st === "skipped" ? "⏭️" :
                                   st === "delayed" ? "⏳" :
                                     st === "in_progress" ? "🟡" : "·"}
                             </span>
+                            {ms ? <MasteryDot row={ms} /> : <span style={{ width: 10 }} aria-hidden />}
                             <span>{t}</span>
                           </li>
                         );

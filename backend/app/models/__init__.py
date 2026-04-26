@@ -12,6 +12,7 @@ from .status_history import AssignmentStatusHistory
 from .summaries import Summary
 from .syllabus_overrides import SyllabusCycleOverride, SyllabusTopicStatus
 from .sync_runs import SyncRun
+from .topic_state import TopicState
 from .veracross_items import VeracrossItem
 
 __all__ = [
@@ -28,5 +29,6 @@ __all__ = [
     "SyllabusCycleOverride",
     "SyllabusTopicStatus",
     "SyncRun",
+    "TopicState",
     "VeracrossItem",
 ]

@@ -67,6 +67,24 @@ async def run_heavy_sync() -> None:
         await _run_grade_match()
     except Exception:
         log.exception("weekly grade-assignment matcher inside heavy sync failed")
+    try:
+        await _run_topic_state_recompute()
+    except Exception:
+        log.exception("weekly topic-state recompute inside heavy sync failed")
+
+
+async def _run_topic_state_recompute() -> None:
+    """Rebuild every kid's topic_state from current grades + assignments.
+    Idempotent. Drives the Phase 10 mastery-state model + Phase 11
+    shaky-topics tray."""
+    from ..db import get_async_session
+    from ..services.topic_state import recompute_all
+    log.info("weekly topic-state recompute: starting")
+    async with get_async_session() as session:
+        summary = await recompute_all(session)
+    for c in summary["children"]:
+        log.info("topic-state child=%s topics=%s states=%s",
+                 c["child_id"], c["topics"], c["states"])
 
 
 async def _run_grade_match() -> None:

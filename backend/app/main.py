@@ -304,6 +304,35 @@ async def api_overdue_trend(
         return await Q.get_overdue_trend(session, child_id=child_id, days=days)
 
 
+@app.get("/api/topic-state")
+async def api_topic_state(child_id: int) -> list[dict[str, Any]]:
+    """Per-(subject × topic) mastery state for one kid. Driven by
+    services.topic_state — Khan Academy heuristics + Cepeda decay
+    over grades + assignments tagged to syllabus topics."""
+    from .services.topic_state import list_topic_state
+    async with get_async_session() as session:
+        return await list_topic_state(session, child_id)
+
+
+@app.post("/api/topic-state/recompute")
+async def api_topic_state_recompute(child_id: int | None = None) -> dict[str, Any]:
+    """Rebuild topic_state for one or all kids. Idempotent — wipes and
+    re-derives. Heavy-tier sync runs this weekly; this endpoint is for
+    on-demand refresh after a data import."""
+    from .services.topic_state import recompute_for_child, recompute_all
+    from sqlalchemy import select
+    from .models import Child
+    async with get_async_session() as session:
+        if child_id is None:
+            return await recompute_all(session)
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        return await recompute_for_child(session, child)
+
+
 @app.post("/api/match-grades")
 async def api_match_grades(
     child_id: int | None = None,

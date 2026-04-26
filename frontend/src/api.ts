@@ -256,6 +256,16 @@ export type ResourcesResponse = {
   }>;
 };
 
+export type TopicStateRow = {
+  subject: string;
+  topic: string;
+  state: "attempted" | "familiar" | "proficient" | "mastered" | "decaying";
+  last_assessed_at: string | null;
+  last_score: number | null;
+  attempt_count: number;
+  proficient_count: number;
+};
+
 export type SpellBeeList = {
   filename: string;
   number: number | null;
@@ -353,6 +363,8 @@ export const api = {
     fetchJson<AssignmentConstants>("/api/assignments/constants"),
   resources: (childId?: number) =>
     fetchJson<ResourcesResponse>(`/api/resources${childId ? `?child_id=${childId}` : ""}`),
+  topicState: (childId: number) =>
+    fetchJson<TopicStateRow[]>(`/api/topic-state?child_id=${childId}`),
   spellbeeLists: (childId: number) =>
     fetchJson<SpellBeeList[]>(`/api/spellbee/lists?child_id=${childId}`),
   spellbeeLinkedAssignments: (childId?: number) =>
