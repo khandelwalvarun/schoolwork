@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api, TopicStateRow } from "../api";
 import ChildHeader from "../components/ChildHeader";
+import { PortfolioBadge } from "../components/PortfolioBadge";
 import { todayISOInIST } from "../util/ist";
 
 /** Visual treatment for the per-topic mastery state. Tuned for OKLCH
@@ -161,7 +162,12 @@ export default function ChildSyllabus() {
                                     st === "in_progress" ? "🟡" : "·"}
                             </span>
                             {ms ? <MasteryDot row={ms} /> : <span style={{ width: 10 }} aria-hidden />}
-                            <span>{t}</span>
+                            <span className="flex-1">{t}</span>
+                            <PortfolioBadge
+                              childId={childId}
+                              subject={subj}
+                              topic={t}
+                            />
                           </li>
                         );
                       })}

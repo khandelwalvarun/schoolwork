@@ -30,6 +30,11 @@ class Attachment(Base):
     kind: Mapped[str | None] = mapped_column(String, nullable=True)
     source_kind: Mapped[str] = mapped_column(String, nullable=False)
     note: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Phase 20 — portfolio binding by natural key (subject + topic).
+    # FK to topic_state.id would be fragile because that table gets
+    # wiped + rebuilt nightly. Subject + topic strings are stable.
+    topic_subject: Mapped[str | None] = mapped_column(String, nullable=True)
+    topic_topic: Mapped[str | None] = mapped_column(String, nullable=True)
     downloaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

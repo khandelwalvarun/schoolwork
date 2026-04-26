@@ -1251,6 +1251,72 @@ async def api_spellbee_download(child_id: int, filename: str):
     return FileResponse(path=str(path), media_type=mime, filename=path.name)
 
 
+@app.get("/api/portfolio")
+async def api_portfolio_list(
+    child_id: int | None = None,
+    subject: str | None = None,
+    topic: str | None = None,
+) -> list[dict[str, Any]]:
+    """List portfolio attachments for a kid / subject / topic. Returns
+    metadata only — clients fetch the actual file bytes via
+    /api/attachments/{attachment_id} (which gates by source_kind to
+    prevent path-traversal)."""
+    from .services.portfolio import list_portfolio
+    async with get_async_session() as session:
+        return await list_portfolio(
+            session, child_id=child_id, subject=subject, topic=topic,
+        )
+
+
+@app.post("/api/portfolio/upload")
+async def api_portfolio_upload(
+    child_id: int,
+    subject: str,
+    topic: str,
+    files: list[UploadFile] = File(...),  # noqa: B008
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Upload one or more portfolio files (images / PDFs) tagged to a
+    syllabus topic. Bound by natural key (subject, topic) so it survives
+    nightly topic_state recomputes. SHA-256 dedup; 10 MB per-file cap."""
+    from .services.portfolio import save_portfolio_upload
+    async with get_async_session() as session:
+        child = await _resolve_child(session, child_id)
+        saved: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for f in files:
+            try:
+                data = await f.read()
+                row = await save_portfolio_upload(
+                    session, child, subject, topic, f.filename or "unnamed",
+                    data, note=note,
+                )
+                saved.append({
+                    "id": row.id,
+                    "filename": row.filename,
+                    "mime_type": row.mime_type,
+                    "size_bytes": row.size_bytes,
+                    "uploaded_at": row.downloaded_at.isoformat() if row.downloaded_at else None,
+                })
+            except ValueError as e:
+                errors.append({"filename": f.filename or "", "error": str(e)})
+        await session.commit()
+    return {"saved": saved, "errors": errors}
+
+
+@app.delete("/api/portfolio/{attachment_id}")
+async def api_portfolio_delete(attachment_id: int) -> dict[str, Any]:
+    """Remove a portfolio row + its file. No-ops on non-portfolio rows."""
+    from .services.portfolio import delete_portfolio
+    async with get_async_session() as session:
+        ok = await delete_portfolio(session, attachment_id)
+        if ok:
+            await session.commit()
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "portfolio attachment not found")
+    return {"ok": True, "id": attachment_id}
+
+
 @app.post("/api/spellbee/upload")
 async def api_spellbee_upload(
     child_id: int,

@@ -5,6 +5,20 @@ export type SelfPredictionBand = "high" | "mid" | "low" | string;
 /** Computed once a grade has been linked. */
 export type SelfPredictionOutcome = "matched" | "better" | "worse";
 
+export type PortfolioItem = {
+  id: number;
+  child_id: number;
+  subject: string | null;
+  topic: string | null;
+  filename: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  kind: string | null;
+  note: string | null;
+  uploaded_at: string | null;
+  sha256: string;
+};
+
 export type SentimentPoint = {
   bucket_start: string;
   n: number;
@@ -548,6 +562,49 @@ export const api = {
   selfPredictionCalibration: (childId?: number) =>
     fetchJson<SelfPredictionCalibration>(
       `/api/self-prediction/calibration${childId ? `?child_id=${childId}` : ""}`,
+    ),
+  portfolioList: (childId: number, subject?: string, topic?: string) => {
+    const p = new URLSearchParams({ child_id: String(childId) });
+    if (subject) p.set("subject", subject);
+    if (topic) p.set("topic", topic);
+    return fetchJson<PortfolioItem[]>(`/api/portfolio?${p.toString()}`);
+  },
+  portfolioUpload: async (
+    childId: number,
+    subject: string,
+    topic: string,
+    files: File[],
+    note?: string,
+  ) => {
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f, f.name);
+    const p = new URLSearchParams({
+      child_id: String(childId),
+      subject,
+      topic,
+    });
+    if (note) p.set("note", note);
+    const r = await fetch(`/api/portfolio/upload?${p.toString()}`, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+    });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return (await r.json()) as {
+      saved: Array<{
+        id: number;
+        filename: string;
+        mime_type: string | null;
+        size_bytes: number | null;
+        uploaded_at: string | null;
+      }>;
+      errors: Array<{ filename: string; error: string }>;
+    };
+  },
+  portfolioDelete: (attachmentId: number) =>
+    fetchJson<{ ok: boolean; id: number }>(
+      `/api/portfolio/${attachmentId}`,
+      { method: "DELETE" },
     ),
   sentimentTrend: (childId?: number, windowDays = 28, bucketDays = 7) => {
     const p = new URLSearchParams();
