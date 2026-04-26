@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { api, Assignment, ParentStatus } from "../api";
+import { Assignment, AssignmentPatch, ParentStatus } from "../api";
 import StatusPopover from "./StatusPopover";
+import { useOptimisticPatch } from "./useOptimisticPatch";
+import { useFloatingPosition } from "./useFloatingPosition";
 import { daysFromTodayIST, nextWeekendIST, todayISOInIST } from "../util/ist";
 
 /** Row-level one-click actions for an assignment.
@@ -10,13 +11,14 @@ import { daysFromTodayIST, nextWeekendIST, todayISOInIST } from "../util/ist";
  *   ⋯     — full StatusPopover (priority, tags, notes, other states)
  */
 export default function QuickActions({ a }: { a: Assignment }) {
-  const qc = useQueryClient();
+  const optimisticPatch = useOptimisticPatch();
   const moreRef = useRef<HTMLButtonElement | null>(null);
   const snoozeRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [popover, setPopover] = useState<DOMRect | null>(null);
   const [snoozeMenu, setSnoozeMenu] = useState<DOMRect | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const snoozePos = useFloatingPosition(snoozeMenu, menuRef);
 
   useEffect(() => {
     if (!snoozeMenu) return;
@@ -30,11 +32,10 @@ export default function QuickActions({ a }: { a: Assignment }) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [snoozeMenu]);
 
-  const patch = async (label: string, payload: Parameters<typeof api.patchAssignment>[1]) => {
+  const patch = async (label: string, payload: AssignmentPatch) => {
     setBusy(label);
     try {
-      await api.patchAssignment(a.id, payload);
-      await qc.invalidateQueries();
+      await optimisticPatch(a.id, payload, { label });
     } finally {
       setBusy(null);
     }
@@ -56,12 +57,12 @@ export default function QuickActions({ a }: { a: Assignment }) {
 
   const toggleDone = () => {
     const next: ParentStatus | null = isDone && a.parent_status === "done_at_home" ? null : "done_at_home";
-    patch("done", { parent_status: next });
+    patch(next === null ? "Marked not done" : "Marked done at home", { parent_status: next });
   };
 
   const snooze = (dateIso: string | null) => {
     setSnoozeMenu(null);
-    patch("snooze", { snooze_until: dateIso });
+    patch(dateIso === null ? "Snooze cleared" : `Snoozed until ${dateIso}`, { snooze_until: dateIso });
   };
 
   const openSnoozeMenu = () => {
@@ -118,9 +119,12 @@ export default function QuickActions({ a }: { a: Assignment }) {
           style={{
             position: "absolute",
             zIndex: 1000,
-            top: snoozeMenu.bottom + window.scrollY + 4,
-            left: snoozeMenu.left + window.scrollX,
+            // First render: anchor-relative; useFloatingPosition then clamps
+            // to viewport on the next frame.
+            top: snoozePos?.top ?? snoozeMenu.bottom + window.scrollY + 4,
+            left: snoozePos?.left ?? snoozeMenu.left + window.scrollX,
             minWidth: 180,
+            visibility: snoozePos ? "visible" : "hidden",
           }}
           className="bg-white border border-gray-300 rounded-lg shadow-xl py-1 text-sm"
         >

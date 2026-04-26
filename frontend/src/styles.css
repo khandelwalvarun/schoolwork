@@ -114,10 +114,11 @@
   .row:hover { background: var(--bg-muted); }
   .row.selected { background: var(--accent-bg); }
 
-  /* Hover-reveal quick actions (Linear-style) */
-  .hover-reveal { @apply opacity-0 transition-opacity; }
-  .row:hover .hover-reveal,
-  .row:focus-within .hover-reveal { @apply opacity-100; }
+  /* Quick actions on every row, always visible.
+     Earlier this was a Linear-style hover-reveal pattern (.hover-reveal
+     fading in on .row:hover) but parents found it noisy + surprising.
+     Class kept for compatibility — it just no longer fades. */
+  .hover-reveal { @apply opacity-100; }
 
   /* Surfaces */
   .surface      { @apply bg-white border border-[color:var(--line)] rounded-lg; }

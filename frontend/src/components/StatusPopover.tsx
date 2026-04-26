@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { api, Assignment, ParentStatus } from "../api";
+import { Assignment, ParentStatus } from "../api";
+import { useOptimisticPatch } from "./useOptimisticPatch";
+import { useFloatingPosition } from "./useFloatingPosition";
 import { daysFromTodayIST, todayISOInIST } from "../util/ist";
 
 const PARENT_STATUS_LABELS: Record<ParentStatus, { label: string; dot: string; chip: string }> = {
@@ -68,7 +69,7 @@ export default function StatusPopover({
   onSaved?: () => void;
   anchorRect?: DOMRect;
 }) {
-  const qc = useQueryClient();
+  const optimisticPatch = useOptimisticPatch();
   const ref = useRef<HTMLDivElement | null>(null);
   const [parentStatus, setParentStatus] = useState<ParentStatus | null>(a.parent_status);
   const [priority, setPriority] = useState<number>(a.priority || 0);
@@ -92,14 +93,13 @@ export default function StatusPopover({
   const save = async () => {
     setSaving(true);
     try {
-      await api.patchAssignment(a.id, {
+      await optimisticPatch(a.id, {
         parent_status: parentStatus ?? null,
         priority,
         snooze_until: snooze ?? null,
         status_notes: note || null,
         tags,
-      });
-      await qc.invalidateQueries(); // refresh everything that lists assignments
+      }, { label: "Status updated" });
       if (onSaved) onSaved();
       onClose();
     } finally {
@@ -107,14 +107,22 @@ export default function StatusPopover({
     }
   };
 
-  const position = anchorRect
+  const floatingPos = useFloatingPosition(anchorRect ?? null, ref);
+  const fallbackPos = anchorRect
     ? { top: anchorRect.bottom + window.scrollY + 4, left: anchorRect.left + window.scrollX }
     : undefined;
 
   return (
     <div
       ref={ref}
-      style={{ position: "absolute", zIndex: 1000, ...(position || {}) }}
+      style={{
+        position: "absolute",
+        zIndex: 1000,
+        top: floatingPos?.top ?? fallbackPos?.top,
+        left: floatingPos?.left ?? fallbackPos?.left,
+        // Hide first paint until clamping resolves so we never flash off-screen.
+        visibility: anchorRect && !floatingPos ? "hidden" : "visible",
+      }}
       className="bg-white border border-gray-300 rounded-lg shadow-xl p-4 w-[360px] text-sm"
     >
       <div className="flex items-baseline justify-between mb-3">

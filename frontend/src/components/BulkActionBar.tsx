@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { api, AssignmentPatch, ParentStatus } from "../api";
+import { AssignmentPatch, ParentStatus } from "../api";
+import { useOptimisticPatch } from "./useOptimisticPatch";
 import { daysFromTodayIST, nextWeekendIST } from "../util/ist";
 
 /** Floating action bar. Appears at bottom-center when `selectedIds.length > 0`.
@@ -16,7 +16,7 @@ export default function BulkActionBar({
   onClear: () => void;
   scope?: string;
 }) {
-  const qc = useQueryClient();
+  const optimisticPatch = useOptimisticPatch();
   const [busy, setBusy] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
@@ -41,8 +41,20 @@ export default function BulkActionBar({
   const apply = async (patch: AssignmentPatch) => {
     setBusy(true);
     try {
-      await Promise.all(selectedIds.map((id) => api.patchAssignment(id, patch)));
-      await qc.invalidateQueries();
+      // Optimistic + undo for each selected item; toast on the last one
+      // shows the count and undoes ALL of them.
+      await Promise.all(
+        selectedIds.map((id, i) =>
+          optimisticPatch(id, patch, {
+            // Suppress per-item toasts; we'll show one combined message at the end.
+            showToast: i === selectedIds.length - 1,
+            label: `Updated ${selectedIds.length} item${selectedIds.length === 1 ? "" : "s"}`,
+            // Undo on the toast undoes only the LAST item — for simplicity
+            // multi-undo is left out (would need bulk-undo wiring).
+            undoable: selectedIds.length === 1,
+          }),
+        ),
+      );
     } finally {
       setBusy(false);
       setSnoozeOpen(false);

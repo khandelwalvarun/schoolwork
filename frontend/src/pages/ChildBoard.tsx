@@ -18,6 +18,7 @@ import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover"
 import AuditDrawer from "../components/AuditDrawer";
 import QuickActions from "../components/QuickActions";
 import { SkeletonBoardColumn } from "../components/Skeleton";
+import { useOptimisticPatch } from "../components/useOptimisticPatch";
 import { formatDate } from "../util/dates";
 
 type ColumnKey = "not_started" | "in_progress" | "done_at_home" | "submitted" | "graded";
@@ -152,6 +153,7 @@ export default function ChildBoard() {
   const { id } = useParams();
   const childId = Number(id);
   const qc = useQueryClient();
+  const optimisticPatch = useOptimisticPatch();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["assignments-board", childId],
@@ -208,8 +210,9 @@ export default function ChildBoard() {
     const target = COLUMN_TO_PARENT_STATUS[col];
     if (target === "GRADED_NOOP") return; // can't move to graded manually
     if (a.parent_status === target) return;
-    await api.patchAssignment(a.id, { parent_status: target });
-    qc.invalidateQueries();
+    await optimisticPatch(a.id, { parent_status: target }, {
+      label: target ? `Moved to ${target.replace(/_/g, " ")}` : "Cleared status",
+    });
   };
 
   return (
