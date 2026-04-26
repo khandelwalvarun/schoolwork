@@ -8,6 +8,9 @@ export type UiPrefs = {
   sync_interval_hours?: number;
   sync_window_start_hour?: number;
   sync_window_end_hour?: number;
+  /** "horizontal" (default, original wrap-flex top nav) | "sidebar"
+   *  (Linear/Notion-style left rail). Phase 9 lever. */
+  nav_layout?: "horizontal" | "sidebar";
 };
 
 const DEFAULT: UiPrefs = {
@@ -17,6 +20,7 @@ const DEFAULT: UiPrefs = {
   sync_interval_hours: 1,
   sync_window_start_hour: 8,
   sync_window_end_hour: 22,
+  nav_layout: "horizontal",
 };
 
 /** Client-side wrapper around GET/PUT /api/ui-prefs.
@@ -49,6 +53,7 @@ export function useUiPrefs() {
           sync_interval_hours: p.sync_interval_hours ?? 1,
           sync_window_start_hour: p.sync_window_start_hour ?? 8,
           sync_window_end_hour: p.sync_window_end_hour ?? 22,
+          nav_layout: p.nav_layout ?? "horizontal",
         });
         setLoaded(true);
       })
@@ -80,6 +85,7 @@ export function useUiPrefs() {
         sync_interval_hours:    patch.sync_interval_hours    ?? prev.sync_interval_hours,
         sync_window_start_hour: patch.sync_window_start_hour ?? prev.sync_window_start_hour,
         sync_window_end_hour:   patch.sync_window_end_hour   ?? prev.sync_window_end_hour,
+        nav_layout: patch.nav_layout ?? prev.nav_layout,
       };
       persist(next);
       return next;

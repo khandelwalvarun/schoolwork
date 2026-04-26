@@ -142,10 +142,54 @@ function SyncCadence() {
   );
 }
 
+function NavLayoutToggle() {
+  const { prefs, loaded } = useUiPrefs();
+  const value = prefs.nav_layout ?? "horizontal";
+  const set = (next: "horizontal" | "sidebar") => {
+    fetch("/api/ui-prefs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...prefs, nav_layout: next }),
+    }).then(() => window.location.reload());
+  };
+  return (
+    <section className="surface p-5 mb-4">
+      <div className="font-semibold text-lg mb-1">Navigation layout</div>
+      <div className="text-sm text-gray-600 mb-3">
+        Choose how the app shell is structured. The left sidebar is denser
+        and groups per-kid pages together; the horizontal nav is the
+        original wrap-flex layout.
+      </div>
+      {loaded && (
+        <div className="flex gap-2">
+          {([
+            { v: "horizontal", label: "Horizontal (top wrap)" },
+            { v: "sidebar",    label: "Left sidebar (Linear-style)" },
+          ] as const).map((opt) => (
+            <button
+              key={opt.v}
+              onClick={() => set(opt.v)}
+              className={
+                "px-3 py-1.5 text-sm rounded border " +
+                (value === opt.v
+                  ? "bg-blue-700 text-white border-blue-800"
+                  : "bg-white text-gray-700 border-[color:var(--line)] hover:bg-gray-50")
+              }
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Settings() {
   return (
     <div>
       <h2 className="text-2xl font-bold mb-4">Settings</h2>
+      <NavLayoutToggle />
       <SyncCadence />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Link to="/settings/veracross" className="surface p-5 hover:bg-gray-50">

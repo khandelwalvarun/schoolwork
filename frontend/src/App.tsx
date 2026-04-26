@@ -22,8 +22,10 @@ import CommandPalette from "./components/CommandPalette";
 import HelpPanel from "./components/HelpPanel";
 import SyncStatusBar from "./components/SyncStatusBar";
 import { Icon } from "./components/Icon";
+import { Sidebar } from "./components/Sidebar";
 import { useListShortcuts } from "./components/useListShortcuts";
-import { api } from "./api";
+import { useUiPrefs } from "./components/useUiPrefs";
+import { api, Child } from "./api";
 
 function NavItem({ to, label, end = true }: { to: string; label: string; end?: boolean }) {
   return (
@@ -54,9 +56,43 @@ function ChildNavLink({ id, name }: { id: number; name: string }) {
 }
 
 export default function App() {
-  const { data: children } = useQuery({ queryKey: ["children"], queryFn: api.children });
+  const { data: children } = useQuery<Child[]>({ queryKey: ["children"], queryFn: api.children });
+  const { prefs, loaded } = useUiPrefs();
   // j/k/Enter/x/e/s row shortcuts everywhere lists are visible.
   useListShortcuts();
+
+  const sidebar = loaded && prefs.nav_layout === "sidebar";
+
+  // Helpers used by Sidebar — dispatch the same custom events the
+  // existing buttons use, so we share state with the legacy header.
+  const openSearch = () => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+  };
+  const openHelp = () => {
+    document.dispatchEvent(new CustomEvent("pc:help:toggle"));
+  };
+
+  if (sidebar) {
+    return (
+      <div className="min-h-screen flex">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:bg-blue-700 focus:text-white focus:px-3 focus:py-2 focus:rounded"
+        >
+          Skip to content
+        </a>
+        <Sidebar children={children || []} onOpenSearch={openSearch} onOpenHelp={openHelp} />
+        <div className="flex-1 flex flex-col min-w-0">
+          <SyncStatusBar />
+          <CommandPalette />
+          <HelpPanel />
+          <main id="main" className="flex-1 max-w-6xl mx-auto w-full px-5 py-6">
+            <AppRoutes />
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -118,27 +154,33 @@ export default function App() {
       <CommandPalette />
       <HelpPanel />
       <main id="main" className="flex-1 max-w-6xl mx-auto w-full px-5 py-6">
-        <Routes>
-          <Route path="/" element={<Today />} />
-          <Route path="/child/:id" element={<ChildDetail />} />
-          <Route path="/child/:id/board" element={<ChildBoard />} />
-          <Route path="/child/:id/grades" element={<ChildGrades />} />
-          <Route path="/child/:id/assignments" element={<ChildAssignments />} />
-          <Route path="/child/:id/comments" element={<ChildComments />} />
-          <Route path="/child/:id/syllabus" element={<ChildSyllabus />} />
-          <Route path="/messages" element={<Messages />} />
-          <Route path="/attachments" element={<AttachmentsPage />} />
-          <Route path="/spellbee" element={<SpellBee />} />
-          <Route path="/resources" element={<Resources />} />
-          <Route path="/notes" element={<Notes />} />
-          <Route path="/summaries" element={<Summaries />} />
-          <Route path="/notifications" element={<Notifications />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/settings/channels" element={<SettingsChannels />} />
-          <Route path="/settings/syllabus" element={<SettingsSyllabus />} />
-          <Route path="/settings/veracross" element={<SettingsVeracross />} />
-        </Routes>
+        <AppRoutes />
       </main>
     </div>
+  );
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Today />} />
+      <Route path="/child/:id" element={<ChildDetail />} />
+      <Route path="/child/:id/board" element={<ChildBoard />} />
+      <Route path="/child/:id/grades" element={<ChildGrades />} />
+      <Route path="/child/:id/assignments" element={<ChildAssignments />} />
+      <Route path="/child/:id/comments" element={<ChildComments />} />
+      <Route path="/child/:id/syllabus" element={<ChildSyllabus />} />
+      <Route path="/messages" element={<Messages />} />
+      <Route path="/attachments" element={<AttachmentsPage />} />
+      <Route path="/spellbee" element={<SpellBee />} />
+      <Route path="/resources" element={<Resources />} />
+      <Route path="/notes" element={<Notes />} />
+      <Route path="/summaries" element={<Summaries />} />
+      <Route path="/notifications" element={<Notifications />} />
+      <Route path="/settings" element={<Settings />} />
+      <Route path="/settings/channels" element={<SettingsChannels />} />
+      <Route path="/settings/syllabus" element={<SettingsSyllabus />} />
+      <Route path="/settings/veracross" element={<SettingsVeracross />} />
+    </Routes>
   );
 }
