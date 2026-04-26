@@ -10,6 +10,7 @@ import { AssignmentList } from "../components/AssignmentList";
 import { useSelection } from "../components/useSelection";
 import { useUiPrefs } from "../components/useUiPrefs";
 import { SkeletonKidBlock } from "../components/Skeleton";
+import { Sparkline } from "../components/Sparkline";
 
 export default function ChildDetail() {
   const { id } = useParams();
@@ -68,7 +69,13 @@ export default function ChildDetail() {
       {data.overdue_sparkline && (
         <div className="surface mb-6 p-4">
           <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">14-day overdue backlog</div>
-          <div className="font-mono text-2xl tracking-wide">{data.overdue_sparkline}</div>
+          <Sparkline
+            points={data.overdue_trend.map((p) => p.count)}
+            tone="red"
+            width={240}
+            height={32}
+            title={`Overdue last 14 days. Now ${data.overdue_trend[data.overdue_trend.length - 1]?.count}.`}
+          />
           <div className="text-xs text-gray-500 mt-1">
             {data.overdue_trend[0]?.date} → {data.overdue_trend[data.overdue_trend.length - 1]?.date}
             &nbsp;· now {data.overdue_trend[data.overdue_trend.length - 1]?.count}
@@ -107,15 +114,29 @@ export default function ChildDetail() {
         <section className="surface mb-6 p-4">
           <h3 className="h-section text-purple-700 mb-3">Grade trends</h3>
           <table className="w-full text-sm"><tbody>
-            {data.grade_trends.map((t: GradeTrend) => (
+            {data.grade_trends.map((t: GradeTrend) => {
+              const recentPts = (t.recent || [])
+                .map((r) => r.grade_pct)
+                .filter((p): p is number => typeof p === "number");
+              return (
               <tr key={t.subject} className="border-t border-[color:var(--line-soft)]">
                 <td className="py-1">{t.subject}</td>
-                <td className="py-1 font-mono">{t.sparkline}</td>
+                <td className="py-1">
+                  <Sparkline
+                    points={recentPts.length > 0 ? recentPts : undefined}
+                    bars={recentPts.length === 0 ? t.sparkline : undefined}
+                    tone="purple"
+                    width={84}
+                    height={18}
+                    title={`${t.subject} grades: ${recentPts.join(", ")}%`}
+                  />
+                </td>
                 <td className="py-1 text-lg">{t.arrow}</td>
                 <td className="py-1">latest <b>{t.latest.toFixed(0)}%</b></td>
                 <td className="py-1 text-gray-500">avg {t.avg.toFixed(0)}% (n={t.count})</td>
               </tr>
-            ))}
+            );
+            })}
           </tbody></table>
           <div className="mt-2 text-xs">
             <Link className="text-blue-700 hover:underline" to={`/child/${childId}/grades`}>See full grades →</Link>

@@ -8,6 +8,7 @@ import AuditDrawer from "../components/AuditDrawer";
 import ChildHeader from "../components/ChildHeader";
 import { SortableTH, useSortable } from "../components/useSortable";
 import { Surface } from "../components/Surface";
+import { Sparkline } from "../components/Sparkline";
 import { formatDDMMMYY, formatDDMMMYYTime } from "../util/dates";
 
 type GradeRow = {
@@ -74,22 +75,36 @@ export default function ChildGrades() {
         <Surface className="mb-6">
           <h3 className="font-semibold text-purple-700 mb-3">Trends</h3>
           <div className="space-y-2 text-sm">
-            {trends.map((t) => (
-              <div
-                key={t.subject}
-                className="flex items-start gap-3 border-t border-gray-100 pt-2 cursor-pointer"
-                onClick={() => setSubject(t.subject === subject ? undefined : t.subject)}
-              >
-                <div className="w-28 font-medium">{t.subject}</div>
-                <div className="font-mono w-24">{t.sparkline}</div>
-                <div className="text-lg w-6">{t.arrow}</div>
-                <div className="w-24">latest <b>{t.latest.toFixed(0)}%</b></div>
-                <div className="text-gray-500 w-32">avg {t.avg.toFixed(0)}% (n={t.count})</div>
-                {t.annotation && (
-                  <div className="flex-1 text-gray-700 italic">{t.annotation}</div>
-                )}
-              </div>
-            ))}
+            {trends.map((t) => {
+              const recentPts = (t.recent || [])
+                .map((r) => r.grade_pct)
+                .filter((p): p is number => typeof p === "number");
+              return (
+                <div
+                  key={t.subject}
+                  className="flex items-start gap-3 border-t border-gray-100 pt-2 cursor-pointer"
+                  onClick={() => setSubject(t.subject === subject ? undefined : t.subject)}
+                >
+                  <div className="w-28 font-medium">{t.subject}</div>
+                  <div className="w-24">
+                    <Sparkline
+                      points={recentPts.length > 0 ? recentPts : undefined}
+                      bars={recentPts.length === 0 ? t.sparkline : undefined}
+                      tone="purple"
+                      width={84}
+                      height={18}
+                      title={`${t.subject}: ${recentPts.join(", ")}%`}
+                    />
+                  </div>
+                  <div className="text-lg w-6">{t.arrow}</div>
+                  <div className="w-24">latest <b>{t.latest.toFixed(0)}%</b></div>
+                  <div className="text-gray-500 w-32">avg {t.avg.toFixed(0)}% (n={t.count})</div>
+                  {t.annotation && (
+                    <div className="flex-1 text-gray-700 italic">{t.annotation}</div>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <div className="text-xs text-gray-500 mt-3">Click a subject to filter the grade list below.</div>
         </Surface>

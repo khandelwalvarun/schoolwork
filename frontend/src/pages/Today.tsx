@@ -20,6 +20,7 @@ import { useSelection } from "../components/useSelection";
 import { useUiPrefs } from "../components/useUiPrefs";
 import { SkeletonHero, SkeletonKidBlock } from "../components/Skeleton";
 import { Button } from "../components/Button";
+import { Sparkline } from "../components/Sparkline";
 import { formatDate, formatRelative } from "../util/dates";
 
 const BUCKET_DEFS: Record<string, { key: keyof ChildBlock; label: string; tone: "red" | "amber" | "blue" }> = {
@@ -95,7 +96,8 @@ function KidBacklog({ sparkline, latest }: { sparkline: string; latest: number }
   return (
     <div className="text-xs text-gray-600 flex items-center gap-2">
       <span>14-day backlog</span>
-      <span className="font-mono text-lg tracking-wide">{sparkline}</span>
+      <Sparkline bars={sparkline} tone="red" width={84} height={18}
+                 title={`Overdue, last 14 days. Currently ${latest}.`} />
       <span className="text-gray-500">now {latest}</span>
     </div>
   );
@@ -112,10 +114,20 @@ function GradeTrendsMini({ trends }: { trends: GradeTrend[] }) {
             t.arrow === "↑" ? "text-emerald-700"
           : t.arrow === "↓" ? "text-red-700"
           : "text-gray-500";
+          const recentPts = (t.recent || [])
+            .map((r) => r.grade_pct)
+            .filter((p): p is number => typeof p === "number");
           return (
             <div key={t.subject} className="flex items-center gap-2 whitespace-nowrap">
               <span className="text-gray-700">{t.subject}</span>
-              <span className="font-mono">{t.sparkline}</span>
+              <Sparkline
+                points={recentPts.length > 0 ? recentPts : undefined}
+                bars={recentPts.length === 0 ? t.sparkline : undefined}
+                tone="purple"
+                width={56}
+                height={14}
+                title={`${t.subject}: ${recentPts.join(", ")}%`}
+              />
               <span className={arrowColor}>{t.arrow}</span>
               <span className="text-gray-500">{t.latest.toFixed(0)}%</span>
             </div>
