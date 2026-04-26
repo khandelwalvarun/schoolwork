@@ -340,6 +340,44 @@ export type PatternsAll = {
   }>;
 };
 
+/** Per-rule snooze the parent set from the (why?) popover. The
+ *  dispatcher reads these and suppresses with reason "snoozed by parent"
+ *  until `until` passes. `child_id === null` means kid-agnostic. */
+export type NotificationSnooze = {
+  id: number;
+  rule_id: string;
+  child_id: number | null;
+  until: string;       // ISO datetime in UTC
+  reason: string | null;
+  created_at?: string;
+};
+
+/** Per-channel notification row, decorated with Phase-14 explainer fields.
+ *  `tier` mirrors the rubric's delivery tier ("now" | "today" | "weekly").
+ *  `rule_id` is the event-kind name. `why` is the structured payload that
+ *  fed the rule (datapoints, threshold, child_id, etc.). */
+export type NotificationRow = {
+  channel: string;
+  status: string;
+  delivered_at?: string | null;
+  error?: string | null;
+  tier?: "now" | "today" | "weekly" | null;
+  rule_id?: string | null;
+  why?: Record<string, unknown> | null;
+};
+
+export type NotificationEvent = {
+  id: number;
+  kind: string;
+  child_id: number | null;
+  subject: string | null;
+  notability: number;
+  dedup_key: string;
+  created_at: string;
+  payload: Record<string, unknown>;
+  notifications: NotificationRow[];
+};
+
 export type ExcellenceStatus = {
   child_id: number;
   year_label: string;
@@ -444,6 +482,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ since_days: sinceDays, child_id: childId }),
     }),
+  listNotificationSnoozes: () =>
+    fetchJson<NotificationSnooze[]>(`/api/notification-snoozes`),
+  addNotificationSnooze: (body: {
+    rule_id: string;
+    child_id?: number | null;
+    until: string;
+    reason?: string;
+  }) =>
+    fetchJson<NotificationSnooze>(`/api/notification-snoozes`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  deleteNotificationSnooze: (snoozeId: number) =>
+    fetchJson<{ ok: boolean; id: number }>(
+      `/api/notification-snoozes/${snoozeId}`,
+      { method: "DELETE" },
+    ),
   channelConfig: () => fetchJson<Record<string, unknown>>("/api/channel-config"),
   putChannelConfig: (cfg: unknown) =>
     fetchJson<unknown>("/api/channel-config", { method: "PUT", body: JSON.stringify(cfg) }),

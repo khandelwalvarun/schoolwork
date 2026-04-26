@@ -1,20 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, ReplayResult } from "../api";
+import { api, NotificationEvent, ReplayResult } from "../api";
 import { SkeletonList, Skeleton } from "../components/Skeleton";
+import { NotificationWhy } from "../components/NotificationWhy";
 import { formatDateTime } from "../util/dates";
 
-type Notif = { channel: string; status: string; error?: string; delivered_at?: string };
-type Event = {
-  id: number;
-  kind: string;
-  child_id: number | null;
-  subject: string | null;
-  notability: number;
-  dedup_key: string;
-  created_at: string;
-  payload: Record<string, unknown>;
-  notifications: Notif[];
+const TIER_CHIP: Record<string, string> = {
+  now:    "bg-red-50 text-red-800 border border-red-200",
+  today:  "bg-amber-50 text-amber-800 border border-amber-200",
+  weekly: "bg-blue-50 text-blue-800 border border-blue-200",
 };
 
 export default function Notifications() {
@@ -44,7 +38,7 @@ export default function Notifications() {
       </div>
     );
   }
-  const events = (data || []) as Event[];
+  const events = (data || []) as NotificationEvent[];
 
   return (
     <div>
@@ -126,29 +120,63 @@ export default function Notifications() {
           <tr className="text-left text-gray-500 text-xs uppercase border-b border-gray-100">
             <th className="py-2 px-3 font-medium">When</th>
             <th className="py-2 px-3 font-medium">Kind</th>
+            <th className="py-2 px-3 font-medium">Tier</th>
             <th className="py-2 px-3 font-medium">Notability</th>
             <th className="py-2 px-3 font-medium">Child</th>
             <th className="py-2 px-3 font-medium">Subject</th>
             <th className="py-2 px-3 font-medium">Channels</th>
+            <th className="py-2 px-3 font-medium">Why</th>
           </tr>
         </thead>
         <tbody>
-          {events.map((e) => (
-            <tr key={e.id} className="border-t border-gray-100 hover:bg-gray-50 align-top">
-              <td className="py-2 px-3 text-gray-500 whitespace-nowrap" title={e.created_at}>{formatDateTime(e.created_at)}</td>
-              <td className="py-2 px-3 font-mono text-xs">{e.kind}</td>
-              <td className="py-2 px-3">{e.notability.toFixed(2)}</td>
-              <td className="py-2 px-3">{e.child_id ?? "—"}</td>
-              <td className="py-2 px-3 text-gray-600">{e.subject}</td>
-              <td className="py-2 px-3 space-x-2">
-                {e.notifications.map((n, i) => (
-                  <span key={i} className={`chip-${n.status === "sent" ? "green" : n.status === "failed" ? "red" : "amber"}`}>
-                    {n.channel}: {n.status}
-                  </span>
-                ))}
-              </td>
-            </tr>
-          ))}
+          {events.map((e) => {
+            // Pick the most-informative row for the (why?) popover —
+            // any 'sent' first, else any with a populated why payload.
+            const whyRow =
+              e.notifications.find((n) => n.status === "sent" && n.rule_id) ||
+              e.notifications.find((n) => n.rule_id);
+            const tier = whyRow?.tier;
+            return (
+              <tr key={e.id} className="border-t border-gray-100 hover:bg-gray-50 align-top">
+                <td className="py-2 px-3 text-gray-500 whitespace-nowrap" title={e.created_at}>{formatDateTime(e.created_at)}</td>
+                <td className="py-2 px-3 font-mono text-xs">{e.kind}</td>
+                <td className="py-2 px-3">
+                  {tier ? (
+                    <span
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ${
+                        TIER_CHIP[tier] ?? "border border-gray-300 text-gray-700"
+                      }`}
+                    >
+                      {tier}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400 text-xs">—</span>
+                  )}
+                </td>
+                <td className="py-2 px-3">{e.notability.toFixed(2)}</td>
+                <td className="py-2 px-3">{e.child_id ?? "—"}</td>
+                <td className="py-2 px-3 text-gray-600">{e.subject}</td>
+                <td className="py-2 px-3 space-x-2">
+                  {e.notifications.map((n, i) => (
+                    <span
+                      key={i}
+                      className={`chip-${n.status === "sent" ? "green" : n.status === "failed" ? "red" : "amber"}`}
+                      title={n.error || ""}
+                    >
+                      {n.channel}: {n.status}
+                    </span>
+                  ))}
+                </td>
+                <td className="py-2 px-3">
+                  {whyRow ? (
+                    <NotificationWhy row={whyRow} childId={e.child_id} />
+                  ) : (
+                    <span className="text-gray-300 text-xs">—</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

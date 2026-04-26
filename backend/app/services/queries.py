@@ -322,12 +322,21 @@ async def get_events(
     ).scalars().all()
     by_event: dict[int, list[dict[str, Any]]] = {}
     for n in notifs:
+        why: dict[str, Any] | None = None
+        if n.why_json:
+            try:
+                why = json.loads(n.why_json)
+            except Exception:
+                why = None
         by_event.setdefault(n.event_id, []).append(
             {
                 "channel": n.channel,
                 "status": n.status,
                 "delivered_at": n.delivered_at.isoformat() if n.delivered_at else None,
                 "error": n.error,
+                "tier": n.tier,
+                "rule_id": n.rule_id,
+                "why": why,
             }
         )
 

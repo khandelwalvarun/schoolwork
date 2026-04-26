@@ -15,9 +15,21 @@ from ..channels.base import Channel, DeliveryResult
 from ..channels.email import EmailChannel
 from ..channels.inapp import InAppChannel
 from ..channels.telegram import TelegramChannel
-from ..models import ChannelConfig, Event, Notification
+from ..models import ChannelConfig, Event, Notification, NotificationSnooze
+from .rubric import tier_for
 
 from ..util.time import IST  # canonical
+
+
+# Phase 14 — which channels are eligible per tier:
+#   now    → every enabled channel
+#   today  → inapp only at fire time (digest job picks up later for tg/email)
+#   weekly → inapp only (weekly digest covers tg/email)
+TIER_CHANNELS: dict[str, set[str]] = {
+    "now":    {"telegram", "email", "inapp"},
+    "today":  {"inapp"},
+    "weekly": {"inapp"},
+}
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "channels": {
@@ -136,6 +148,23 @@ async def _rate_limit_ok(
     return True
 
 
+async def _is_snoozed(
+    session: AsyncSession, rule_id: str, child_id: int | None, now: datetime,
+) -> bool:
+    """Check NotificationSnooze for an active snooze on (rule_id, child_id).
+    A snooze with `child_id IS NULL` matches any kid. Snoozes past `until`
+    are inactive; we don't delete them — they stick around as audit."""
+    q = select(NotificationSnooze).where(
+        NotificationSnooze.rule_id == rule_id,
+        NotificationSnooze.until > now,
+    )
+    rows = (await session.execute(q)).scalars().all()
+    for r in rows:
+        if r.child_id is None or r.child_id == child_id:
+            return True
+    return False
+
+
 async def _already_delivered(
     session: AsyncSession, event_id: int, channel: str
 ) -> bool:
@@ -171,6 +200,13 @@ async def dispatch_event(
     now = datetime.now(tz=timezone.utc)
     now_ist = now.astimezone(IST)
 
+    # Phase 14 — derive tier + rule_id + why payload from the rubric.
+    tier = tier_for(ev.kind)
+    rule_id = ev.kind
+    why_json = ev.payload_json  # the engine already stamped the datapoints
+    eligible_channels = TIER_CHANNELS.get(tier, TIER_CHANNELS["today"])
+    snoozed = await _is_snoozed(session, rule_id, ev.child_id, now)
+
     results: list[DeliveryResult] = []
 
     for cname, ch in channels.items():
@@ -182,10 +218,23 @@ async def dispatch_event(
             channel=cname,
             status="pending",
             attempted_at=now,
+            tier=tier,
+            rule_id=rule_id,
+            why_json=why_json,
         )
         session.add(pending)
         await session.flush()
 
+        if cname not in eligible_channels:
+            pending.status = "suppressed"
+            pending.error = f"tier={tier} excludes channel"
+            results.append(DeliveryResult(cname, "suppressed", pending.error))
+            continue
+        if snoozed:
+            pending.status = "suppressed"
+            pending.error = "snoozed by parent"
+            results.append(DeliveryResult(cname, "suppressed", "snoozed"))
+            continue
         if not pcfg.get("enabled", True):
             pending.status = "suppressed"
             pending.error = "channel disabled"

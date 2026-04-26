@@ -7,6 +7,7 @@ from .events import Event
 from .llm_calls import LLMCall
 from .mcp_tool_calls import MCPToolCall
 from .notes import ParentNote
+from .notification_snooze import NotificationSnooze
 from .notifications import Notification
 from .pattern_state import PatternState
 from .status_history import AssignmentStatusHistory
@@ -25,6 +26,7 @@ __all__ = [
     "LLMCall",
     "MCPToolCall",
     "Notification",
+    "NotificationSnooze",
     "ParentNote",
     "PatternState",
     "Summary",

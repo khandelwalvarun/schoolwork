@@ -403,6 +403,101 @@ async def api_submission_heatmap(
         return await Q.get_submission_heatmap(session, child_id=child_id, weeks=weeks)
 
 
+@app.get("/api/notification-snoozes")
+async def api_notification_snoozes() -> list[dict[str, Any]]:
+    """List active (un-expired) notification snoozes — one row per
+    (rule_id, child_id) the parent has muted. Used by the (why?) popover
+    to show a "currently snoozed until …" hint."""
+    from datetime import datetime, timezone as _tz
+    from sqlalchemy import select
+    from .models import NotificationSnooze
+    async with get_async_session() as session:
+        rows = (
+            await session.execute(
+                select(NotificationSnooze)
+                .where(NotificationSnooze.until > datetime.now(tz=_tz.utc))
+                .order_by(NotificationSnooze.until.desc())
+            )
+        ).scalars().all()
+    return [
+        {
+            "id": r.id,
+            "rule_id": r.rule_id,
+            "child_id": r.child_id,
+            "until": r.until.isoformat() if r.until else None,
+            "reason": r.reason,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+@app.post("/api/notification-snoozes")
+async def api_notification_snoozes_add(payload: dict[str, Any]) -> dict[str, Any]:
+    """Snooze a (rule_id, child_id) until `until` (ISO datetime in UTC).
+    Idempotent — the unique key (rule_id, child_id) is upserted; the
+    new `until` replaces an older one."""
+    from datetime import datetime, timezone as _tz
+    from sqlalchemy import select
+    from .models import NotificationSnooze
+    rule_id = (payload or {}).get("rule_id")
+    if not rule_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "rule_id required")
+    child_id = (payload or {}).get("child_id")
+    until_raw = (payload or {}).get("until")
+    if until_raw is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "until required (ISO UTC)")
+    try:
+        until_dt = datetime.fromisoformat(str(until_raw).replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"bad until: {until_raw}")
+    if until_dt.tzinfo is None:
+        until_dt = until_dt.replace(tzinfo=_tz.utc)
+    reason = (payload or {}).get("reason")
+    async with get_async_session() as session:
+        existing = (
+            await session.execute(
+                select(NotificationSnooze).where(
+                    NotificationSnooze.rule_id == rule_id,
+                    NotificationSnooze.child_id == child_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing:
+            existing.until = until_dt
+            if reason is not None:
+                existing.reason = reason
+            row = existing
+        else:
+            row = NotificationSnooze(
+                rule_id=rule_id, child_id=child_id, until=until_dt, reason=reason,
+            )
+            session.add(row)
+        await session.commit()
+        await session.refresh(row)
+    return {
+        "id": row.id,
+        "rule_id": row.rule_id,
+        "child_id": row.child_id,
+        "until": row.until.isoformat(),
+        "reason": row.reason,
+    }
+
+
+@app.delete("/api/notification-snoozes/{snooze_id}")
+async def api_notification_snoozes_delete(snooze_id: int) -> dict[str, Any]:
+    """Cancel an active snooze by id. Returns ok=True even if already
+    expired/missing — idempotent."""
+    from sqlalchemy import delete
+    from .models import NotificationSnooze
+    async with get_async_session() as session:
+        await session.execute(
+            delete(NotificationSnooze).where(NotificationSnooze.id == snooze_id)
+        )
+        await session.commit()
+    return {"ok": True, "id": snooze_id}
+
+
 @app.get("/api/patterns")
 async def api_patterns(child_id: int | None = None) -> dict[str, Any] | list[dict[str, Any]]:
     """Monthly behavioural patterns per kid: lateness, repeated_attempt,

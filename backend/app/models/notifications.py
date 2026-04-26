@@ -23,5 +23,9 @@ class Notification(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(String, nullable=True)
     message_preview: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Phase 14 — three-tier delivery + (why?) explainability + snooze.
+    tier: Mapped[str | None] = mapped_column(String, nullable=True)  # now|today|weekly
+    rule_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    why_json: Mapped[str | None] = mapped_column(String, nullable=True)
 
     event = relationship("Event", back_populates="notifications")
