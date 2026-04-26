@@ -47,9 +47,18 @@ function tooltipFor(w: HomeworkLoadWeek, mpi: number): string {
     { month: "long", day: "numeric", year: "numeric" },
   );
   const hours = (w.est_minutes / 60).toFixed(1);
+  let src = "";
+  if (w.by_source) {
+    const parts: string[] = [];
+    if (w.by_source.assigned)
+      parts.push(`${w.by_source.assigned} by assigned-date`);
+    if (w.by_source.due)
+      parts.push(`${w.by_source.due} via due-date fallback`);
+    if (parts.length) src = `\n${parts.join(" · ")}`;
+  }
   return (
     `Week of ${date}\n` +
-    `${w.items} assignment${w.items === 1 ? "" : "s"} due\n` +
+    `${w.items} assignment${w.items === 1 ? "" : "s"} given${src}\n` +
     `~${w.est_minutes} min (${hours} hr) at ${mpi} min/item — estimate, not measured`
   );
 }
@@ -96,7 +105,7 @@ export function HomeworkLoadChart({
   return (
     <div className="surface p-4">
       <div className="flex items-baseline justify-between mb-1">
-        <span className="h-section text-blue-700">Homework load</span>
+        <span className="h-section text-blue-700">Homework load · by date assigned</span>
         <span className="text-xs text-gray-400">
           last {data.weeks.length} weeks · est. {data.est_minutes_per_item} min/item
         </span>
@@ -104,6 +113,16 @@ export function HomeworkLoadChart({
       <div className="text-xs text-gray-500 mb-3">
         {data.cap_basis}
       </div>
+      {data.fallback_share !== undefined && data.fallback_share > 0 && (
+        <div
+          className="text-[10px] text-amber-700 mb-2"
+          title={data.bucketing_note}
+        >
+          {Math.round(data.fallback_share * 100)}% of items fell back to
+          due-date (no assigned-date captured yet) — bucket placement
+          may shift after the next heavy sync.
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <svg

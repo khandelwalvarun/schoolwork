@@ -2,10 +2,19 @@
 
 The cockpit can't directly measure time-on-task — we don't have
 "kid started at X, finished at Y" telemetry. So this estimates effort
-from the number of assignments due each week, with a per-class default
-minutes-per-item. The CBSE caps from Circular 52/2020 are surfaced as
-a reference horizon, with explicit framing in the API response that
-they're official policy, not what most schools actually assign.
+from when assignments LAND (date_assigned), not when they're due. A
+worksheet assigned Monday and due Friday creates work across the
+Monday-Friday range; bucketing by due-day would falsely make Friday
+look like a 5-hr crush.
+
+If date_assigned isn't available (rows that only saw the planner-only
+path) we fall back to due_or_date with a `bucket_basis` flag in each
+week so the UI can footnote it. After enough syncs run the back-fill
+detail-pass, every row should have an assigned date.
+
+The CBSE caps from Circular 52/2020 are surfaced as a reference
+horizon, with explicit framing in the API response that they're
+official policy, not what most schools actually assign.
 
 CBSE Circular 52/2020 (homework limits):
   Class I–II    none
@@ -68,6 +77,25 @@ def _start_of_iso_week(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
 
+def _date_assigned_for(item: VeracrossItem) -> tuple[date | None, str]:
+    """Return (date, source) where source ∈ {'assigned','due'}.
+
+    Prefers normalized_json["date_assigned"] when present; falls back
+    to due_or_date with source='due' so the caller can flag bucket
+    accuracy in the response. Both date strings are run through the
+    same loose parser used elsewhere ("Apr 22" / "22 Apr" / ISO)."""
+    import json as _json
+    try:
+        norm = _json.loads(item.normalized_json or "{}")
+    except Exception:
+        norm = {}
+    da = norm.get("date_assigned") if isinstance(norm, dict) else None
+    parsed = _parse_loose_date(da) if da else None
+    if parsed is not None:
+        return parsed, "assigned"
+    return _parse_loose_date(item.due_or_date), "due"
+
+
 async def homework_load(
     session: AsyncSession,
     child: Child,
@@ -87,41 +115,70 @@ async def homework_load(
         )
     ).scalars().all()
 
-    # Bucket items by Monday-of-due-week.
-    per_week: dict[date, int] = {}
+    # Bucket items by Monday-of-the-week the assignment was given.
+    # Per-bucket source split lets the UI render a tooltip like
+    # "this bucket: 3 by assigned-date, 2 by due-date fallback".
+    per_week_count: dict[date, int] = {}
+    per_week_source: dict[date, dict[str, int]] = {}
     cur = span_start
     while cur <= span_end:
-        per_week[cur] = 0
+        per_week_count[cur] = 0
+        per_week_source[cur] = {"assigned": 0, "due": 0}
         cur += timedelta(days=7)
+
+    fallbacks_to_due = 0
     for r in rows:
-        d = _parse_loose_date(r.due_or_date)
+        d, source = _date_assigned_for(r)
         if d is None or d < span_start or d > span_end:
             continue
         wk = _start_of_iso_week(d)
-        per_week[wk] = per_week.get(wk, 0) + 1
+        per_week_count[wk] = per_week_count.get(wk, 0) + 1
+        bucket = per_week_source.setdefault(wk, {"assigned": 0, "due": 0})
+        bucket[source] = bucket.get(source, 0) + 1
+        if source == "due":
+            fallbacks_to_due += 1
 
     mpi = extra_minutes_per_item or _minutes_per_item(child.class_level)
     cap_min, cap_basis = _cap_for_class(child.class_level)
 
-    weeks_out = sorted(per_week.items())
+    weeks_out = sorted(per_week_count.items())
+    total_items = sum(n for _, n in weeks_out)
+    fallback_share = (fallbacks_to_due / total_items) if total_items else 0.0
+
+    bucketing_note = (
+        "Bucketed by date assigned (when the school gave the work). "
+        + (
+            f"{fallbacks_to_due} of {total_items} items fell back to due-date "
+            "because no assigned-date was captured for them yet — this resolves "
+            "after the next heavy sync re-fetches their detail page."
+            if fallbacks_to_due
+            else "All items had assigned-date metadata."
+        )
+    )
+
     return {
         "child_id": child.id,
         "class_level": child.class_level,
         "weeks": [
             {
                 "week_start": ws.isoformat(),
-                "items": n,
-                "est_minutes": n * mpi,
+                "items": per_week_count[ws],
+                "est_minutes": per_week_count[ws] * mpi,
+                "by_source": per_week_source[ws],
             }
-            for ws, n in weeks_out
+            for ws, _ in weeks_out
         ],
         "cap_minutes": cap_min,
         "cap_basis": cap_basis,
         "est_minutes_per_item": mpi,
+        "bucketing": "assigned_date_with_due_fallback",
+        "fallback_share": round(fallback_share, 3),
+        "bucketing_note": bucketing_note,
         "honest_caveat": (
             "Estimates assume "
-            f"{mpi} min per assignment for Class {child.class_level}. "
-            "We don't measure actual time-on-task; the CBSE caps are "
+            f"{mpi} min per assignment for Class {child.class_level}, "
+            "bucketed by the date the assignment was GIVEN (not when it's "
+            "due). We don't measure actual time-on-task; the CBSE caps are "
             "official policy, not what most schools actually assign — "
             "use the line as a reference, not a verdict."
         ),

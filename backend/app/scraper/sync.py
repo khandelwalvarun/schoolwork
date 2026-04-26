@@ -496,6 +496,47 @@ async def _sync_one_child(
                     # Stamp successful detail fetch so future light/medium
                     # syncs can skip this item.
                     item_row.detail_fetched_at = _now()
+                    # Persist the parsed detail object back into raw_json
+                    # so downstream consumers (homework_load, sunday_brief,
+                    # any future analytics) can read date_assigned / weight /
+                    # max_score / notes without re-fetching. The enrichment
+                    # branch already does this, but the planner-only +
+                    # back-fill path was dropping everything except the
+                    # specific fields it explicitly mapped.
+                    try:
+                        existing_raw = json.loads(item_row.raw_json or "{}")
+                    except Exception:
+                        existing_raw = {}
+                    if isinstance(existing_raw, dict):
+                        prev_detail = existing_raw.get("detail") or {}
+                        # Merge — new keys overwrite old, but don't drop
+                        # anything the existing payload already had.
+                        merged_detail = {**prev_detail, **{k: v for k, v in d.items() if v is not None}}
+                        if merged_detail != prev_detail:
+                            existing_raw["detail"] = merged_detail
+                            item_row.raw_json = json.dumps(
+                                existing_raw, default=str, ensure_ascii=False,
+                            )
+                            changed_any = True
+                    # Also lift date_assigned / weight / max_score into
+                    # normalized_json so consumers don't have to dig
+                    # through raw_json["detail"].
+                    try:
+                        norm = json.loads(item_row.normalized_json or "{}")
+                    except Exception:
+                        norm = {}
+                    if isinstance(norm, dict):
+                        norm_changed = False
+                        for k in ("date_assigned", "weight", "max_score", "type", "teacher"):
+                            v = d.get(k)
+                            if v and norm.get(k) != v:
+                                norm[k] = v
+                                norm_changed = True
+                        if norm_changed:
+                            item_row.normalized_json = json.dumps(
+                                norm, default=str, ensure_ascii=False,
+                            )
+                            changed_any = True
                     # Persist the description body — UNCONDITIONALLY, not
                     # gated on translation. The translator path only ran
                     # for non-Latin notes, so English bodies were silently

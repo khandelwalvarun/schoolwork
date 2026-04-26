@@ -389,6 +389,10 @@ export type HomeworkLoadWeek = {
   week_start: string;  // ISO date — Monday of that week
   items: number;
   est_minutes: number;
+  /** Per-bucket split: how many items used assigned-date vs fell back
+   *  to due-date. Lets the UI footnote a bucket whose accuracy is
+   *  partly degraded. */
+  by_source?: { assigned: number; due: number };
 };
 
 export type HomeworkLoadKid = {
@@ -399,6 +403,14 @@ export type HomeworkLoadKid = {
   cap_basis: string;
   est_minutes_per_item: number;
   honest_caveat: string;
+  /** "assigned_date_with_due_fallback" once the bucket-by-assigned
+   *  patch lands; older payloads omit. */
+  bucketing?: string;
+  /** Share (0..1) of items that fell back from assigned-date to
+   *  due-date because no assigned-date was captured. */
+  fallback_share?: number;
+  /** Human-readable footnote about the bucketing source. */
+  bucketing_note?: string;
 };
 
 export type HomeworkLoadAll = {
