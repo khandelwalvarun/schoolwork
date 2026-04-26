@@ -134,13 +134,19 @@ def start_scheduler() -> AsyncIOScheduler:
         max_instances=1,
         misfire_grace_time=3600,
     )
-    # Mindspark daily metrics scrape — 03:30 IST. Only fires when
-    # MINDSPARK_ENABLED=true AND a kid has credentials configured.
-    # Slow-rate enforced inside the scraper (≥15-30s between page
-    # loads). Per-kid serial.
+    # Mindspark metrics scrape — daytime, every 3rd day at a random
+    # time between 17:00 and 18:00 IST.
+    #
+    # APScheduler `jitter=3600` adds 0..3600s to the trigger time, so
+    # `hour=17, minute=0, jitter=3600` fires uniformly in [17:00, 18:00).
+    # The wrapper itself enforces the 3-day cadence via a persistent
+    # last-fired marker (jobs/mindspark_job.py:_LAST_FIRED_PATH), so
+    # this cron fires daily but the actual scrape only runs every 3rd.
+    # Decoupling the cadence from cron lets a missed-day still trigger
+    # next time we're awake without drifting the schedule.
     s.add_job(
         run_mindspark_daily,
-        CronTrigger(hour=3, minute=30),
+        CronTrigger(hour=17, minute=0, jitter=3600),
         id="mindspark_daily",
         replace_existing=True,
         coalesce=True,
