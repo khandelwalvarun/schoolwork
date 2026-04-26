@@ -17,6 +17,7 @@ import { api, Assignment, ParentStatus } from "../api";
 import StatusPopover, { EffectiveStatusChip } from "../components/StatusPopover";
 import AuditDrawer from "../components/AuditDrawer";
 import QuickActions from "../components/QuickActions";
+import { SkeletonBoardColumn } from "../components/Skeleton";
 import { formatDate } from "../util/dates";
 
 type ColumnKey = "not_started" | "in_progress" | "done_at_home" | "submitted" | "graded";
@@ -166,7 +167,19 @@ export default function ChildBoard() {
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
 
-  if (isLoading) return <div>Loading…</div>;
+  if (isLoading) {
+    return (
+      <div>
+        <ChildHeader title="Board" />
+        <div className="flex gap-3 overflow-x-auto">
+          <SkeletonBoardColumn />
+          <SkeletonBoardColumn />
+          <SkeletonBoardColumn />
+          <SkeletonBoardColumn />
+        </div>
+      </div>
+    );
+  }
   if (error) return <div className="text-red-700">Error: {String(error)}</div>;
   if (!data) return null;
 

@@ -62,6 +62,19 @@
 @layer utilities {
   .fade-in   { animation: fadeIn 140ms ease-out; }
   .slide-in-right { animation: slideInRight 160ms cubic-bezier(0.16,1,0.3,1); }
+  /* Skeleton-loader: same surface tint + a subtle shimmer pulse. Honors
+     prefers-reduced-motion: drops the animation entirely. */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--bg-muted) 0%,
+      color-mix(in oklab, var(--bg-muted) 80%, white 20%) 50%,
+      var(--bg-muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.4s ease-in-out infinite;
+    border-radius: 4px;
+  }
 }
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -70,6 +83,14 @@
 @keyframes slideInRight {
   from { opacity: 0; transform: translateX(12px); }
   to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes skeletonShimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  .fade-in, .slide-in-right { animation: none; }
 }
 
 @layer components {

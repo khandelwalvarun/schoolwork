@@ -24,7 +24,16 @@ export default function SettingsChannels() {
     if (data && !draft) setDraft(data as unknown as Config);
   }, [data, draft]);
 
-  if (!draft) return <div>Loading…</div>;
+  if (!draft) {
+    return (
+      <div className="space-y-3" aria-hidden="true">
+        <div className="skeleton h-6 w-40" />
+        <div className="skeleton h-32 w-full rounded-lg" />
+        <div className="skeleton h-32 w-full rounded-lg" />
+        <div className="skeleton h-32 w-full rounded-lg" />
+      </div>
+    );
+  }
 
   const updateChannel = (name: string, patch: Partial<ChannelCfg>) => {
     const cur = draft.channels?.[name] || {};

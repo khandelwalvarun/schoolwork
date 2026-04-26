@@ -9,6 +9,7 @@ import BulkActionBar from "../components/BulkActionBar";
 import { AssignmentList } from "../components/AssignmentList";
 import { useSelection } from "../components/useSelection";
 import { useUiPrefs } from "../components/useUiPrefs";
+import { SkeletonKidBlock } from "../components/Skeleton";
 
 export default function ChildDetail() {
   const { id } = useParams();
@@ -22,7 +23,14 @@ export default function ChildDetail() {
     queryFn: () => api.childDetail(childId),
     enabled: !isNaN(childId),
   });
-  if (isLoading) return <div className="text-gray-500">Loading…</div>;
+  if (isLoading) {
+    return (
+      <div>
+        <ChildHeader title="" />
+        <SkeletonKidBlock />
+      </div>
+    );
+  }
   if (error) return <div className="text-red-700">Error: {String(error)}</div>;
   if (!data) return null;
   const c = data.child;

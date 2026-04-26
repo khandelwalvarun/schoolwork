@@ -18,6 +18,7 @@ import Attachments from "../components/Attachments";
 import { AssignmentList } from "../components/AssignmentList";
 import { useSelection } from "../components/useSelection";
 import { useUiPrefs } from "../components/useUiPrefs";
+import { SkeletonHero, SkeletonKidBlock } from "../components/Skeleton";
 import { formatDate, formatRelative } from "../util/dates";
 
 const BUCKET_DEFS: Record<string, { key: keyof ChildBlock; label: string; tone: "red" | "amber" | "blue" }> = {
@@ -221,7 +222,15 @@ export default function Today() {
   const [popover, setPopover] = useState<{ a: Assignment; rect: DOMRect } | null>(null);
   const [audit, setAudit] = useState<Assignment | null>(null);
 
-  if (isLoading || !prefs.loaded) return <div className="text-gray-500">Loading…</div>;
+  if (isLoading || !prefs.loaded) {
+    return (
+      <div>
+        <SkeletonHero />
+        <SkeletonKidBlock />
+        <SkeletonKidBlock />
+      </div>
+    );
+  }
   if (error) return <div className="text-red-700">Error: {String(error)}</div>;
   if (!data) return null;
 

@@ -197,7 +197,13 @@ export default function AuditDrawer({
 
           <section>
             <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Status timeline</div>
-            {!history && <div className="text-gray-500 text-sm">Loading…</div>}
+            {!history && (
+              <div className="space-y-2" aria-hidden="true">
+                <div className="skeleton h-3 w-2/3" />
+                <div className="skeleton h-3 w-1/2" />
+                <div className="skeleton h-3 w-3/5" />
+              </div>
+            )}
             {history && history.length === 0 && (
               <div className="text-gray-500 text-sm">No state changes recorded yet.</div>
             )}

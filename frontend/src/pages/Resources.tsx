@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { api, ResourceFile, ResourcesResponse } from "../api";
+import { Skeleton, SkeletonList } from "../components/Skeleton";
 
 const CATEGORY_LABELS: Record<string, string> = {
   news: "News / Newsletters",
@@ -122,7 +123,17 @@ export default function Resources() {
         .
       </p>
 
-      {isLoading && <div className="text-sm text-gray-500">Loading…</div>}
+      {isLoading && (
+        <div className="space-y-4">
+          <div className="flex gap-2 mb-4 border-b border-gray-200">
+            <Skeleton w={120} h={20} className="mb-2" />
+            <Skeleton w={120} h={20} className="mb-2" />
+            <Skeleton w={120} h={20} className="mb-2" />
+          </div>
+          <SkeletonList rows={6} />
+          <SkeletonList rows={4} />
+        </div>
+      )}
       {data && (
         <>
           <div className="flex gap-2 mb-4 border-b border-gray-200">

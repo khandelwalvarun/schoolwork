@@ -72,7 +72,12 @@ export default function SettingsSyllabus() {
         </div>
       </div>
 
-      {!data && <div>Loading…</div>}
+      {!data && (
+        <div className="space-y-3" aria-hidden="true">
+          <div className="skeleton h-24 w-full rounded-lg" />
+          <div className="skeleton h-24 w-full rounded-lg" />
+        </div>
+      )}
 
       {data && data.cycles.map((c) => (
         <section key={c.name} className="bg-white border border-gray-200 rounded shadow-sm p-4 mb-4">

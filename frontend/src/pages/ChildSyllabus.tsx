@@ -22,8 +22,25 @@ export default function ChildSyllabus() {
 
   const todayISO = useMemo(() => todayISOInIST(), []);
 
-  if (!child) return <div>Loading child…</div>;
-  if (!syl) return <div>Loading syllabus…</div>;
+  if (!child || !syl) {
+    return (
+      <div>
+        <ChildHeader title="Syllabus" />
+        <div className="space-y-4" aria-hidden="true">
+          <div className="surface p-4 space-y-3">
+            <div className="skeleton h-4 w-40" />
+            <div className="skeleton h-3 w-full" />
+            <div className="skeleton h-3 w-5/6" />
+          </div>
+          <div className="surface p-4 space-y-3">
+            <div className="skeleton h-4 w-44" />
+            <div className="skeleton h-3 w-full" />
+            <div className="skeleton h-3 w-2/3" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

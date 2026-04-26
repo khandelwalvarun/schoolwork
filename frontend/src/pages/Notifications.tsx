@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ReplayResult } from "../api";
+import { SkeletonList, Skeleton } from "../components/Skeleton";
 import { formatDateTime } from "../util/dates";
 
 type Notif = { channel: string; status: string; error?: string; delivered_at?: string };
@@ -35,7 +36,14 @@ export default function Notifications() {
     }
   };
 
-  if (isLoading) return <div>Loading…</div>;
+  if (isLoading) {
+    return (
+      <div>
+        <Skeleton w={200} h={28} className="mb-4" />
+        <SkeletonList rows={8} />
+      </div>
+    );
+  }
   const events = (data || []) as Event[];
 
   return (

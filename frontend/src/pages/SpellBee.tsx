@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Child, SpellBeeLinkedAssignment, SpellBeeList } from "../api";
+import { SkeletonList } from "../components/Skeleton";
 import { formatDate } from "../util/dates";
 
 function fmtSize(n: number): string {
@@ -298,7 +299,12 @@ export default function SpellBee() {
       {currentChild && (
         <div className="mb-4">
           <DropZone onFiles={(fs) => upload.mutate(fs)} />
-          {upload.isPending && <div className="text-xs text-gray-500 mt-2">Uploading…</div>}
+          {upload.isPending && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 mt-2">
+              <span className="skeleton inline-block h-3 w-3 rounded-full" />
+              <span>Uploading…</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -312,7 +318,7 @@ export default function SpellBee() {
         </div>
       )}
 
-      {isLoading && <div className="text-sm text-gray-500">Loading…</div>}
+      {isLoading && <SkeletonList rows={5} />}
       {lists && lists.length === 0 && (
         <div className="bg-gray-50 border border-gray-200 rounded p-4 text-sm text-gray-700">
           No lists yet for {currentChild?.display_name ?? "this child"}. Use the
