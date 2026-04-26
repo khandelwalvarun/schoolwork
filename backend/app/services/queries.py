@@ -153,6 +153,7 @@ def _item_to_dict(
             if getattr(item, "self_prediction_set_at", None) else None
         ),
         "self_prediction_outcome": getattr(item, "self_prediction_outcome", None),
+        "llm_summary": getattr(item, "llm_summary", None),
     }
     if item.normalized_json:
         try:

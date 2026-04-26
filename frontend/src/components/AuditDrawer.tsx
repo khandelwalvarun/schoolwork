@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Assignment, SpellBeeList, StatusHistoryEntry } from "../api";
 import Attachments from "./Attachments";
+import { AssignmentAskSummary } from "./AssignmentAskSummary";
 import { SelfPredictionControl } from "./SelfPredictionControl";
 import StatusPopover, { EffectiveStatusChip } from "./StatusPopover";
 import { formatDate, formatDateTime, formatDDMMMYYTime } from "../util/dates";
@@ -169,10 +170,12 @@ export default function AuditDrawer({
             </section>
           )}
 
-          {/* Description from the Veracross homework popup. The school
-              packs the actual instructions here, not in the title. */}
+          {/* The ask — Claude-extracted 1-line summary above the raw
+              body. Auto-fired on panel open if body exists and we
+              don't have a cached summary yet. */}
           {a.body && a.body.trim() && a.body.trim() !== (a.title ?? "").trim() && (
             <section>
+              <AssignmentAskSummary a={a} />
               <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Description</div>
               <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
                 {a.body}

@@ -895,6 +895,22 @@ async def api_assignment_history(item_id: int, limit: int = 200) -> list[dict[st
         return await ast.get_history(session, item_id, limit=limit)
 
 
+@app.post("/api/assignments/{item_id}/summarize")
+async def api_summarize_assignment(
+    item_id: int, force: bool = False,
+) -> dict[str, Any]:
+    """Compute (or fetch cached) 1-sentence "the ask in plain English"
+    summary for one assignment. Backed by Claude (claude_cli) — see
+    services/assignment_summary.py. Cached on `veracross_items.llm_summary`
+    so the next read is instant. Pass `force=true` to recompute."""
+    from .services.assignment_summary import summarize_assignment
+    async with get_async_session() as session:
+        try:
+            return await summarize_assignment(session, item_id, force=force)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+
+
 @app.post("/api/assignments/{item_id}/self-prediction")
 async def api_set_self_prediction(
     item_id: int, payload: dict[str, Any],
