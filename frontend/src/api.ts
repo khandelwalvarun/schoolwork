@@ -31,6 +31,27 @@ export type SchoolMessageGroup = {
   }>;
 };
 
+/** Kid-relevant calendar event. `child_id === null` means it applies
+ *  to both kids (school-wide). `source` is `manual` for typed entries
+ *  and `school_message` for LLM-extracted ones. */
+export type KidEvent = {
+  id: number;
+  child_id: number | null;
+  title: string;
+  description: string | null;
+  event_type: string | null;
+  importance: number;     // 1 normal · 2 important · 3 critical
+  start_date: string;     // YYYY-MM-DD
+  end_date: string | null;
+  start_time: string | null;
+  location: string | null;
+  source: string;
+  source_ref: string | null;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 /** Parent-uploaded library file. The LLM classifier fills in `llm_*`
  *  fields shortly after upload — they may be null on first list. */
 export type LibraryFile = {
@@ -707,6 +728,33 @@ export const api = {
     }>(`/api/school-messages/${encodeURIComponent(groupId)}/summarize`, {
       method: "POST",
     }),
+  events: (childId?: number, daysAhead?: number, includePast = true) => {
+    const p = new URLSearchParams();
+    if (childId) p.set("child_id", String(childId));
+    if (daysAhead != null) p.set("days_ahead", String(daysAhead));
+    if (!includePast) p.set("include_past", "false");
+    return fetchJson<KidEvent[]>(`/api/events?${p.toString()}`);
+  },
+  upsertEvent: (e: Partial<KidEvent>) =>
+    fetchJson<KidEvent>(`/api/events`, {
+      method: "POST",
+      body: JSON.stringify(e),
+    }),
+  deleteEvent: (id: number) =>
+    fetchJson<{ ok: boolean; id: number }>(
+      `/api/events/${id}`,
+      { method: "DELETE" },
+    ),
+  extractEventsFromMessages: (days = 60, only_new = true) =>
+    fetchJson<{
+      messages_scanned: number;
+      events_extracted: number;
+      events_inserted: number;
+      events_skipped_dup: number;
+    }>(
+      `/api/events/extract-from-messages?days=${days}&only_new=${only_new}`,
+      { method: "POST" },
+    ),
   libraryList: (childId?: number, kind?: string, subject?: string) => {
     const p = new URLSearchParams();
     if (childId) p.set("child_id", String(childId));

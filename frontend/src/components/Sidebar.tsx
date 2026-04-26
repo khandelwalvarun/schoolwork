@@ -149,6 +149,9 @@ export function Sidebar({ children, onOpenSearch, onOpenHelp }: Props) {
         <NavLink to="/library" className={navClass}>
           <Icon name="Library" size={16} className="text-gray-500" /> Library
         </NavLink>
+        <NavLink to="/events" className={navClass}>
+          <Icon name="Library" size={16} className="text-gray-500" /> Events
+        </NavLink>
         <NavLink to="/spellbee" className={navClass}>
           <Icon name="Spelling" size={16} className="text-gray-500" /> Spelling
         </NavLink>

@@ -38,15 +38,18 @@ log = logging.getLogger(__name__)
 MAX_BYTES = 50 * 1024 * 1024   # 50 MB — textbook PDFs can run large
 ALLOWED_MIMES = {
     "application/pdf",
+    "application/epub+zip",   # .epub e-books
     "text/plain", "text/markdown", "text/csv",
     "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
     "application/msword",
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # .xlsx
+    "application/zip",        # some browsers report epub as zip — fall through
 }
 MIME_BY_EXT = {
     ".pdf": "application/pdf",
+    ".epub": "application/epub+zip",
     ".txt": "text/plain",
     ".md":  "text/markdown",
     ".csv": "text/csv",

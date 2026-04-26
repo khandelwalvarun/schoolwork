@@ -126,11 +126,87 @@ def _extract_docx_text(path: Path, max_chars: int = EXTRACT_CHARS) -> str | None
         return None
 
 
+def _extract_epub_text(path: Path, max_chars: int = EXTRACT_CHARS) -> str | None:
+    """EPUB is a ZIP of XHTML chapters + an OPF manifest. Stdlib only —
+    no `ebooklib` dep. Reads the spine in document order, strips tags,
+    returns the first ~3000 chars (which on a textbook is usually
+    title page + intro / TOC + first chapter — enough for classify)."""
+    try:
+        import re as _re
+        import zipfile
+        from xml.etree import ElementTree as ET
+    except Exception:
+        return None
+    try:
+        with zipfile.ZipFile(path, "r") as z:
+            # Find content.opf via container.xml.
+            opf_path: str | None = None
+            try:
+                container = z.read("META-INF/container.xml").decode("utf-8", "replace")
+                m = _re.search(r'full-path="([^"]+\.opf)"', container)
+                if m:
+                    opf_path = m.group(1)
+            except Exception:
+                pass
+            # Fallback: search for the .opf file directly.
+            if not opf_path:
+                for n in z.namelist():
+                    if n.lower().endswith(".opf"):
+                        opf_path = n
+                        break
+            if not opf_path:
+                return None
+            opf_xml = z.read(opf_path).decode("utf-8", "replace")
+            # Parse the spine — list of itemrefs in reading order.
+            try:
+                root = ET.fromstring(opf_xml)
+            except ET.ParseError:
+                return None
+            ns = {
+                "opf": "http://www.idpf.org/2007/opf",
+            }
+            manifest: dict[str, str] = {}
+            for item in root.findall(".//opf:manifest/opf:item", ns):
+                manifest[item.attrib.get("id", "")] = item.attrib.get("href", "")
+            spine_ids = [
+                ir.attrib.get("idref", "")
+                for ir in root.findall(".//opf:spine/opf:itemref", ns)
+            ]
+            opf_dir = "/".join(opf_path.split("/")[:-1])
+            text_chunks: list[str] = []
+            total = 0
+            for sid in spine_ids[:6]:  # cap at first 6 spine items
+                href = manifest.get(sid)
+                if not href:
+                    continue
+                full = f"{opf_dir}/{href}" if opf_dir else href
+                try:
+                    raw = z.read(full).decode("utf-8", "replace")
+                except KeyError:
+                    continue
+                # Strip tags + collapse whitespace.
+                stripped = _re.sub(r"<[^>]+>", " ", raw)
+                stripped = _re.sub(r"\s+", " ", stripped).strip()
+                if not stripped:
+                    continue
+                text_chunks.append(stripped)
+                total += len(stripped)
+                if total >= max_chars:
+                    break
+            text = " ".join(text_chunks).strip()
+            return text[:max_chars] if text else None
+    except Exception as e:
+        log.warning("epub extract failed for %s: %s", path, e)
+        return None
+
+
 def extract_text_for(path: Path, mime_type: str | None) -> str | None:
     """Best-effort text extraction by mime. Returns None for binaries
     (images / Excel) — caller still classifies based on filename + size."""
     if mime_type == "application/pdf":
         return _extract_pdf_text(path)
+    if mime_type == "application/epub+zip" or path.suffix.lower() == ".epub":
+        return _extract_epub_text(path)
     if mime_type and (mime_type.startswith("text/") or "csv" in mime_type):
         return _extract_text(path)
     if mime_type and "wordprocessingml" in mime_type:

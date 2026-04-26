@@ -6,6 +6,7 @@ from .children import Child
 from .events import Event
 from .llm_calls import LLMCall
 from .mcp_tool_calls import MCPToolCall
+from .kid_event import KidEvent
 from .library_file import LibraryFile
 from .notes import ParentNote
 from .notification_snooze import NotificationSnooze
@@ -24,6 +25,7 @@ __all__ = [
     "ChannelConfig",
     "Child",
     "Event",
+    "KidEvent",
     "LLMCall",
     "LibraryFile",
     "MCPToolCall",

@@ -135,7 +135,7 @@ export default function Library() {
           type="file"
           multiple
           className="hidden"
-          accept="application/pdf,text/*,image/*,.docx,.doc,.xlsx,.xls"
+          accept="application/pdf,application/epub+zip,.epub,text/*,image/*,.docx,.doc,.xlsx,.xls"
           onChange={(e) => {
             const files = Array.from(e.target.files || []);
             if (files.length > 0) upload.mutate(files);
@@ -154,7 +154,7 @@ export default function Library() {
         >
           {upload.isPending
             ? "Uploading…"
-            : "Drop files here, or click to browse · PDF / text / images / DOCX up to 50 MB"}
+            : "Drop files here, or click to browse · PDF / EPUB / text / images / DOCX up to 50 MB"}
         </div>
         {upload.isError && (
           <div className="text-xs text-red-700 mt-2">

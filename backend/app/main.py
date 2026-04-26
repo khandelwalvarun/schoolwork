@@ -1607,6 +1607,64 @@ async def api_school_messages_summarize(group_id: str) -> dict[str, Any]:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
 
 
+@app.get("/api/events")
+async def api_events_list(
+    child_id: int | None = None,
+    days_ahead: int | None = None,
+    include_past: bool = True,
+) -> list[dict[str, Any]]:
+    """Kid-relevant events. With `days_ahead=14` returns only events
+    within the next N days (and from today). Otherwise returns all
+    events (including past unless `include_past=false`)."""
+    from datetime import timedelta
+    from .services.kid_events import list_events
+    today = today_ist()
+    from_date = today if (days_ahead is not None or not include_past) else None
+    to_date = (today + timedelta(days=days_ahead)) if days_ahead is not None else None
+    async with get_async_session() as session:
+        return await list_events(
+            session,
+            child_id=child_id,
+            from_date=from_date,
+            to_date=to_date,
+            include_past=include_past,
+        )
+
+
+@app.post("/api/events")
+async def api_events_upsert(payload: dict[str, Any]) -> dict[str, Any]:
+    """Create or update a single kid event. Pass `id` to edit; omit to
+    insert. Required: title, start_date (YYYY-MM-DD)."""
+    from .services.kid_events import upsert_event
+    async with get_async_session() as session:
+        try:
+            return await upsert_event(session, payload or {})
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+@app.delete("/api/events/{event_id}")
+async def api_events_delete(event_id: int) -> dict[str, Any]:
+    from .services.kid_events import delete_event
+    async with get_async_session() as session:
+        ok = await delete_event(session, event_id)
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"event {event_id} not found")
+    return {"ok": True, "id": event_id}
+
+
+@app.post("/api/events/extract-from-messages")
+async def api_events_extract(days: int = 60, only_new: bool = True) -> dict[str, Any]:
+    """Walk recent school messages, ask Claude to extract any dated
+    events, and insert them with source='school_message'. Idempotent
+    on (source_ref, title) so re-runs don't duplicate."""
+    from .services.kid_events import extract_from_school_messages
+    async with get_async_session() as session:
+        return await extract_from_school_messages(
+            session, days=days, only_new=only_new,
+        )
+
+
 @app.get("/api/library")
 async def api_library_list(
     child_id: int | None = None,
