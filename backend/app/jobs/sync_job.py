@@ -63,6 +63,22 @@ async def run_heavy_sync() -> None:
         await _run_portal_resource_harvest()
     except Exception:
         log.exception("weekly resource harvest inside heavy sync failed")
+    try:
+        await _run_grade_match()
+    except Exception:
+        log.exception("weekly grade-assignment matcher inside heavy sync failed")
+
+
+async def _run_grade_match() -> None:
+    """Reconcile newly-graded items back to the assignments that produced
+    them. Idempotent — strong existing links are kept; only weak/missing
+    links are recomputed."""
+    from ..db import get_async_session
+    from ..services.grade_match import match_unlinked_grades
+    log.info("weekly grade-match: starting")
+    async with get_async_session() as session:
+        summary = await match_unlinked_grades(session, use_llm_tiebreaker=True)
+    log.info("weekly grade-match: %s", summary["counts"])
 
 
 async def _run_portal_resource_harvest() -> None:

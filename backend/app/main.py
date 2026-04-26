@@ -304,6 +304,23 @@ async def api_overdue_trend(
         return await Q.get_overdue_trend(session, child_id=child_id, days=days)
 
 
+@app.post("/api/match-grades")
+async def api_match_grades(
+    child_id: int | None = None,
+    use_llm: bool = True,
+) -> dict[str, Any]:
+    """Run the grade↔assignment matcher across every still-unlinked grade
+    row. Two-pass: deterministic Jaccard + date proximity first; the local
+    LLM (Ollama by default) acts as a tiebreaker only when the top two
+    candidates are within a small confidence margin. Idempotent — strong
+    existing links are kept."""
+    from .services.grade_match import match_unlinked_grades
+    async with get_async_session() as session:
+        return await match_unlinked_grades(
+            session, child_id=child_id, use_llm_tiebreaker=use_llm,
+        )
+
+
 @app.get("/api/submission-heatmap")
 async def api_submission_heatmap(
     child_id: int | None = None, weeks: int = 14

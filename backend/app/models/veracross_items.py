@@ -53,5 +53,11 @@ class VeracrossItem(Base):
     detail_fetched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Grade ↔ assignment matching (migration 0009)
+    linked_assignment_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True,
+    )
+    match_confidence: Mapped[float | None] = mapped_column(nullable=True)
+    match_method: Mapped[str | None] = mapped_column(String, nullable=True)
 
     child = relationship("Child", back_populates="items")

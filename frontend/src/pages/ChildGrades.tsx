@@ -22,6 +22,10 @@ type GradeRow = {
   first_seen_at?: string | null;
   attachments?: AttachmentLink[];
   normalized?: Record<string, unknown>;
+  /** LLM/Jaccard match to the assignment that produced this grade. */
+  linked_assignment_id?: number | null;
+  match_confidence?: number | null;
+  match_method?: "jaccard" | "llm" | "manual" | null;
 };
 
 export default function ChildGrades() {
@@ -152,6 +156,22 @@ export default function ChildGrades() {
                   <td className="py-1 px-2 align-top">
                     <TitleBlock title={g.title} titleEn={g.title_en} className="text-sm" />
                     {hasAttach && <Attachments items={g.attachments} />}
+                    {g.linked_assignment_id && (
+                      <div
+                        className="text-[10px] text-blue-700 mt-0.5"
+                        title={
+                          `Matched to assignment #${g.linked_assignment_id} via ${
+                            g.match_method ?? "?"
+                          }${
+                            typeof g.match_confidence === "number"
+                              ? ` (confidence ${g.match_confidence.toFixed(2)})`
+                              : ""
+                          }`
+                        }
+                      >
+                        ↳ matched to assignment
+                      </div>
+                    )}
                   </td>
                   <td className="py-1 px-2 text-gray-600 align-top">{g.score_text ?? "—"}</td>
                   <td className="py-1 px-2 font-mono align-top text-right">

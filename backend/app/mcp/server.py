@@ -1617,6 +1617,43 @@ async def rename_spellbee_list(
         )
 
 
+@server.tool()
+async def match_grades_to_assignments(
+    child_id: int | None = None,
+    use_llm_tiebreaker: bool = True,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Reconcile graded items with the assignments that produced them.
+    The school doesn't link them — only soft signals (same kid, similar
+    title, plausible date offset) tie a grade like '9/10 on Word Problems
+    Quiz' back to the assignment 'Worksheet on Word Problems' from a
+    week earlier. Two-pass:
+      1. deterministic Jaccard + date proximity (free, fast)
+      2. local Ollama LLM tiebreaker only when top two are within margin
+    Idempotent — strong existing links are kept. Returns counts +
+    per-grade detail."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.grade_match import match_unlinked_grades
+        async with get_async_session() as session:
+            result = await match_unlinked_grades(
+                session, child_id=child_id, use_llm_tiebreaker=use_llm_tiebreaker,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "match_grades_to_assignments",
+            {"child_id": child_id, "use_llm_tiebreaker": use_llm_tiebreaker},
+            {"counts": result.get("counts")},
+            err, started, _client_id(ctx),
+        )
+
+
 def run_stdio() -> None:
     """Entry point for `schoolwork-mcp` — stdio transport, for Claude Desktop/Code."""
     asyncio.run(server.run_stdio_async())

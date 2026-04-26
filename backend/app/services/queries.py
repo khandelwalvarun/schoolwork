@@ -143,6 +143,9 @@ def _item_to_dict(
         "first_seen_at": item.first_seen_at.isoformat() if item.first_seen_at else None,
         "last_seen_at": item.last_seen_at.isoformat() if item.last_seen_at else None,
         "seen_at": item.seen_at.isoformat() if item.seen_at else None,
+        "linked_assignment_id": getattr(item, "linked_assignment_id", None),
+        "match_confidence": getattr(item, "match_confidence", None),
+        "match_method": getattr(item, "match_method", None),
     }
     if item.normalized_json:
         try:
