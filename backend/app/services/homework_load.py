@@ -1,4 +1,4 @@
-"""Per-week homework load with CBSE-cap reference.
+"""Per-week homework-load estimator (no policy cap).
 
 The cockpit can't directly measure time-on-task — we don't have
 "kid started at X, finished at Y" telemetry. So this estimates effort
@@ -8,35 +8,31 @@ Monday-Friday range; bucketing by due-day would falsely make Friday
 look like a 5-hr crush.
 
 If date_assigned isn't available (rows that only saw the planner-only
-path) we fall back to due_or_date with a `bucket_basis` flag in each
-week so the UI can footnote it. After enough syncs run the back-fill
-detail-pass, every row should have an assigned date.
+path) we fall back to due_or_date with a per-bucket source split so
+the UI can footnote it. After enough syncs run the back-fill detail-
+pass, every row should have an assigned date.
 
-The CBSE caps from Circular 52/2020 are surfaced as a reference
-horizon, with explicit framing in the API response that they're
-official policy, not what most schools actually assign.
+Default minutes-per-item is per class band — a rough estimate for the
+chart only. The CBSE Circular 52/2020 caps that earlier versions
+plotted as a reference horizon were removed: in practice they bear
+no resemblance to what the school assigns and the parent flagged the
+line as misleading.
 
-CBSE Circular 52/2020 (homework limits):
-  Class I–II    none
-  Class III–V   2 hours per week
-  Class VI–VIII 1 hour per day  ≈ 5–7 hr/week
-  Class IX–XII  not specified (school discretion)
-
-Default minutes-per-item is per class band:
-  Class I–II    20 min  (the 'no homework' rule means rare items,
-                          when they appear, are short)
+  Class I–II    20 min  (rare items, when they appear, are short)
   Class III–V   25 min
   Class VI–VIII 35 min
   Class IX+     45 min
 
 `extra_minutes_per_item` on the API call lets a parent override the
-estimate from Settings (Phase 12.5 follow-up; not yet wired).
+estimate from Settings.
 
 Returns per-kid:
-  weeks            list of {week_start, items, est_minutes}
-  cap_minutes      per-week CBSE policy cap (or None for IX+)
-  cap_basis        human-readable description of the cap
+  weeks                 list of {week_start, items, est_minutes, by_source}
   est_minutes_per_item  the multiplier we used
+  bucketing             "assigned_date_with_due_fallback"
+  fallback_share        share (0..1) of items that had no assigned date
+  bucketing_note        human-readable footnote for the UI
+  honest_caveat         standard min-resolution disclaimer
 """
 from __future__ import annotations
 
@@ -49,17 +45,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import Child, VeracrossItem
 from .grade_match import _parse_loose_date
 from ..util.time import today_ist
-
-
-def _cap_for_class(level: int) -> tuple[int | None, str]:
-    """(weekly cap in minutes, basis)."""
-    if level <= 2:
-        return (0, "CBSE: no homework Class I–II")
-    if level <= 5:
-        return (120, "CBSE: ≤ 2 hr/week (Class III–V)")
-    if level <= 8:
-        return (60 * 6, "CBSE: ≤ 1 hr/day (Class VI–VIII) ≈ 6 hr/week")
-    return (None, "Not capped (Class IX+; school discretion)")
 
 
 def _minutes_per_item(level: int) -> int:
@@ -115,9 +100,6 @@ async def homework_load(
         )
     ).scalars().all()
 
-    # Bucket items by Monday-of-the-week the assignment was given.
-    # Per-bucket source split lets the UI render a tooltip like
-    # "this bucket: 3 by assigned-date, 2 by due-date fallback".
     per_week_count: dict[date, int] = {}
     per_week_source: dict[date, dict[str, int]] = {}
     cur = span_start
@@ -139,7 +121,6 @@ async def homework_load(
             fallbacks_to_due += 1
 
     mpi = extra_minutes_per_item or _minutes_per_item(child.class_level)
-    cap_min, cap_basis = _cap_for_class(child.class_level)
 
     weeks_out = sorted(per_week_count.items())
     total_items = sum(n for _, n in weeks_out)
@@ -168,8 +149,6 @@ async def homework_load(
             }
             for ws, _ in weeks_out
         ],
-        "cap_minutes": cap_min,
-        "cap_basis": cap_basis,
         "est_minutes_per_item": mpi,
         "bucketing": "assigned_date_with_due_fallback",
         "fallback_share": round(fallback_share, 3),
@@ -177,10 +156,9 @@ async def homework_load(
         "honest_caveat": (
             "Estimates assume "
             f"{mpi} min per assignment for Class {child.class_level}, "
-            "bucketed by the date the assignment was GIVEN (not when it's "
-            "due). We don't measure actual time-on-task; the CBSE caps are "
-            "official policy, not what most schools actually assign — "
-            "use the line as a reference, not a verdict."
+            "bucketed by the date the assignment was GIVEN (not when "
+            "it's due). We don't measure actual time-on-task; the chart "
+            "is for trend-watching, not for grading the school."
         ),
     }
 

@@ -1885,15 +1885,14 @@ async def get_homework_load(
     extra_minutes_per_item: int | None = None,
     ctx: Context | None = None,
 ) -> dict[str, Any] | list[dict[str, Any]]:
-    """Per-week homework load with the CBSE policy cap as a reference
-    horizon. The cockpit can't measure real time-on-task — this is an
-    estimate (assignment count × per-class minutes-per-item). Defaults:
-    20/25/35/45 min for Class I-II / III-V / VI-VIII / IX+. CBSE caps
-    from Circular 52/2020 (no homework I-II, ≤2 hr/week III-V, ≤1 hr/day
-    VI-VIII, school discretion IX+) — surfaced as `cap_minutes` and
-    `cap_basis` so the parent has the right reference, not a verdict.
-    Returns per-week buckets (week_start, items, est_minutes) for the
-    last `weeks` ISO weeks. Pass child_id for one kid; otherwise both."""
+    """Per-week homework load. Bucketed by date the assignment was given
+    (date_assigned with fallback to due-date). The cockpit can't measure
+    real time-on-task — this is an estimate (assignment count × per-class
+    minutes-per-item). Defaults: 20/25/35/45 min for Class I-II /
+    III-V / VI-VIII / IX+. The earlier CBSE Circular 52/2020 policy
+    cap was removed (didn't reflect what the school actually assigns).
+    Returns per-week buckets (week_start, items, est_minutes, by_source)
+    plus bucketing metadata. Pass child_id for one kid; otherwise both."""
     started = time.monotonic()
     err: str | None = None
     result: Any = None

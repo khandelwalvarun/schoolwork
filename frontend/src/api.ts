@@ -380,11 +380,11 @@ export type ShakyTopicsResponse = {
   limit_per_kid: number;
 };
 
-/** Per-week homework-load buckets with the CBSE policy cap drawn as a
- *  reference horizon. The cockpit can't measure real time-on-task —
- *  est_minutes is a per-class estimate (assignment count × default
- *  minutes-per-item). `cap_minutes === null` means uncapped (Class IX+,
- *  CBSE leaves it to school discretion). */
+/** Per-week homework-load buckets. The cockpit can't measure real
+ *  time-on-task — est_minutes is a per-class estimate (assignment
+ *  count × default minutes-per-item). The earlier CBSE policy-cap
+ *  horizon was removed (it didn't reflect what the school actually
+ *  assigns; the line was misleading). */
 export type HomeworkLoadWeek = {
   week_start: string;  // ISO date — Monday of that week
   items: number;
@@ -399,8 +399,6 @@ export type HomeworkLoadKid = {
   child_id: number;
   class_level: number;
   weeks: HomeworkLoadWeek[];
-  cap_minutes: number | null;
-  cap_basis: string;
   est_minutes_per_item: number;
   honest_caveat: string;
   /** "assigned_date_with_due_fallback" once the bucket-by-assigned

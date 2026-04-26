@@ -640,11 +640,12 @@ async def api_homework_load(
     weeks: int = 8,
     extra_minutes_per_item: int | None = None,
 ) -> dict[str, Any] | list[dict[str, Any]]:
-    """Per-week homework load with the CBSE policy cap drawn as a
-    reference horizon. We can't measure real time-on-task — this is an
-    estimate from assignment counts × per-class minutes-per-item. The
-    response carries an explicit `honest_caveat` and `cap_basis` so the UI
-    frames the cap as official policy, not a verdict on the school."""
+    """Per-week homework load, bucketed by date the assignment was given
+    (date_assigned, with a fallback to due_or_date when assigned-date
+    isn't yet captured). We can't measure real time-on-task — this is
+    an estimate from assignment counts × per-class minutes-per-item.
+    The earlier CBSE policy-cap horizon was removed (didn't reflect
+    what the school actually assigns)."""
     from sqlalchemy import select
     from .models import Child
     from .services.homework_load import homework_load, homework_load_all

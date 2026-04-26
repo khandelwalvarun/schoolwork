@@ -959,7 +959,7 @@ async def _build_teacher_asks(
     """Generate concrete questions the parent could raise at the next
     teacher interaction. Every ask is grounded in a deterministic
     signal — pattern_state flag, syllabus override, decaying-with-
-    recurrence, or homework-load over CBSE cap."""
+    recurrence, or a homework-load spike vs the kid's recent median."""
     asks: list[TeacherAsk] = []
 
     # Generator A — pattern_state.repeated_attempt this month.
@@ -1060,39 +1060,49 @@ async def _build_teacher_asks(
             priority=2.0 + rec * 0.2,
         ))
 
-    # Generator D — homework load over the CBSE cap *this week*.
+    # Generator D — homework load that's *unusual* relative to the kid's
+    # recent weeks. We compare this week's est_minutes against the
+    # rolling median of the prior 4-6 weeks (excluding zero-weeks). A
+    # ≥1.6× spike vs. that median fires the ask. No external policy
+    # cap is referenced — the chart now shows trend, not policy.
     try:
-        load = await homework_load(session, child, weeks=2)
+        load = await homework_load(session, child, weeks=8)
     except Exception:
         load = None
-    if load and load.get("cap_minutes"):
-        cap = load["cap_minutes"]
-        cap_basis = load.get("cap_basis", "CBSE cap")
+    if load:
         weeks = load.get("weeks") or []
-        # The most recent week is last (sorted ascending in the service).
-        if weeks:
-            w = weeks[-1]
-            est = int(w.get("est_minutes") or 0)
-            if cap > 0 and est > cap:
-                ratio = est / cap
-                hr = est / 60.0
-                cap_hr = cap / 60.0
-                asks.append(TeacherAsk(
-                    subject=None,
-                    teacher=None,
-                    question=(
-                        f"This week's estimated homework load is "
-                        f"~{hr:.1f} hr ({ratio:.1f}× the {cap_basis}; "
-                        f"~{cap_hr:.1f} hr is the policy reference). "
-                        "Is the class catching up on a backlog, or has "
-                        "the assignment cadence changed?"
-                    ),
-                    evidence=(
-                        f"homework_load week_start={w.get('week_start')} "
-                        f"items={w.get('items')} est_minutes={est} cap={cap}"
-                    ),
-                    priority=2.2,
-                ))
+        if len(weeks) >= 4:
+            recent = int(weeks[-1].get("est_minutes") or 0)
+            prior = [
+                int(w.get("est_minutes") or 0)
+                for w in weeks[:-1]
+                if int(w.get("est_minutes") or 0) > 0
+            ]
+            if recent > 0 and len(prior) >= 3:
+                prior_sorted = sorted(prior)
+                median = prior_sorted[len(prior_sorted) // 2]
+                if median > 0 and recent / median >= 1.6:
+                    ratio = recent / median
+                    hr = recent / 60.0
+                    median_hr = median / 60.0
+                    asks.append(TeacherAsk(
+                        subject=None,
+                        teacher=None,
+                        question=(
+                            f"This week's estimated homework load is "
+                            f"~{hr:.1f} hr — about {ratio:.1f}× the "
+                            f"{median_hr:.1f}-hr median across recent "
+                            "weeks. Is the class catching up on a "
+                            "backlog, or has the assignment cadence "
+                            "changed?"
+                        ),
+                        evidence=(
+                            f"homework_load week_start={weeks[-1].get('week_start')} "
+                            f"items={weeks[-1].get('items')} "
+                            f"est_minutes={recent} prior_median={median}"
+                        ),
+                        priority=2.2,
+                    ))
 
     asks.sort(key=lambda a: -a.priority)
     return asks[:3]
