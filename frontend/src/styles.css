@@ -3,42 +3,83 @@
 @tailwind utilities;
 
 /* Design tokens.
- * Grayscale-first: neutrals carry hierarchy, color is semantic-only
- * (red = overdue, green = done, amber = action-needed, blue = submitted,
- *  purple = syllabus). Type scale and spacing follow a strict rhythm. */
+ *
+ * Color expressed in OKLCH (perceptually uniform; wider gamut on modern
+ * displays; behaves predictably under dark-mode flips). Linear's 2024-25
+ * redesign collapses 25 vars to just three "anchors" (base/accent/contrast);
+ * we mirror that pattern: --base-l / --accent-h / --ink-l. A dark theme
+ * needs to override only those three anchors — every derived token
+ * follows automatically.
+ *
+ * Grayscale-first philosophy stays: neutrals carry hierarchy, color is
+ * semantic-only (red = overdue, green = done, amber = action-needed,
+ * blue = submitted, purple = syllabus).
+ */
 
 :root {
-  /* Surfaces */
-  --bg-app:    #f7f7f5;   /* page */
-  --bg-card:   #ffffff;
-  --bg-muted:  #f1f1ef;
-  --bg-sunken: #e9e9e6;
+  /* ── 3-token anchors ─────────────────────────────────────────────────── */
+  /* Override these three to retheme the entire app. */
+  --base-l:    98%;   /* page lightness — dark mode flips this to ~12% */
+  --base-c:    0.003; /* base chroma (warm tint) */
+  --base-h:    80;    /* base hue (warm gray) */
+  --ink-l:     20%;   /* primary text lightness — dark mode → ~95% */
+  --accent-h:  260;   /* accent hue — blue. shift to e.g. 150 for green theme */
 
-  /* Ink */
-  --ink-primary:   #111113;
-  --ink-secondary: #55575b;
-  --ink-tertiary:  #8b8d92;
-  --ink-muted:     #b4b6bb;
+  /* ── Surfaces (derive from base anchors) ─────────────────────────────── */
+  --bg-app:    oklch(var(--base-l) var(--base-c) var(--base-h));
+  --bg-card:   oklch(100%           0             0);
+  --bg-muted:  oklch(96%             var(--base-c) var(--base-h));
+  --bg-sunken: oklch(93%             var(--base-c) var(--base-h));
 
-  /* Lines */
-  --line:       #e6e6e2;
-  --line-soft:  #efefea;
+  /* ── Ink (derive from ink-l + cool gray hue 280) ─────────────────────── */
+  --ink-primary:   oklch(var(--ink-l) 0.005 280);
+  --ink-secondary: oklch(45%           0.005 280);
+  --ink-tertiary:  oklch(60%           0.005 280);
+  --ink-muted:     oklch(76%           0.005 280);
 
-  /* Accent (keyboard focus, primary action) */
-  --accent:       #1e40af;   /* blue-800 */
-  --accent-bg:    #dbe4ff;
+  /* ── Lines ──────────────────────────────────────────────────────────── */
+  --line:       oklch(91% var(--base-c) var(--base-h));
+  --line-soft:  oklch(94% var(--base-c) var(--base-h));
 
-  /* Semantic */
-  --red:    #b42318;
-  --red-bg: #fef3f2;
-  --amber:  #b45309;
-  --amber-bg: #fff7ed;
-  --green:  #067647;
-  --green-bg: #ecfdf3;
-  --blue:   #175cd3;
-  --blue-bg: #eff8ff;
-  --purple: #5925dc;
-  --purple-bg: #f4f3ff;
+  /* ── Accent (keyboard focus, primary action; uses accent-h) ──────────── */
+  --accent:    oklch(40% 0.16 var(--accent-h));
+  --accent-bg: oklch(92% 0.04 var(--accent-h));
+
+  /* ── Semantic colors (each is its own hue; ratios chosen for AA) ─────── */
+  --red:       oklch(50% 0.18 25);
+  --red-bg:    oklch(97% 0.015 25);
+  --amber:     oklch(55% 0.14 60);
+  --amber-bg:  oklch(98% 0.025 60);
+  --green:     oklch(50% 0.13 150);
+  --green-bg:  oklch(96% 0.04  150);
+  --blue:      oklch(48% 0.17 255);
+  --blue-bg:   oklch(97% 0.02 255);
+  --purple:    oklch(40% 0.22 290);
+  --purple-bg: oklch(96% 0.02 290);
+}
+
+/* Type the accent so :root → :root[data-theme=dark] transitions interpolate
+ * cleanly instead of snapping (CSS Houdini @property registration). */
+@property --accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: oklch(40% 0.16 260);
+}
+
+/* Dark-mode baseline. Flip ONLY the three anchors; everything else
+ * follows automatically. Off by default; opt in via [data-theme="dark"]
+ * on <html> (or by uncommenting the prefers-color-scheme block).
+ *
+ * Kept minimal in this phase — Phase 21 / mobile pass will tune dark mode
+ * properly. For now this just proves the 3-token pattern works. */
+[data-theme="dark"] {
+  --base-l:   12%;
+  --base-c:   0.005;
+  --base-h:   280;
+  --ink-l:    96%;
+  --bg-card:  oklch(16% var(--base-c) var(--base-h));
+  --line:     oklch(28% var(--base-c) var(--base-h));
+  --line-soft: oklch(22% var(--base-c) var(--base-h));
 }
 
 @layer base {
