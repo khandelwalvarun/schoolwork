@@ -895,6 +895,45 @@ async def api_assignment_history(item_id: int, limit: int = 200) -> list[dict[st
         return await ast.get_history(session, item_id, limit=limit)
 
 
+@app.post("/api/grades/{grade_id}/explain-anomaly")
+async def api_explain_grade_anomaly(
+    grade_id: int, force: bool = False,
+) -> dict[str, Any]:
+    """Compute (or fetch cached) Claude hypothesis for an off-trend grade.
+
+    Returns {grade_id, anomalous, reason, explanation, cached, llm_used}.
+    `explanation` is None when the grade isn't anomalous (the deterministic
+    detector decides), or when Claude is unreachable."""
+    from .services.anomaly import explain_grade_anomaly
+    async with get_async_session() as session:
+        try:
+            return await explain_grade_anomaly(session, grade_id, force=force)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+
+
+@app.get("/api/anomalies")
+async def api_grade_anomalies(child_id: int | None = None) -> list[dict[str, Any]]:
+    """List of off-trend grade rows (deterministic detection only —
+    doesn't call Claude). Used by the Today page banner to know which
+    grades warrant a hypothesis card."""
+    from sqlalchemy import select
+    from .models import Child
+    from .services.anomaly import detect_anomalies_for_child
+    async with get_async_session() as session:
+        if child_id is not None:
+            return await detect_anomalies_for_child(session, child_id)
+        children = (await session.execute(select(Child))).scalars().all()
+        out: list[dict[str, Any]] = []
+        for c in children:
+            rows = await detect_anomalies_for_child(session, c.id)
+            for r in rows:
+                r["child_id"] = c.id
+                r["child_name"] = c.display_name
+                out.append(r)
+        return out
+
+
 @app.post("/api/assignments/{item_id}/summarize")
 async def api_summarize_assignment(
     item_id: int, force: bool = False,

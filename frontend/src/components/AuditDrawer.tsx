@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api, Assignment, SpellBeeList, StatusHistoryEntry } from "../api";
 import Attachments from "./Attachments";
 import { AssignmentAskSummary } from "./AssignmentAskSummary";
+import { GradeAnomalyCard } from "./GradeAnomalyCard";
 import { SelfPredictionControl } from "./SelfPredictionControl";
 import StatusPopover, { EffectiveStatusChip } from "./StatusPopover";
 import { formatDate, formatDateTime, formatDDMMMYYTime } from "../util/dates";
@@ -135,6 +136,7 @@ export default function AuditDrawer({
         </div>
 
         <div className="px-5 py-4 space-y-5">
+          <GradeAnomalyCard a={a} />
           {isSpellBee && (
             <section className="bg-amber-50 border border-amber-200 rounded p-3">
               <div className="text-xs font-semibold text-amber-900 uppercase mb-1">🐝 Spelling Bee</div>
