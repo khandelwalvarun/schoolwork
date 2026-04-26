@@ -304,6 +304,30 @@ async def api_overdue_trend(
         return await Q.get_overdue_trend(session, child_id=child_id, days=days)
 
 
+@app.get("/api/shaky-topics")
+async def api_shaky_topics(
+    child_id: int | None = None,
+    limit: int = 3,
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """Top-N topics per kid that most warrant a review conversation
+    this week. Capped (default 3) per the pedagogy research — pushing
+    more triggers helicopter-parenting patterns the literature warns
+    against. Each item carries a `reasons` list so the parent knows
+    why it surfaced."""
+    from sqlalchemy import select
+    from .models import Child
+    from .services.shaky_topics import shaky_for_child, shaky_for_all
+    async with get_async_session() as session:
+        if child_id is None:
+            return await shaky_for_all(session, limit_per_kid=limit)
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        return await shaky_for_child(session, child, limit=limit)
+
+
 @app.get("/api/excellence")
 async def api_excellence(child_id: int | None = None) -> list[dict[str, Any]] | dict[str, Any]:
     """Vasant Valley's Excellence-Award track (≥85 % overall yearly

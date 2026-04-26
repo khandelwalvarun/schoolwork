@@ -256,6 +256,27 @@ export type ResourcesResponse = {
   }>;
 };
 
+export type ShakyTopic = {
+  child_id: number;
+  subject: string;
+  topic: string;
+  state: "attempted" | "familiar" | "proficient" | "decaying";
+  last_score: number | null;
+  last_assessed_at: string | null;
+  attempt_count: number;
+  shakiness: number;
+  reasons: string[];
+};
+
+export type ShakyTopicsResponse = {
+  kids: Array<{
+    child_id: number;
+    display_name: string;
+    items: ShakyTopic[];
+  }>;
+  limit_per_kid: number;
+};
+
 export type ExcellenceStatus = {
   child_id: number;
   year_label: string;
@@ -387,6 +408,8 @@ export const api = {
     fetchJson<TopicStateRow[]>(`/api/topic-state?child_id=${childId}`),
   excellence: (childId: number) =>
     fetchJson<ExcellenceStatus>(`/api/excellence?child_id=${childId}`),
+  shakyTopics: (limit = 3) =>
+    fetchJson<ShakyTopicsResponse>(`/api/shaky-topics?limit=${limit}`),
   spellbeeLists: (childId: number) =>
     fetchJson<SpellBeeList[]>(`/api/spellbee/lists?child_id=${childId}`),
   spellbeeLinkedAssignments: (childId?: number) =>

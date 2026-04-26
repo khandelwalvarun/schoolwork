@@ -1618,6 +1618,46 @@ async def rename_spellbee_list(
 
 
 @server.tool()
+async def get_shaky_topics(
+    child_id: int | None = None,
+    limit: int = 3,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """Top-N topics per kid that most warrant a parent-kid review
+    conversation this week. Capped (default 3) — pushing more triggers
+    helicopter-parenting patterns. Each item carries a `reasons` list
+    explaining why it surfaced (decaying / weak last score / age).
+    Returns by-kid bucket if child_id omitted; just a list otherwise."""
+    started = time.monotonic()
+    err: str | None = None
+    result: Any = None
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services.shaky_topics import shaky_for_child, shaky_for_all
+        async with get_async_session() as session:
+            if child_id is None:
+                result = await shaky_for_all(session, limit_per_kid=limit)
+            else:
+                child = (
+                    await session.execute(select(Child).where(Child.id == child_id))
+                ).scalar_one_or_none()
+                if child is None:
+                    raise ValueError(f"child {child_id} not found")
+                result = await shaky_for_child(session, child, limit=limit)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_shaky_topics",
+            {"child_id": child_id, "limit": limit},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
 async def get_excellence_status(
     child_id: int | None = None, ctx: Context | None = None,
 ) -> list[dict[str, Any]] | dict[str, Any]:
