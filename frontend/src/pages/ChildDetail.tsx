@@ -13,6 +13,7 @@ import { SkeletonKidBlock } from "../components/Skeleton";
 import { Sparkline } from "../components/Sparkline";
 import { SubmissionHeatmap } from "../components/SubmissionHeatmap";
 import { HomeworkLoadChart } from "../components/HomeworkLoadChart";
+import { PatternsCard } from "../components/PatternsCard";
 import { ExcellenceStatus } from "../api";
 
 export default function ChildDetail() {
@@ -114,6 +115,10 @@ export default function ChildDetail() {
 
       <div className="mb-6">
         <HomeworkLoadChart childId={childId} weeks={8} />
+      </div>
+
+      <div className="mb-6">
+        <PatternsCard childId={childId} />
       </div>
 
       <section className="surface mb-6 overflow-hidden">

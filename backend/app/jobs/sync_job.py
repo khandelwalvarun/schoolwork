@@ -71,6 +71,25 @@ async def run_heavy_sync() -> None:
         await _run_topic_state_recompute()
     except Exception:
         log.exception("weekly topic-state recompute inside heavy sync failed")
+    try:
+        await _run_pattern_recompute()
+    except Exception:
+        log.exception("weekly pattern recompute inside heavy sync failed")
+
+
+async def _run_pattern_recompute() -> None:
+    """Rebuild monthly pattern_state rows (lateness / repeated_attempt
+    / weekend_cramming) for the last 6 months. Idempotent — same month
+    is overwritten. Powers the Phase 13 quiet-card on per-kid Detail."""
+    from ..db import get_async_session
+    from ..services.patterns import compute_all
+    log.info("weekly pattern recompute: starting")
+    async with get_async_session() as session:
+        summary = await compute_all(session, months=6)
+    log.info(
+        "weekly pattern recompute: children=%s rows=%s months=%s",
+        summary["children"], summary["rows"], summary["months"],
+    )
 
 
 async def _run_topic_state_recompute() -> None:

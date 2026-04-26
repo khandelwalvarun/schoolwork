@@ -303,6 +303,43 @@ export type HomeworkLoadAll = {
   weeks: number;
 };
 
+/** Monthly behavioural patterns. Each flag is boolean — `detail`
+ *  carries supporting evidence the UI shows on hover. By design, these
+ *  never push notifications. */
+export type PatternMonth = {
+  child_id: number;
+  month: string;             // "YYYY-MM"
+  lateness: boolean;
+  repeated_attempt: boolean;
+  weekend_cramming: boolean;
+  detail: {
+    lateness: { count: number; threshold: number; examples: string[] };
+    repeated_attempt: {
+      topics: Array<{ subject: string; topic: string; count: number; examples: string[] }>;
+      threshold: number;
+    };
+    weekend_cramming: {
+      weekend: number;
+      weekday: number;
+      total: number;
+      fraction?: number;
+      fraction_threshold: number;
+      min_sample?: number;
+      examples?: string[];
+      note?: string;
+    };
+  };
+  updated_at: string | null;
+};
+
+export type PatternsAll = {
+  kids: Array<{
+    child_id: number;
+    display_name: string;
+    months: PatternMonth[];
+  }>;
+};
+
 export type ExcellenceStatus = {
   child_id: number;
   year_label: string;
@@ -442,6 +479,10 @@ export const api = {
     ),
   homeworkLoadAll: (weeks = 8) =>
     fetchJson<HomeworkLoadAll>(`/api/homework-load?weeks=${weeks}`),
+  patterns: (childId: number) =>
+    fetchJson<PatternMonth[]>(`/api/patterns?child_id=${childId}`),
+  patternsAll: () =>
+    fetchJson<PatternsAll>(`/api/patterns`),
   spellbeeLists: (childId: number) =>
     fetchJson<SpellBeeList[]>(`/api/spellbee/lists?child_id=${childId}`),
   spellbeeLinkedAssignments: (childId?: number) =>

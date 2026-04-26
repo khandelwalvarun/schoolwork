@@ -1800,6 +1800,85 @@ async def match_grades_to_assignments(
 
 
 @server.tool()
+async def get_patterns(
+    child_id: int | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """Read monthly behavioural-pattern flags per kid: lateness,
+    repeated_attempt, weekend_cramming. Each row carries supporting
+    counts + sample titles in `detail`. Honest framing: signals from
+    incomplete data, never verdicts. Pass child_id to limit; otherwise
+    both kids."""
+    started = time.monotonic()
+    err: str | None = None
+    result: Any = None
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services.patterns import list_patterns, list_patterns_all
+        async with get_async_session() as session:
+            if child_id is None:
+                result = await list_patterns_all(session)
+            else:
+                child = (
+                    await session.execute(select(Child).where(Child.id == child_id))
+                ).scalar_one_or_none()
+                if child is None:
+                    raise ValueError(f"child {child_id} not found")
+                result = await list_patterns(session, child_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_patterns",
+            {"child_id": child_id},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def recompute_patterns(
+    child_id: int | None = None,
+    months: int = 6,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Rebuild pattern_state for the last `months` calendar months
+    (default 6). Idempotent — same month is overwritten, never appended.
+    Heavy-tier sync runs this nightly; this tool is for on-demand
+    refresh after a data import."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services.patterns import compute_all, compute_for_child
+        async with get_async_session() as session:
+            if child_id is None:
+                result = await compute_all(session, months=months)
+            else:
+                child = (
+                    await session.execute(select(Child).where(Child.id == child_id))
+                ).scalar_one_or_none()
+                if child is None:
+                    raise ValueError(f"child {child_id} not found")
+                rows = await compute_for_child(session, child, months=months)
+                result = {"child_id": child_id, "rows": len(rows), "months": months}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "recompute_patterns",
+            {"child_id": child_id, "months": months},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
 async def get_homework_load(
     child_id: int | None = None,
     weeks: int = 8,

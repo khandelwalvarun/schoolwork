@@ -403,6 +403,46 @@ async def api_submission_heatmap(
         return await Q.get_submission_heatmap(session, child_id=child_id, weeks=weeks)
 
 
+@app.get("/api/patterns")
+async def api_patterns(child_id: int | None = None) -> dict[str, Any] | list[dict[str, Any]]:
+    """Monthly behavioural patterns per kid: lateness, repeated_attempt,
+    weekend_cramming. Each row carries a `detail` blob with supporting
+    counts + example titles. Read-only — call POST /recompute to rebuild."""
+    from sqlalchemy import select
+    from .models import Child
+    from .services.patterns import list_patterns, list_patterns_all
+    async with get_async_session() as session:
+        if child_id is None:
+            return await list_patterns_all(session)
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        return await list_patterns(session, child_id)
+
+
+@app.post("/api/patterns/recompute")
+async def api_patterns_recompute(
+    child_id: int | None = None, months: int = 6,
+) -> dict[str, Any]:
+    """Rebuild pattern_state rows for the last N months. Idempotent —
+    deletes the existing rows for the same months and rewrites them."""
+    from sqlalchemy import select
+    from .models import Child
+    from .services.patterns import compute_all, compute_for_child
+    async with get_async_session() as session:
+        if child_id is None:
+            return await compute_all(session, months=months)
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        rows = await compute_for_child(session, child, months=months)
+        return {"child_id": child_id, "rows": len(rows), "months": months}
+
+
 @app.get("/api/homework-load")
 async def api_homework_load(
     child_id: int | None = None,
