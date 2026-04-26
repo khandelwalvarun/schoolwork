@@ -403,6 +403,39 @@ async def api_submission_heatmap(
         return await Q.get_submission_heatmap(session, child_id=child_id, weeks=weeks)
 
 
+@app.get("/api/homework-load")
+async def api_homework_load(
+    child_id: int | None = None,
+    weeks: int = 8,
+    extra_minutes_per_item: int | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """Per-week homework load with the CBSE policy cap drawn as a
+    reference horizon. We can't measure real time-on-task — this is an
+    estimate from assignment counts × per-class minutes-per-item. The
+    response carries an explicit `honest_caveat` and `cap_basis` so the UI
+    frames the cap as official policy, not a verdict on the school."""
+    from sqlalchemy import select
+    from .models import Child
+    from .services.homework_load import homework_load, homework_load_all
+    async with get_async_session() as session:
+        if child_id is None:
+            return {
+                "kids": await homework_load_all(session, weeks=weeks),
+                "weeks": weeks,
+            }
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        return await homework_load(
+            session,
+            child,
+            weeks=weeks,
+            extra_minutes_per_item=extra_minutes_per_item,
+        )
+
+
 @app.get("/api/grade-trends/annotate")
 async def api_grade_trends_annotate(child_id: int) -> list[dict[str, Any]]:
     from .services.annotations import annotate_grade_trends

@@ -1799,6 +1799,62 @@ async def match_grades_to_assignments(
         )
 
 
+@server.tool()
+async def get_homework_load(
+    child_id: int | None = None,
+    weeks: int = 8,
+    extra_minutes_per_item: int | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """Per-week homework load with the CBSE policy cap as a reference
+    horizon. The cockpit can't measure real time-on-task — this is an
+    estimate (assignment count × per-class minutes-per-item). Defaults:
+    20/25/35/45 min for Class I-II / III-V / VI-VIII / IX+. CBSE caps
+    from Circular 52/2020 (no homework I-II, ≤2 hr/week III-V, ≤1 hr/day
+    VI-VIII, school discretion IX+) — surfaced as `cap_minutes` and
+    `cap_basis` so the parent has the right reference, not a verdict.
+    Returns per-week buckets (week_start, items, est_minutes) for the
+    last `weeks` ISO weeks. Pass child_id for one kid; otherwise both."""
+    started = time.monotonic()
+    err: str | None = None
+    result: Any = None
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services.homework_load import homework_load, homework_load_all
+        async with get_async_session() as session:
+            if child_id is None:
+                result = {
+                    "kids": await homework_load_all(session, weeks=weeks),
+                    "weeks": weeks,
+                }
+            else:
+                child = (
+                    await session.execute(select(Child).where(Child.id == child_id))
+                ).scalar_one_or_none()
+                if child is None:
+                    raise ValueError(f"child {child_id} not found")
+                result = await homework_load(
+                    session, child,
+                    weeks=weeks,
+                    extra_minutes_per_item=extra_minutes_per_item,
+                )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_homework_load",
+            {
+                "child_id": child_id,
+                "weeks": weeks,
+                "extra_minutes_per_item": extra_minutes_per_item,
+            },
+            None, err, started, _client_id(ctx),
+        )
+
+
 def run_stdio() -> None:
     """Entry point for `schoolwork-mcp` — stdio transport, for Claude Desktop/Code."""
     asyncio.run(server.run_stdio_async())

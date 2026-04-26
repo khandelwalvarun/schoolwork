@@ -277,6 +277,32 @@ export type ShakyTopicsResponse = {
   limit_per_kid: number;
 };
 
+/** Per-week homework-load buckets with the CBSE policy cap drawn as a
+ *  reference horizon. The cockpit can't measure real time-on-task —
+ *  est_minutes is a per-class estimate (assignment count × default
+ *  minutes-per-item). `cap_minutes === null` means uncapped (Class IX+,
+ *  CBSE leaves it to school discretion). */
+export type HomeworkLoadWeek = {
+  week_start: string;  // ISO date — Monday of that week
+  items: number;
+  est_minutes: number;
+};
+
+export type HomeworkLoadKid = {
+  child_id: number;
+  class_level: number;
+  weeks: HomeworkLoadWeek[];
+  cap_minutes: number | null;
+  cap_basis: string;
+  est_minutes_per_item: number;
+  honest_caveat: string;
+};
+
+export type HomeworkLoadAll = {
+  kids: HomeworkLoadKid[];
+  weeks: number;
+};
+
 export type ExcellenceStatus = {
   child_id: number;
   year_label: string;
@@ -410,6 +436,12 @@ export const api = {
     fetchJson<ExcellenceStatus>(`/api/excellence?child_id=${childId}`),
   shakyTopics: (limit = 3) =>
     fetchJson<ShakyTopicsResponse>(`/api/shaky-topics?limit=${limit}`),
+  homeworkLoad: (childId: number, weeks = 8) =>
+    fetchJson<HomeworkLoadKid>(
+      `/api/homework-load?child_id=${childId}&weeks=${weeks}`,
+    ),
+  homeworkLoadAll: (weeks = 8) =>
+    fetchJson<HomeworkLoadAll>(`/api/homework-load?weeks=${weeks}`),
   spellbeeLists: (childId: number) =>
     fetchJson<SpellBeeList[]>(`/api/spellbee/lists?child_id=${childId}`),
   spellbeeLinkedAssignments: (childId?: number) =>

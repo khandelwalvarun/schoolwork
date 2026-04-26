@@ -12,6 +12,7 @@ import { useUiPrefs } from "../components/useUiPrefs";
 import { SkeletonKidBlock } from "../components/Skeleton";
 import { Sparkline } from "../components/Sparkline";
 import { SubmissionHeatmap } from "../components/SubmissionHeatmap";
+import { HomeworkLoadChart } from "../components/HomeworkLoadChart";
 import { ExcellenceStatus } from "../api";
 
 export default function ChildDetail() {
@@ -109,6 +110,10 @@ export default function ChildDetail() {
           <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Submission pattern · 14 weeks</div>
           <SubmissionHeatmap childId={childId} weeks={14} />
         </div>
+      </div>
+
+      <div className="mb-6">
+        <HomeworkLoadChart childId={childId} weeks={8} />
       </div>
 
       <section className="surface mb-6 overflow-hidden">
