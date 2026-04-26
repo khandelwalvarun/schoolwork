@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Child, TopicState, VeracrossItem
 from ..services import syllabus as syl
+from ..services.language import language_code_for as _language_code_for
 from ..util.time import today_ist
 
 log = logging.getLogger(__name__)
@@ -193,6 +194,7 @@ async def recompute_for_child(session: AsyncSession, child: Child) -> dict[str, 
             last_score=last_score,
             attempt_count=attempts,
             proficient_count=prof_run,
+            language_code=_language_code_for(subj),
             updated_at=datetime.now(tz=timezone.utc),
         ))
     await session.commit()
@@ -226,6 +228,7 @@ async def list_topic_state(
             "last_score": r.last_score,
             "attempt_count": r.attempt_count,
             "proficient_count": r.proficient_count,
+            "language_code": r.language_code or _language_code_for(r.subject),
         }
         for r in rows
     ]

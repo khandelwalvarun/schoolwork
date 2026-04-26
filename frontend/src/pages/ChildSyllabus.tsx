@@ -15,6 +15,37 @@ const STATE_DOT: Record<TopicStateRow["state"], { color: string; label: string }
   decaying:   { color: "oklch(55% 0.18 25)",    label: "Decaying (>30 d)" },
 };
 
+/** Phase 15: derive language from subject name. Mirrors backend
+ *  services/language.py — kept in sync manually. */
+function languageOf(subject: string | null | undefined): "en" | "hi" | "sa" | null {
+  if (!subject) return null;
+  const s = subject.toLowerCase();
+  if (s.includes("sanskrit")) return "sa";
+  if (s.includes("hindi")) return "hi";
+  if (s.includes("english")) return "en";
+  return null;
+}
+
+const LANG_CHIP: Record<"en" | "hi" | "sa", { label: string; tone: string }> = {
+  en: { label: "EN", tone: "border-blue-300 text-blue-800 bg-blue-50" },
+  hi: { label: "हिन्दी", tone: "border-amber-300 text-amber-800 bg-amber-50" },
+  sa: { label: "संस्कृत", tone: "border-purple-300 text-purple-800 bg-purple-50" },
+};
+
+function LanguageChip({ subject }: { subject: string | null | undefined }) {
+  const code = languageOf(subject);
+  if (!code) return null;
+  const { label, tone } = LANG_CHIP[code];
+  return (
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border ml-2 ${tone}`}
+      title={`Language track: ${code === "en" ? "English" : code === "hi" ? "Hindi" : "Sanskrit"}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 function MasteryDot({ row }: { row: TopicStateRow }) {
   const { color, label } = STATE_DOT[row.state];
   const score = row.last_score != null ? ` · ${row.last_score.toFixed(0)}%` : "";
@@ -109,7 +140,10 @@ export default function ChildSyllabus() {
               <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                 {Object.entries(c.topics_by_subject || {}).map(([subj, topics]) => (
                   <div key={subj} className="text-sm">
-                    <div className="font-medium text-gray-800 mb-1">{subj}</div>
+                    <div className="font-medium text-gray-800 mb-1 flex items-center">
+                      <span>{subj}</span>
+                      <LanguageChip subject={subj} />
+                    </div>
                     <ul className="space-y-0.5 text-gray-700">
                       {topics.map((t) => {
                         const st = c.topic_status?.[subj]?.[t]?.status;

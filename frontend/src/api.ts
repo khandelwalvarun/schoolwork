@@ -402,10 +402,13 @@ export type ExcellenceStatus = {
   threshold: number;
 };
 
+export type LanguageCode = "en" | "hi" | "sa" | null;
+
 export type TopicStateRow = {
   subject: string;
   topic: string;
   state: "attempted" | "familiar" | "proficient" | "mastered" | "decaying";
+  language_code?: LanguageCode;
   last_assessed_at: string | null;
   last_score: number | null;
   attempt_count: number;

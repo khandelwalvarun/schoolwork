@@ -33,6 +33,8 @@ class TopicState(Base):
     last_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     proficient_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Phase 15 — derived from subject name; en|hi|sa|None.
+    language_code: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False,
     )

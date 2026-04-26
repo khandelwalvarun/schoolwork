@@ -28,6 +28,23 @@ const STATE_TONE: Record<string, string> = {
 
 const dismissKey = (it: ShakyTopic) => `${it.subject}::${it.topic}`;
 
+/** Phase 15: derive language from subject. Kept in lockstep with the
+ *  backend's services/language.py + the syllabus page's helper. */
+function languageOf(subject: string | null | undefined): "en" | "hi" | "sa" | null {
+  if (!subject) return null;
+  const s = subject.toLowerCase();
+  if (s.includes("sanskrit")) return "sa";
+  if (s.includes("hindi")) return "hi";
+  if (s.includes("english")) return "en";
+  return null;
+}
+
+const LANG_CHIP: Record<"en" | "hi" | "sa", { label: string; tone: string }> = {
+  en: { label: "EN", tone: "border-blue-300 text-blue-800 bg-blue-50" },
+  hi: { label: "हिन्दी", tone: "border-amber-300 text-amber-800 bg-amber-50" },
+  sa: { label: "संस्कृत", tone: "border-purple-300 text-purple-800 bg-purple-50" },
+};
+
 export function ShakyTopicsTray() {
   const { data } = useQuery<ShakyTopicsResponse>({
     queryKey: ["shaky-topics"],
@@ -141,6 +158,18 @@ export function ShakyTopicsTray() {
                             {it.state}
                             {it.last_score != null && ` · ${it.last_score.toFixed(0)}%`}
                           </span>
+                          {(() => {
+                            const lc = languageOf(it.subject);
+                            if (!lc) return null;
+                            const meta = LANG_CHIP[lc];
+                            return (
+                              <span
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border ${meta.tone}`}
+                              >
+                                {meta.label}
+                              </span>
+                            );
+                          })()}
                           {it.reasons.map((r, i) => (
                             <span
                               key={i}
