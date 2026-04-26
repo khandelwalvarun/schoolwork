@@ -64,3 +64,4 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.claude/scheduled_tasks.lock
