@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Child, SpellBeeLinkedAssignment, SpellBeeList } from "../api";
 import { SkeletonList } from "../components/Skeleton";
+import { Tabs } from "../components/Tabs";
 import { formatDate } from "../util/dates";
 
 function fmtSize(n: number): string {
@@ -275,22 +276,15 @@ export default function SpellBee() {
       </p>
 
       {children && children.length > 1 && (
-        <div className="flex gap-2 mb-4 border-b border-gray-200">
-          {children.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setChildId(c.id)}
-              className={
-                "px-3 py-2 text-sm border-b-2 -mb-px " +
-                (c.id === childId
-                  ? "border-amber-500 text-amber-700 font-semibold"
-                  : "border-transparent text-gray-600 hover:text-gray-900")
-              }
-            >
-              {c.display_name} · {c.class_section ?? c.class_level}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          tone="amber"
+          active={childId ?? children[0].id}
+          onChange={(id) => setChildId(id as number)}
+          items={children.map((c) => ({
+            key: c.id,
+            label: `${c.display_name} · ${c.class_section ?? c.class_level}`,
+          }))}
+        />
       )}
 
       {currentChild && (

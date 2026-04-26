@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { api, ResourceFile, ResourcesResponse } from "../api";
 import { Skeleton, SkeletonList } from "../components/Skeleton";
+import { Tabs, type TabItem } from "../components/Tabs";
 
 const CATEGORY_LABELS: Record<string, string> = {
   news: "News / Newsletters",
@@ -132,37 +133,19 @@ export default function Resources() {
       )}
       {data && (
         <>
-          <div className="flex gap-2 mb-4 border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab("schoolwide")}
-              className={
-                "px-3 py-2 text-sm border-b-2 -mb-px " +
-                (activeTab === "schoolwide"
-                  ? "border-purple-500 text-purple-700 font-semibold"
-                  : "border-transparent text-gray-600 hover:text-gray-900")
-              }
-            >
-              School-wide{" "}
-              <span className="text-xs text-gray-500 font-normal">· {totals.schoolwide}</span>
-            </button>
-            {data.kids.map((k) => (
-              <button
-                key={k.child_id}
-                onClick={() => setActiveTab(k.child_id)}
-                className={
-                  "px-3 py-2 text-sm border-b-2 -mb-px " +
-                  (activeTab === k.child_id
-                    ? "border-purple-500 text-purple-700 font-semibold"
-                    : "border-transparent text-gray-600 hover:text-gray-900")
-                }
-              >
-                {k.display_name} · {k.kid_slug.split("_")[1] ?? ""}{" "}
-                <span className="text-xs text-gray-500 font-normal">
-                  · {totals.kids[k.child_id] ?? 0}
-                </span>
-              </button>
-            ))}
-          </div>
+          <Tabs
+            tone="purple"
+            active={activeTab as string | number}
+            onChange={(k) => setActiveTab(k as "schoolwide" | number)}
+            items={[
+              { key: "schoolwide" as const, label: "School-wide", count: totals.schoolwide },
+              ...data.kids.map<TabItem<number>>((k) => ({
+                key: k.child_id,
+                label: `${k.display_name} · ${k.kid_slug.split("_")[1] ?? ""}`,
+                count: totals.kids[k.child_id] ?? 0,
+              })),
+            ]}
+          />
 
           {activeTab === "schoolwide" &&
             Object.entries(data.schoolwide)

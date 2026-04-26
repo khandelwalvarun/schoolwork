@@ -7,6 +7,7 @@ import TitleBlock from "../components/TitleBlock";
 import AuditDrawer from "../components/AuditDrawer";
 import ChildHeader from "../components/ChildHeader";
 import { SortableTH, useSortable } from "../components/useSortable";
+import { Surface } from "../components/Surface";
 import { formatDDMMMYY, formatDDMMMYYTime } from "../util/dates";
 
 type GradeRow = {
@@ -70,7 +71,7 @@ export default function ChildGrades() {
       </div>
 
       {trends && trends.length > 0 && (
-        <section className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
+        <Surface className="mb-6">
           <h3 className="font-semibold text-purple-700 mb-3">Trends</h3>
           <div className="space-y-2 text-sm">
             {trends.map((t) => (
@@ -91,10 +92,10 @@ export default function ChildGrades() {
             ))}
           </div>
           <div className="text-xs text-gray-500 mt-3">Click a subject to filter the grade list below.</div>
-        </section>
+        </Surface>
       )}
 
-      <section className="bg-white border border-gray-200 rounded shadow-sm p-4">
+      <Surface>
         <h3 className="font-semibold mb-2">
           All grades {subject && <span className="text-gray-500 font-normal">· {subject}</span>}
           {subject && (
@@ -146,7 +147,7 @@ export default function ChildGrades() {
             })}
           </tbody>
         </table>
-      </section>
+      </Surface>
 
       {audit && <AuditDrawer a={audit} onClose={() => setAudit(null)} />}
     </div>

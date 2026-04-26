@@ -19,6 +19,7 @@ import { AssignmentList } from "../components/AssignmentList";
 import { useSelection } from "../components/useSelection";
 import { useUiPrefs } from "../components/useUiPrefs";
 import { SkeletonHero, SkeletonKidBlock } from "../components/Skeleton";
+import { Button } from "../components/Button";
 import { formatDate, formatRelative } from "../util/dates";
 
 const BUCKET_DEFS: Record<string, { key: keyof ChildBlock; label: string; tone: "red" | "amber" | "blue" }> = {
@@ -65,12 +66,10 @@ function HeroBand({
           </div>
         </div>
         <div className="flex gap-2">
-          <button className="px-3 py-1.5 border border-gray-300 text-sm rounded hover:bg-gray-50" onClick={onSync}>
-            Sync now
-          </button>
-          <button className="px-3 py-1.5 border border-gray-300 text-sm rounded hover:bg-gray-50" onClick={onSendDigest}>
-            Send digest
-          </button>
+          {/* Things 3 rule: one primary action per page. Sync is the day-to-day,
+              Send digest is a less frequent admin action. */}
+          <Button variant="primary" size="sm" onClick={onSync}>Sync now</Button>
+          <Button variant="secondary" size="sm" onClick={onSendDigest}>Send digest</Button>
         </div>
       </div>
       <div className="surface p-5 flex items-center gap-10">
