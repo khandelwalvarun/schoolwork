@@ -16,6 +16,7 @@ import { HomeworkLoadChart } from "../components/HomeworkLoadChart";
 import { PatternsCard } from "../components/PatternsCard";
 import { SentimentTrendCard } from "../components/SentimentTrendCard";
 import { PTMBriefPanel } from "../components/PTMBriefPanel";
+import { SundayBriefPanel } from "../components/SundayBriefPanel";
 import { ExcellenceStatus } from "../api";
 
 export default function ChildDetail() {
@@ -24,6 +25,7 @@ export default function ChildDetail() {
   const [audit, setAudit] = useState<Assignment | null>(null);
   const [popover, setPopover] = useState<{ a: Assignment; rect: DOMRect } | null>(null);
   const [ptmOpen, setPtmOpen] = useState(false);
+  const [sundayOpen, setSundayOpen] = useState(false);
   const selection = useSelection();
   const prefs = useUiPrefs();
   const { data, isLoading, error } = useQuery({
@@ -72,14 +74,24 @@ export default function ChildDetail() {
             {excellence.above_85_count}/{excellence.grades_count} ≥ 85 %
           </span>
         )}
-        <button
-          type="button"
-          onClick={() => setPtmOpen(true)}
-          className="ml-auto text-xs px-2 py-1 border border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100 rounded"
-          title="Generate a Parent-Teacher Meeting prep brief (Claude, ~30s first time)"
-        >
-          PTM brief
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSundayOpen(true)}
+            className="text-xs px-2 py-1 border border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100 rounded"
+            title="Open this kid's weekly Sunday brief (auto-refreshed nightly at 02:00 IST)"
+          >
+            📋 Sunday brief
+          </button>
+          <button
+            type="button"
+            onClick={() => setPtmOpen(true)}
+            className="text-xs px-2 py-1 border border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100 rounded"
+            title="Generate a Parent-Teacher Meeting prep brief (Claude, ~30s first time)"
+          >
+            🗒 PTM brief
+          </button>
+        </div>
       </div>
 
       <section className="surface mb-6 p-5 flex items-center gap-10">
@@ -205,6 +217,13 @@ export default function ChildDetail() {
       {audit && <AuditDrawer a={audit} onClose={() => setAudit(null)} />}
       {ptmOpen && (
         <PTMBriefPanel childId={childId} onClose={() => setPtmOpen(false)} />
+      )}
+      {sundayOpen && (
+        <SundayBriefPanel
+          childId={childId}
+          childName={c.display_name}
+          onClose={() => setSundayOpen(false)}
+        />
       )}
       {popover && (
         <StatusPopover a={popover.a} anchorRect={popover.rect}

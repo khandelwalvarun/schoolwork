@@ -15,9 +15,11 @@ import { api } from "../api";
 
 export function SundayBriefPanel({
   childId,
+  childName,
   onClose,
 }: {
   childId?: number;
+  childName?: string;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -65,7 +67,7 @@ export function SundayBriefPanel({
               Sunday brief
             </div>
             <h3 className="text-lg font-bold leading-tight">
-              {childId ? "One kid" : "Both kids"}
+              {childId ? (childName || "This kid") : "Both kids"}
             </h3>
             <div className="text-xs text-gray-500 mt-0.5">
               4 sections: cycle shape · one ask · teacher questions · what to ignore
