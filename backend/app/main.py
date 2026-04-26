@@ -307,13 +307,12 @@ async def api_overdue_trend(
 @app.get("/api/shaky-topics")
 async def api_shaky_topics(
     child_id: int | None = None,
-    limit: int = 3,
+    limit: int | None = None,
 ) -> list[dict[str, Any]] | dict[str, Any]:
-    """Top-N topics per kid that most warrant a review conversation
-    this week. Capped (default 3) per the pedagogy research — pushing
-    more triggers helicopter-parenting patterns the literature warns
-    against. Each item carries a `reasons` list so the parent knows
-    why it surfaced."""
+    """Topics per kid that warrant a review conversation, ordered by
+    shakiness. No cap by default — the parent sees the full list and
+    dismisses items per-row to whittle down. Each item carries a
+    `reasons` list so the parent knows why it surfaced."""
     from sqlalchemy import select
     from .models import Child
     from .services.shaky_topics import shaky_for_child, shaky_for_all

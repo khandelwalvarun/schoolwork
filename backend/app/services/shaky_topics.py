@@ -90,7 +90,7 @@ async def shaky_for_child(
     session: AsyncSession,
     child: Child,
     *,
-    limit: int = 3,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     today = today_ist()
     rows = (
@@ -109,7 +109,7 @@ async def shaky_for_child(
         ranked.append((s, reasons, r))
     ranked.sort(key=lambda x: -x[0])
 
-    return [
+    items = [
         {
             "child_id": child.id,
             "subject": r.subject,
@@ -121,14 +121,15 @@ async def shaky_for_child(
             "shakiness": s,
             "reasons": reasons,
         }
-        for s, reasons, r in ranked[:limit]
+        for s, reasons, r in ranked
     ]
+    return items if limit is None else items[:limit]
 
 
 async def shaky_for_all(
     session: AsyncSession,
     *,
-    limit_per_kid: int = 3,
+    limit_per_kid: int | None = None,
 ) -> dict[str, Any]:
     children = (await session.execute(select(Child))).scalars().all()
     by_kid: list[dict[str, Any]] = []

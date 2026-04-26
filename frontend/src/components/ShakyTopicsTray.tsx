@@ -1,20 +1,23 @@
 /**
- * ShakyTopicsTray — Today-page card listing 2-3 topics per kid that
- * most warrant a parent-kid review conversation this week.
+ * ShakyTopicsTray — Today-page card listing topics that warrant a
+ * parent-kid review conversation.
  *
- * Framing rules per the pedagogy research synthesis:
- *   - HARD CAP at 3 per kid. Hill & Tyson found that the strongest
- *     parent-effect comes from "academic socialization" (talking, expectations)
- *     not "doing the homework with them"; pushing 10+ items would tilt
- *     parents into the controlling pattern.
- *   - Copy says "Talk about" not "Drill" or "Practice".
- *   - Each item shows the WHY (reason chips) so the parent can lead a
- *     specific conversation instead of a generic one.
+ * No artificial cap — the parent sees the full list and dismisses
+ * specific items per row. Dismissals persist in ui_prefs under
+ * `shaky_dismissed[child_id]` keyed by `subject::topic`.
  *
- * Hidden when both kids have zero shaky topics — no empty card.
+ * UX:
+ *   - Each row has a checkbox on the left. Checking it dismisses the
+ *     row; the row fades out and disappears from the visible list.
+ *   - A small footer shows how many are hidden + a "Show hidden"
+ *     toggle that reveals dismissed rows so they can be un-dismissed
+ *     by unchecking.
+ *   - Tray hides entirely when both kids have zero (visible + hidden) items.
  */
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, ShakyTopicsResponse } from "../api";
+import { api, ShakyTopic, ShakyTopicsResponse } from "../api";
+import { useUiPrefs } from "./useUiPrefs";
 
 const STATE_TONE: Record<string, string> = {
   attempted: "border-gray-300 text-gray-700",
@@ -23,69 +26,149 @@ const STATE_TONE: Record<string, string> = {
   decaying:  "border-red-300 text-red-800 bg-red-50",
 };
 
+const dismissKey = (it: ShakyTopic) => `${it.subject}::${it.topic}`;
+
 export function ShakyTopicsTray() {
   const { data } = useQuery<ShakyTopicsResponse>({
     queryKey: ["shaky-topics"],
-    queryFn: () => api.shakyTopics(3),
+    queryFn: () => api.shakyTopics(),
     staleTime: 60_000,
   });
+  const { prefs, setShakyDismissed } = useUiPrefs();
+  const [showHidden, setShowHidden] = useState(false);
+
+  const dismissedByKid = prefs.shaky_dismissed ?? {};
+
+  const setDismissed = (childId: number, key: string, dismissed: boolean) => {
+    const cur = new Set(dismissedByKid[String(childId)] ?? []);
+    if (dismissed) cur.add(key);
+    else cur.delete(key);
+    setShakyDismissed({
+      ...dismissedByKid,
+      [String(childId)]: [...cur],
+    });
+  };
+
+  const counts = useMemo(() => {
+    if (!data) return { visible: 0, hidden: 0 };
+    let visible = 0;
+    let hidden = 0;
+    for (const kid of data.kids) {
+      const ds = new Set(dismissedByKid[String(kid.child_id)] ?? []);
+      for (const it of kid.items) {
+        if (ds.has(dismissKey(it))) hidden++;
+        else visible++;
+      }
+    }
+    return { visible, hidden };
+  }, [data, dismissedByKid]);
+
   if (!data) return null;
-  const totalItems = data.kids.reduce((s, k) => s + k.items.length, 0);
-  if (totalItems === 0) return null;
+  if (counts.visible === 0 && counts.hidden === 0) return null;
+  if (counts.visible === 0 && !showHidden) {
+    // Everything dismissed — collapsed surface with restore link.
+    return (
+      <section className="surface mb-6 p-3 text-xs text-gray-500 flex items-center justify-between">
+        <span>All shaky topics dismissed.</span>
+        <button
+          onClick={() => setShowHidden(true)}
+          className="text-blue-700 hover:underline"
+        >
+          Show {counts.hidden} hidden
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section className="surface mb-6 p-4">
       <div className="flex items-center gap-2 mb-2">
         <span className="h-section text-purple-700">Worth a chat this week</span>
         <span className="text-xs text-gray-400">
-          · capped at {data.limit_per_kid} per kid · review the topic with your kid before drilling
+          · {counts.visible} item{counts.visible === 1 ? "" : "s"}
+          {counts.hidden > 0 && ` · ${counts.hidden} hidden`}
+          · review the topic with your kid before drilling
         </span>
       </div>
       <div className="space-y-3">
-        {data.kids.map((kid) =>
-          kid.items.length === 0 ? null : (
+        {data.kids.map((kid) => {
+          const ds = new Set(dismissedByKid[String(kid.child_id)] ?? []);
+          const visibleItems = kid.items.filter((it) =>
+            showHidden ? true : !ds.has(dismissKey(it)),
+          );
+          if (visibleItems.length === 0) return null;
+          return (
             <div key={kid.child_id}>
               <div className="text-xs font-semibold text-gray-700 mb-1">
                 {kid.display_name}
               </div>
               <ul className="space-y-1">
-                {kid.items.map((it) => (
-                  <li
-                    key={`${it.child_id}-${it.subject}-${it.topic}`}
-                    className="flex items-start gap-2 text-sm"
-                  >
-                    <span className="text-xs uppercase tracking-wider text-gray-500 w-24 flex-shrink-0 mt-0.5">
-                      {it.subject}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-gray-900">{it.topic}</div>
-                      <div className="flex flex-wrap gap-1 mt-0.5">
-                        <span
-                          className={
-                            "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border " +
-                            (STATE_TONE[it.state] ?? "border-gray-300 text-gray-700")
-                          }
-                        >
-                          {it.state}
-                          {it.last_score != null && ` · ${it.last_score.toFixed(0)}%`}
-                        </span>
-                        {it.reasons.map((r, i) => (
+                {visibleItems.map((it) => {
+                  const k = dismissKey(it);
+                  const dismissed = ds.has(k);
+                  return (
+                    <li
+                      key={k}
+                      className={
+                        "flex items-start gap-2 text-sm " +
+                        (dismissed ? "opacity-50" : "")
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        checked={dismissed}
+                        onChange={(e) =>
+                          setDismissed(it.child_id, k, e.target.checked)
+                        }
+                        title={dismissed ? "Restore" : "Dismiss this item"}
+                        aria-label={dismissed ? "Restore" : "Dismiss"}
+                        className="mt-1 h-4 w-4 accent-blue-700 cursor-pointer"
+                      />
+                      <span className="text-xs uppercase tracking-wider text-gray-500 w-24 flex-shrink-0 mt-0.5">
+                        {it.subject}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className={"text-gray-900 " + (dismissed ? "line-through" : "")}>
+                          {it.topic}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-0.5">
                           <span
-                            key={i}
-                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border border-gray-200 bg-gray-50 text-gray-600"
+                            className={
+                              "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border " +
+                              (STATE_TONE[it.state] ?? "border-gray-300 text-gray-700")
+                            }
                           >
-                            {r}
+                            {it.state}
+                            {it.last_score != null && ` · ${it.last_score.toFixed(0)}%`}
                           </span>
-                        ))}
+                          {it.reasons.map((r, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border border-gray-200 bg-gray-50 text-gray-600"
+                            >
+                              {r}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
-          ),
-        )}
+          );
+        })}
       </div>
+      {counts.hidden > 0 && (
+        <div className="mt-3 pt-2 border-t border-[color:var(--line-soft)] text-xs text-gray-500">
+          <button
+            onClick={() => setShowHidden((v) => !v)}
+            className="text-blue-700 hover:underline"
+          >
+            {showHidden ? "Hide dismissed" : `Show ${counts.hidden} dismissed`}
+          </button>
+        </div>
+      )}
     </section>
   );
 }

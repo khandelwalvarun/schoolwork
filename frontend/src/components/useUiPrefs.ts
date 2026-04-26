@@ -11,6 +11,10 @@ export type UiPrefs = {
   /** "horizontal" (default, original wrap-flex top nav) | "sidebar"
    *  (Linear/Notion-style left rail). Phase 9 lever. */
   nav_layout?: "horizontal" | "sidebar";
+  /** Dismissed shaky-topic rows: childId → ["subject::topic", …].
+   *  Per-item dismiss persists here so the same rows don't keep
+   *  reappearing on every page load. */
+  shaky_dismissed?: Record<string, string[]>;
 };
 
 const DEFAULT: UiPrefs = {
@@ -21,6 +25,7 @@ const DEFAULT: UiPrefs = {
   sync_window_start_hour: 8,
   sync_window_end_hour: 22,
   nav_layout: "horizontal",
+  shaky_dismissed: {},
 };
 
 /** Client-side wrapper around GET/PUT /api/ui-prefs.
@@ -54,6 +59,7 @@ export function useUiPrefs() {
           sync_window_start_hour: p.sync_window_start_hour ?? 8,
           sync_window_end_hour: p.sync_window_end_hour ?? 22,
           nav_layout: p.nav_layout ?? "horizontal",
+          shaky_dismissed: p.shaky_dismissed ?? {},
         });
         setLoaded(true);
       })
@@ -86,6 +92,9 @@ export function useUiPrefs() {
         sync_window_start_hour: patch.sync_window_start_hour ?? prev.sync_window_start_hour,
         sync_window_end_hour:   patch.sync_window_end_hour   ?? prev.sync_window_end_hour,
         nav_layout: patch.nav_layout ?? prev.nav_layout,
+        shaky_dismissed: patch.shaky_dismissed !== undefined
+          ? patch.shaky_dismissed
+          : prev.shaky_dismissed,
       };
       persist(next);
       return next;
@@ -129,6 +138,13 @@ export function useUiPrefs() {
     update({ kid_order: order });
   }, [update]);
 
+  const setShakyDismissed = useCallback(
+    (next: Record<string, string[]>) => {
+      update({ shaky_dismissed: next });
+    },
+    [update],
+  );
+
   return {
     prefs,
     loaded,
@@ -138,5 +154,6 @@ export function useUiPrefs() {
     setBucketOrder,
     bucketOrderFor,
     setKidOrder,
+    setShakyDismissed,
   };
 }
