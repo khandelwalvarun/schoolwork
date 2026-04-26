@@ -71,7 +71,7 @@ export default function ChildGrades() {
 
       {trends && trends.length > 0 && (
         <section className="mb-6 bg-white border border-gray-200 rounded shadow-sm p-4">
-          <h3 className="font-semibold text-purple-700 mb-3">📊 Trends</h3>
+          <h3 className="font-semibold text-purple-700 mb-3">Trends</h3>
           <div className="space-y-2 text-sm">
             {trends.map((t) => (
               <div

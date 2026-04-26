@@ -268,13 +268,10 @@ export default function SpellBee() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-1">🐝 Spelling Bee</h2>
+      <h2 className="text-2xl font-bold mb-1">Spelling lists</h2>
       <p className="text-sm text-gray-600 mb-4">
-        Per-kid word lists. Files live under{" "}
-        <code className="text-xs bg-gray-100 border border-gray-200 rounded px-1 py-0.5">
-          data/rawdata/&lt;kid&gt;/spellbee/
-        </code>
-        .
+        Word lists for each child. Drop a PDF in below and it'll show up
+        here, organised by list number.
       </p>
 
       {children && children.length > 1 && (

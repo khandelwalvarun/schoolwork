@@ -142,7 +142,7 @@ function Column({
           <Card key={a.id} a={a} onOpenPopover={onOpenPopover} onOpenAudit={onOpenAudit} />
         ))}
         {items.length === 0 && (
-          <div className="text-xs text-gray-400 italic py-4 text-center">(empty)</div>
+          <div className="text-xs text-gray-400 py-4 text-center">Nothing here</div>
         )}
       </div>
     </div>

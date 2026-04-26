@@ -21,6 +21,7 @@ import Resources from "./pages/Resources";
 import CommandPalette from "./components/CommandPalette";
 import HelpPanel from "./components/HelpPanel";
 import SyncStatusBar from "./components/SyncStatusBar";
+import { Icon } from "./components/Icon";
 import { api } from "./api";
 
 function NavItem({ to, label, end = true }: { to: string; label: string; end?: boolean }) {
@@ -59,8 +60,9 @@ export default function App() {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <Link to="/" className="text-xl font-bold tracking-tight text-gray-900">
-              🏫 Parent Cockpit
+            <Link to="/" className="text-xl font-bold tracking-tight text-gray-900 inline-flex items-center gap-2">
+              <Icon name="Logo" size={22} strokeWidth={2} className="text-blue-700" />
+              <span>Parent Cockpit</span>
             </Link>
             <button
               onClick={() => {
@@ -83,8 +85,8 @@ export default function App() {
             <span className="text-gray-300">|</span>
             <NavItem to="/messages" label="Messages" />
             <NavItem to="/attachments" label="Files" />
-            <NavItem to="/resources" label="📚 Resources" />
-            <NavItem to="/spellbee" label="🐝 Spell Bee" />
+            <NavItem to="/resources" label="Resources" />
+            <NavItem to="/spellbee" label="Spelling" />
             <NavItem to="/notes" label="Notes" />
             <NavItem to="/summaries" label="Summaries" />
             <NavItem to="/notifications" label="Notifications" />

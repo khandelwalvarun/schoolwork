@@ -112,15 +112,11 @@ export default function Resources() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-1">📚 Resources</h2>
+      <h2 className="text-2xl font-bold mb-1">Resources</h2>
       <p className="text-sm text-gray-600 mb-4">
-        Everything harvested from the parent portal's landing page — newsletters,
-        time tables, book lists, spelling lists, handbook, homework schedules.
-        Refreshed weekly by the heavy-tier sync. Files live under{" "}
-        <code className="text-xs bg-gray-100 border border-gray-200 rounded px-1 py-0.5">
-          data/rawdata/
-        </code>
-        .
+        Everything from the school portal's landing page — newsletters, time
+        tables, book lists, spelling lists, the handbook, homework schedules.
+        Refreshed weekly so this is always up to date.
       </p>
 
       {isLoading && (
@@ -186,10 +182,13 @@ export default function Resources() {
 
           {data.kids.length === 0 && activeTab === "schoolwide" &&
             totals.schoolwide === 0 && (
-              <div className="bg-gray-50 border border-gray-200 rounded p-4 text-sm text-gray-700">
-                No resources harvested yet. Run{" "}
-                <code className="text-xs">uv run python backend/scripts/harvest_resources.py</code>{" "}
-                to populate, or wait for the next weekly sync.
+              <div className="bg-gray-50 border border-gray-200 rounded p-6 text-center">
+                <div className="text-base font-medium text-gray-800 mb-1">
+                  No resources here yet
+                </div>
+                <div className="text-sm text-gray-600">
+                  Files will appear here automatically after the next sync.
+                </div>
               </div>
             )}
         </>

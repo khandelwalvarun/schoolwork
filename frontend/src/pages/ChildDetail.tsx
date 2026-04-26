@@ -105,7 +105,7 @@ export default function ChildDetail() {
 
       {data.grade_trends.length > 0 && (
         <section className="surface mb-6 p-4">
-          <h3 className="h-section text-purple-700 mb-3">📊 Grade trends</h3>
+          <h3 className="h-section text-purple-700 mb-3">Grade trends</h3>
           <table className="w-full text-sm"><tbody>
             {data.grade_trends.map((t: GradeTrend) => (
               <tr key={t.subject} className="border-t border-[color:var(--line-soft)]">
