@@ -733,18 +733,36 @@ async def get_submission_heatmap(
     session: AsyncSession,
     child_id: int | None = None,
     weeks: int = 14,
+    pending_grace_days: int = 7,
 ) -> list[dict[str, Any]]:
-    """Daily completion counts over the last N weeks. For each day D in
-    [today-weeks*7+1, today] we count:
-      - `due`:    assignments whose due_or_date == D
-      - `closed`: of those, how many are in a closed parent/portal status
-                  (submitted | graded | done_at_home | dismissed) OR have
-                  parent_marked_submitted_at set on or before D.
-    The returned shape is suitable for a GitHub-style heatmap; the UI tints
-    each cell by `closed / due` (or muted when due == 0).
+    """Daily submission state over the last N weeks. The cockpit can't
+    *directly* see whether a kid submitted (the school doesn't mark
+    'submitted' reliably and the parent might forget). So this function
+    infers a per-day state from what *is* observable:
 
-    Optional `child_id` filters to one kid; otherwise aggregates across both.
-    Returns [{date, due, closed, ratio}] oldest → newest."""
+        graded         portal-side status confirms school graded it
+                       (status in {submitted, graded, dismissed})
+        parent_marked  parent flagged it done_at_home / submitted
+        pending        past due, still 'assigned', age ≤ pending_grace_days
+                       (probably handed in, awaiting teacher action)
+        likely_missing past due, still 'assigned', older than the grace window
+                       (school hasn't graded AND parent hasn't confirmed —
+                        looks bad, worth a parent nudge)
+        future         due date in the future or no due date
+
+    For each day D in the window, we compute counts of each state across
+    assignments whose due_or_date == D. The UI tints heatmap cells by
+    these counts (green for graded+parent_marked, amber for pending, red
+    for likely_missing, muted gray when nothing was due).
+
+    Per-row inference is computed at "today's" snapshot — i.e. how does
+    each item *currently* stand. We don't reconstruct a per-day timeline
+    because we don't store enough history; this is honest about what we
+    know vs assume.
+
+    Returns [{date, due, graded, parent_marked, pending, likely_missing,
+              ratio_closed}] oldest → newest. `closed` is kept for
+    backward-compat (graded + parent_marked, the optimistic view)."""
     today = _today_ist()
     days = weeks * 7
     q = select(VeracrossItem).where(VeracrossItem.kind == "assignment")
@@ -752,29 +770,52 @@ async def get_submission_heatmap(
         q = q.where(VeracrossItem.child_id == child_id)
     rows = (await session.execute(q)).scalars().all()
 
-    closed_statuses = {"submitted", "graded", "dismissed"}
+    closed_portal = {"submitted", "graded", "dismissed"}
     closed_parent = {"submitted", "graded", "done_at_home"}
 
     out: list[dict[str, Any]] = []
     for offset in range(days - 1, -1, -1):
         d = today - timedelta(days=offset)
         d_iso = d.isoformat()
-        due = 0
-        closed = 0
+        graded = 0
+        parent_marked = 0
+        pending = 0
+        likely_missing = 0
+        due_total = 0
         for r in rows:
             if r.due_or_date != d_iso:
                 continue
-            due += 1
-            is_closed = (
-                (r.status in closed_statuses) or
-                (r.parent_status in closed_parent) or
-                (r.parent_marked_submitted_at is not None
-                 and r.parent_marked_submitted_at.date() <= d)
-            )
-            if is_closed:
-                closed += 1
-        ratio = (closed / due) if due > 0 else 0.0
-        out.append({"date": d_iso, "due": due, "closed": closed, "ratio": ratio})
+            due_total += 1
+            # Order: school > parent > inferred. Each item lands in one bucket.
+            if r.status in closed_portal:
+                graded += 1
+                continue
+            if r.parent_status in closed_parent or (
+                r.parent_marked_submitted_at is not None
+                and r.parent_marked_submitted_at.date() <= d
+            ):
+                parent_marked += 1
+                continue
+            # Past due + still 'assigned': age decides.
+            if d < today:
+                age = (today - d).days
+                if age <= pending_grace_days:
+                    pending += 1
+                else:
+                    likely_missing += 1
+            # else: future-dated, no bucket beyond `due_total`.
+        closed = graded + parent_marked
+        ratio = (closed / due_total) if due_total > 0 else 0.0
+        out.append({
+            "date": d_iso,
+            "due": due_total,
+            "graded": graded,
+            "parent_marked": parent_marked,
+            "pending": pending,
+            "likely_missing": likely_missing,
+            "closed": closed,           # back-compat: graded + parent_marked
+            "ratio": ratio,             # back-compat: closed/due
+        })
     return out
 
 
