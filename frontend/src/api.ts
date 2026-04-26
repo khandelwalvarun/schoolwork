@@ -5,6 +5,32 @@ export type SelfPredictionBand = "high" | "mid" | "low" | string;
 /** Computed once a grade has been linked. */
 export type SelfPredictionOutcome = "matched" | "better" | "worse";
 
+/** Phase 22 — dedup'd school-message group. Each group collapses
+ *  identical announcements across kids, tagged with the union of
+ *  recipients. `llm_summary` is populated lazily on click. */
+export type SchoolMessageGroup = {
+  group_id: string;       // "grpNN"
+  normalized_title: string;
+  title: string | null;
+  title_en: string | null;
+  latest_seen: string | null;
+  latest_date: string | null;
+  member_count: number;
+  kids: Array<{ child_id: number; display_name: string | null }>;
+  llm_summary: string | null;
+  llm_summary_url: string | null;
+  members: Array<{
+    id: number;
+    child_id: number | null;
+    child_name: string | null;
+    title: string | null;
+    title_en: string | null;
+    body: string | null;
+    due_or_date: string | null;
+    first_seen_at: string | null;
+  }>;
+};
+
 export type PortfolioItem = {
   id: number;
   child_id: number;
@@ -563,6 +589,18 @@ export const api = {
     fetchJson<SelfPredictionCalibration>(
       `/api/self-prediction/calibration${childId ? `?child_id=${childId}` : ""}`,
     ),
+  schoolMessagesGrouped: (limit = 50) =>
+    fetchJson<SchoolMessageGroup[]>(`/api/school-messages/grouped?limit=${limit}`),
+  schoolMessageSummarize: (groupId: string) =>
+    fetchJson<{
+      group_id: string;
+      summary: string;
+      url: string | null;
+      members: number;
+      llm_used: boolean;
+    }>(`/api/school-messages/${encodeURIComponent(groupId)}/summarize`, {
+      method: "POST",
+    }),
   portfolioList: (childId: number, subject?: string, topic?: string) => {
     const p = new URLSearchParams({ child_id: String(childId) });
     if (subject) p.set("subject", subject);

@@ -1251,6 +1251,30 @@ async def api_spellbee_download(child_id: int, filename: str):
     return FileResponse(path=str(path), media_type=mime, filename=path.name)
 
 
+@app.get("/api/school-messages/grouped")
+async def api_school_messages_grouped(limit: int = 50) -> list[dict[str, Any]]:
+    """School messages collapsed by normalized title. Each group includes
+    every kid the announcement was tagged for + cached llm_summary if a
+    parent has clicked Summarize on the row."""
+    from .services.school_messages import list_grouped_messages
+    async with get_async_session() as session:
+        return await list_grouped_messages(session, limit=limit)
+
+
+@app.post("/api/school-messages/{group_id}/summarize")
+async def api_school_messages_summarize(group_id: str) -> dict[str, Any]:
+    """Generate (or refresh) the 1-sentence summary for a dedup group
+    via local Ollama. Result is cached on every member row's
+    llm_summary / llm_summary_url so subsequent calls / page loads
+    don't re-call the LLM."""
+    from .services.school_messages import summarize_group
+    async with get_async_session() as session:
+        try:
+            return await summarize_group(session, group_id)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+
+
 @app.get("/api/portfolio")
 async def api_portfolio_list(
     child_id: int | None = None,

@@ -60,6 +60,11 @@ class VeracrossItem(Base):
     self_prediction_outcome: Mapped[str | None] = mapped_column(
         String, nullable=True,
     )
+    # Phase 22 — cached 1-sentence summary (school-message dedup view).
+    # Generated on-demand via local Ollama and shared across every row
+    # in the same dedup group so we don't re-call the LLM per click.
+    llm_summary: Mapped[str | None] = mapped_column(String, nullable=True)
+    llm_summary_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # Professional status tracking (migration 0006)
     parent_status: Mapped[str | None] = mapped_column(String, nullable=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
