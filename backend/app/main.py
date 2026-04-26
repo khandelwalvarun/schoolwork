@@ -974,6 +974,36 @@ async def _grade_pct_for_assignment(session, assignment_id: int) -> float | None
     return None
 
 
+@app.get("/api/daily-brief")
+async def api_daily_brief(
+    child_id: int | None = None,
+    refresh: bool = False,
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """One-paragraph synthesis for the Today page, per kid. Backed by
+    Claude (claude_cli) with a structured data pack — see
+    services/daily_brief.py. Cached in-memory keyed by (child_id, date);
+    pass `refresh=true` to force a re-call of Claude (~30s)."""
+    from sqlalchemy import select
+    from .models import Child
+    from .services.daily_brief import (
+        build_daily_brief, build_daily_brief_for_all,
+        invalidate_daily_brief_cache,
+    )
+    if refresh:
+        invalidate_daily_brief_cache(child_id)
+    async with get_async_session() as session:
+        if child_id is None:
+            briefs = await build_daily_brief_for_all(session)
+            return [b.to_dict() for b in briefs]
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        brief = await build_daily_brief(session, child)
+        return brief.to_dict()
+
+
 @app.get("/api/sentiment-trend")
 async def api_sentiment_trend(
     child_id: int | None = None,

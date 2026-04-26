@@ -28,6 +28,16 @@ async def _run_tier(tier: str, trigger: str) -> dict[str, Any]:
             result.get("items_new", 0), result.get("items_updated", 0),
             result.get("events_produced", 0), result.get("notifications_fired", 0),
         )
+        # Underlying data may have changed → drop cached daily briefs so
+        # the next page load reflects fresh assignments / grades / status.
+        if result.get("status") not in ("skipped_concurrent", "failed"):
+            try:
+                from ..services.daily_brief import invalidate_daily_brief_cache
+                dropped = invalidate_daily_brief_cache()
+                if dropped:
+                    log.info("daily-brief cache invalidated: dropped %d entries", dropped)
+            except Exception:
+                log.exception("couldn't invalidate daily-brief cache")
         return result
     except Exception:
         log.exception("%s sync failed", tier)

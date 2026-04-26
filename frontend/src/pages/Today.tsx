@@ -22,6 +22,7 @@ import { SkeletonHero, SkeletonKidBlock } from "../components/Skeleton";
 import { Button } from "../components/Button";
 import { Sparkline } from "../components/Sparkline";
 import { ShakyTopicsTray } from "../components/ShakyTopicsTray";
+import { DailyBriefCard } from "../components/DailyBriefCard";
 import { formatDate, formatRelative } from "../util/dates";
 
 const BUCKET_DEFS: Record<string, { key: keyof ChildBlock; label: string; tone: "red" | "amber" | "blue" }> = {
@@ -258,6 +259,7 @@ export default function Today() {
         onSync={sync}
         onSendDigest={sendDigest}
       />
+      <DailyBriefCard />
       <ShakyTopicsTray />
 
       {data.children.map((kid) => (

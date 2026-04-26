@@ -45,6 +45,19 @@ export type PortfolioItem = {
   sha256: string;
 };
 
+/** Per-kid 1-paragraph synthesis for the Today page header.
+ *  Built by services/daily_brief.py; cached in-memory keyed by
+ *  (child_id, date). `has_signal=false` → "nothing pressing today"
+ *  flavour (UI may collapse to a quiet line). */
+export type DailyBrief = {
+  child_id: number;
+  child_name: string;
+  generated_for: string;
+  summary: string;
+  has_signal: boolean;
+  pack_row_ids: number[];
+};
+
 export type SentimentPoint = {
   bucket_start: string;
   n: number;
@@ -668,6 +681,15 @@ export const api = {
       `/api/portfolio/${attachmentId}`,
       { method: "DELETE" },
     ),
+  dailyBrief: (childId?: number, refresh = false) => {
+    const p = new URLSearchParams();
+    if (childId) p.set("child_id", String(childId));
+    if (refresh) p.set("refresh", "true");
+    if (childId) {
+      return fetchJson<DailyBrief>(`/api/daily-brief?${p.toString()}`);
+    }
+    return fetchJson<DailyBrief[]>(`/api/daily-brief?${p.toString()}`);
+  },
   sentimentTrend: (childId?: number, windowDays = 28, bucketDays = 7) => {
     const p = new URLSearchParams();
     if (childId) p.set("child_id", String(childId));
