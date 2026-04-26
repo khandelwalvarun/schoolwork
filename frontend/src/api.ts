@@ -728,6 +728,34 @@ export const api = {
       `/api/portfolio/${attachmentId}`,
       { method: "DELETE" },
     ),
+  ptmBrief: (childId: number) =>
+    fetchJson<{
+      child_id: number;
+      child_name: string;
+      class_section: string | null;
+      as_of: string;
+      headline: string;
+      subjects: Array<{
+        name: string;
+        teacher: string | null;
+        n_grades: number;
+        avg_pct: number | null;
+        direction: string;
+        current_state: string;
+        talking_points: string[];
+        questions_for_teacher: string[];
+        evidence_row_ids: number[];
+      }>;
+      general_questions: string[];
+      things_to_ignore: string[];
+      honest_caveat: string;
+      llm_used: boolean;
+    }>(`/api/ptm-brief?child_id=${childId}`),
+  ptmBriefMarkdown: async (childId: number): Promise<string> => {
+    const r = await fetch(`/api/ptm-brief?child_id=${childId}&format=md`);
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return r.text();
+  },
   dailyBrief: (childId?: number, refresh = false) => {
     const p = new URLSearchParams();
     if (childId) p.set("child_id", String(childId));

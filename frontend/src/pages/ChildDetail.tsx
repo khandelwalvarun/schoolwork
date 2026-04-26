@@ -15,6 +15,7 @@ import { SubmissionHeatmap } from "../components/SubmissionHeatmap";
 import { HomeworkLoadChart } from "../components/HomeworkLoadChart";
 import { PatternsCard } from "../components/PatternsCard";
 import { SentimentTrendCard } from "../components/SentimentTrendCard";
+import { PTMBriefPanel } from "../components/PTMBriefPanel";
 import { ExcellenceStatus } from "../api";
 
 export default function ChildDetail() {
@@ -22,6 +23,7 @@ export default function ChildDetail() {
   const childId = Number(id);
   const [audit, setAudit] = useState<Assignment | null>(null);
   const [popover, setPopover] = useState<{ a: Assignment; rect: DOMRect } | null>(null);
+  const [ptmOpen, setPtmOpen] = useState(false);
   const selection = useSelection();
   const prefs = useUiPrefs();
   const { data, isLoading, error } = useQuery({
@@ -70,6 +72,14 @@ export default function ChildDetail() {
             {excellence.above_85_count}/{excellence.grades_count} ≥ 85 %
           </span>
         )}
+        <button
+          type="button"
+          onClick={() => setPtmOpen(true)}
+          className="ml-auto text-xs px-2 py-1 border border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100 rounded"
+          title="Generate a Parent-Teacher Meeting prep brief (Claude, ~30s first time)"
+        >
+          PTM brief
+        </button>
       </div>
 
       <section className="surface mb-6 p-5 flex items-center gap-10">
@@ -193,6 +203,9 @@ export default function ChildDetail() {
         scope={c.display_name}
       />
       {audit && <AuditDrawer a={audit} onClose={() => setAudit(null)} />}
+      {ptmOpen && (
+        <PTMBriefPanel childId={childId} onClose={() => setPtmOpen(false)} />
+      )}
       {popover && (
         <StatusPopover a={popover.a} anchorRect={popover.rect}
           onClose={() => setPopover(null)} />

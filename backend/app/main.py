@@ -912,6 +912,35 @@ async def api_explain_grade_anomaly(
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
 
 
+@app.get("/api/ptm-brief")
+async def api_ptm_brief(
+    child_id: int,
+    refresh: bool = False,
+    format: str = "json",
+) -> dict[str, Any] | str:
+    """Per-kid Parent-Teacher Meeting prep brief. Per-subject talking
+    points + teacher-facing questions, plus cross-subject general
+    questions and a "what to ignore" section. Backed by Claude
+    (claude_cli) on a structured data pack — see services/ptm_brief.py.
+
+    `format=md` returns rendered markdown in `text/markdown` rather
+    than the JSON dict — useful for download/copy."""
+    from sqlalchemy import select
+    from fastapi.responses import PlainTextResponse
+    from .models import Child
+    from .services.ptm_brief import build_ptm_brief, render_markdown
+    async with get_async_session() as session:
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        brief = await build_ptm_brief(session, child)
+    if format == "md":
+        return PlainTextResponse(render_markdown(brief), media_type="text/markdown")
+    return brief.to_dict()
+
+
 @app.get("/api/anomalies")
 async def api_grade_anomalies(child_id: int | None = None) -> list[dict[str, Any]]:
     """List of off-trend grade rows (deterministic detection only —
