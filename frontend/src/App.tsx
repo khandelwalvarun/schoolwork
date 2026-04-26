@@ -18,6 +18,7 @@ import SettingsVeracross from "./pages/SettingsVeracross";
 import AttachmentsPage from "./pages/AttachmentsPage";
 import SpellBee from "./pages/SpellBee";
 import Resources from "./pages/Resources";
+import Library from "./pages/Library";
 import CommandPalette from "./components/CommandPalette";
 import HelpPanel from "./components/HelpPanel";
 import SyncStatusBar from "./components/SyncStatusBar";
@@ -134,6 +135,7 @@ export default function App() {
             <NavItem to="/messages" label="Messages" />
             <NavItem to="/attachments" label="Files" />
             <NavItem to="/resources" label="Resources" />
+            <NavItem to="/library" label="Library" />
             <NavItem to="/spellbee" label="Spelling" />
             <NavItem to="/notes" label="Notes" />
             <NavItem to="/summaries" label="Summaries" />
@@ -174,6 +176,7 @@ function AppRoutes() {
       <Route path="/attachments" element={<AttachmentsPage />} />
       <Route path="/spellbee" element={<SpellBee />} />
       <Route path="/resources" element={<Resources />} />
+      <Route path="/library" element={<Library />} />
       <Route path="/notes" element={<Notes />} />
       <Route path="/summaries" element={<Summaries />} />
       <Route path="/notifications" element={<Notifications />} />

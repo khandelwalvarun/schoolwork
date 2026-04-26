@@ -1607,6 +1607,106 @@ async def api_school_messages_summarize(group_id: str) -> dict[str, Any]:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
 
 
+@app.get("/api/library")
+async def api_library_list(
+    child_id: int | None = None,
+    kind: str | None = None,
+    subject: str | None = None,
+) -> list[dict[str, Any]]:
+    """List parent-uploaded library files. LLM-classified fields fill
+    in shortly after upload (see services/library_classify.py)."""
+    from .services.library import list_library
+    async with get_async_session() as session:
+        return await list_library(
+            session, child_id=child_id, kind=kind, subject=subject,
+        )
+
+
+@app.post("/api/library/upload")
+async def api_library_upload(
+    files: list[UploadFile] = File(...),  # noqa: B008
+    child_id: int | None = None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Upload one or more files. Each is SHA-256 deduplicated; LLM
+    classification fires asynchronously after the response. Allowed
+    types: PDF, text, markdown, image (JPG/PNG/HEIC), DOCX, XLSX.
+    50 MB cap per file."""
+    from .services.library import save_library_upload
+    saved: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    async with get_async_session() as session:
+        for f in files:
+            try:
+                data = await f.read()
+                row = await save_library_upload(
+                    session,
+                    filename=f.filename or "unnamed",
+                    data=data,
+                    child_id=child_id,
+                    note=note,
+                )
+                saved.append({
+                    "id": row.id,
+                    "filename": row.filename,
+                    "sha256": row.sha256,
+                    "size_bytes": row.size_bytes,
+                    "uploaded_at": (
+                        row.uploaded_at.isoformat() if row.uploaded_at else None
+                    ),
+                })
+            except ValueError as e:
+                errors.append({"filename": f.filename or "", "error": str(e)})
+    return {"saved": saved, "errors": errors}
+
+
+@app.get("/api/library/{library_id}/download")
+async def api_library_download(library_id: int):
+    """Stream the file bytes back. Path-traversal guarded by data_root
+    check, same as portfolio + Veracross attachments."""
+    from fastapi.responses import FileResponse
+    from .config import REPO_ROOT
+    from .util import paths as P
+    from .services.library import get_library_row
+    async with get_async_session() as session:
+        row = await get_library_row(session, library_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"library {library_id} not found")
+    path = (REPO_ROOT / row.local_path).resolve()
+    if not path.exists():
+        raise HTTPException(status.HTTP_410_GONE, f"file vanished on disk: {row.local_path}")
+    try:
+        path.relative_to(P.data_root().resolve())
+    except ValueError:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "library path escapes storage root")
+    return FileResponse(
+        path=str(path),
+        media_type=row.mime_type or "application/octet-stream",
+        filename=row.original_filename or row.filename,
+    )
+
+
+@app.post("/api/library/{library_id}/reclassify")
+async def api_library_reclassify(library_id: int) -> dict[str, Any]:
+    """Re-run the LLM classifier on a single library row. Useful when
+    the original auto-fire failed or the LLM has improved."""
+    from .services.library_classify import classify_one
+    async with get_async_session() as session:
+        out = await classify_one(session, library_id)
+    return out
+
+
+@app.delete("/api/library/{library_id}")
+async def api_library_delete(library_id: int) -> dict[str, Any]:
+    """Remove the library row + the file off disk. No-ops on missing."""
+    from .services.library import delete_library
+    async with get_async_session() as session:
+        ok = await delete_library(session, library_id)
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"library {library_id} not found")
+    return {"ok": True, "id": library_id}
+
+
 @app.get("/api/portfolio")
 async def api_portfolio_list(
     child_id: int | None = None,

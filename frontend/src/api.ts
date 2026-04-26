@@ -31,6 +31,28 @@ export type SchoolMessageGroup = {
   }>;
 };
 
+/** Parent-uploaded library file. The LLM classifier fills in `llm_*`
+ *  fields shortly after upload — they may be null on first list. */
+export type LibraryFile = {
+  id: number;
+  filename: string;
+  original_filename: string | null;
+  sha256: string;
+  size_bytes: number | null;
+  mime_type: string | null;
+  child_id: number | null;
+  uploaded_at: string | null;
+  note: string | null;
+  llm_kind: string | null;
+  llm_subject: string | null;
+  llm_class_level: number | null;
+  llm_summary: string | null;
+  llm_keywords: string[];
+  llm_processed_at: string | null;
+  llm_model: string | null;
+  llm_error: string | null;
+};
+
 export type PortfolioItem = {
   id: number;
   child_id: number;
@@ -685,6 +707,49 @@ export const api = {
     }>(`/api/school-messages/${encodeURIComponent(groupId)}/summarize`, {
       method: "POST",
     }),
+  libraryList: (childId?: number, kind?: string, subject?: string) => {
+    const p = new URLSearchParams();
+    if (childId) p.set("child_id", String(childId));
+    if (kind) p.set("kind", kind);
+    if (subject) p.set("subject", subject);
+    return fetchJson<LibraryFile[]>(`/api/library?${p.toString()}`);
+  },
+  libraryUpload: async (
+    files: File[],
+    childId?: number,
+    note?: string,
+  ) => {
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f, f.name);
+    const p = new URLSearchParams();
+    if (childId) p.set("child_id", String(childId));
+    if (note) p.set("note", note);
+    const r = await fetch(
+      `/api/library/upload${p.toString() ? `?${p.toString()}` : ""}`,
+      { method: "POST", body: fd, credentials: "same-origin" },
+    );
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return (await r.json()) as {
+      saved: Array<{
+        id: number;
+        filename: string;
+        sha256: string;
+        size_bytes: number | null;
+        uploaded_at: string | null;
+      }>;
+      errors: Array<{ filename: string; error: string }>;
+    };
+  },
+  libraryReclassify: (libraryId: number) =>
+    fetchJson<Record<string, unknown>>(
+      `/api/library/${libraryId}/reclassify`,
+      { method: "POST" },
+    ),
+  libraryDelete: (libraryId: number) =>
+    fetchJson<{ ok: boolean; id: number }>(
+      `/api/library/${libraryId}`,
+      { method: "DELETE" },
+    ),
   portfolioList: (childId: number, subject?: string, topic?: string) => {
     const p = new URLSearchParams({ child_id: String(childId) });
     if (subject) p.set("subject", subject);
