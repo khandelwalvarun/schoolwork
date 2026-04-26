@@ -304,6 +304,26 @@ async def api_overdue_trend(
         return await Q.get_overdue_trend(session, child_id=child_id, days=days)
 
 
+@app.get("/api/excellence")
+async def api_excellence(child_id: int | None = None) -> list[dict[str, Any]] | dict[str, Any]:
+    """Vasant Valley's Excellence-Award track (≥85 % overall yearly
+    average for 5 consecutive years). Returns the current year's stats
+    per kid: grades_count, above_85_count, current_year_avg, on_track.
+    `below_85_recent` lists the 5 most-recent <85% items for drill-down."""
+    from .services.excellence import status_for_all, status_for_child
+    from sqlalchemy import select
+    from .models import Child
+    async with get_async_session() as session:
+        if child_id is None:
+            return await status_for_all(session)
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        return (await status_for_child(session, child)).to_dict()
+
+
 @app.get("/api/topic-state")
 async def api_topic_state(child_id: int) -> list[dict[str, Any]]:
     """Per-(subject × topic) mastery state for one kid. Driven by

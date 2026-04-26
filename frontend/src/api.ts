@@ -256,6 +256,26 @@ export type ResourcesResponse = {
   }>;
 };
 
+export type ExcellenceStatus = {
+  child_id: number;
+  year_label: string;
+  year_start: string;
+  year_end: string;
+  grades_count: number;
+  above_85_count: number;
+  current_year_avg: number | null;
+  on_track: boolean;
+  above_85_share: number;
+  below_85_recent: Array<{
+    id: number;
+    subject: string | null;
+    title: string | null;
+    graded_date: string;
+    grade_pct: number;
+  }>;
+  threshold: number;
+};
+
 export type TopicStateRow = {
   subject: string;
   topic: string;
@@ -365,6 +385,8 @@ export const api = {
     fetchJson<ResourcesResponse>(`/api/resources${childId ? `?child_id=${childId}` : ""}`),
   topicState: (childId: number) =>
     fetchJson<TopicStateRow[]>(`/api/topic-state?child_id=${childId}`),
+  excellence: (childId: number) =>
+    fetchJson<ExcellenceStatus>(`/api/excellence?child_id=${childId}`),
   spellbeeLists: (childId: number) =>
     fetchJson<SpellBeeList[]>(`/api/spellbee/lists?child_id=${childId}`),
   spellbeeLinkedAssignments: (childId?: number) =>

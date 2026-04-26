@@ -37,8 +37,9 @@ from ..util.time import today_ist
 log = logging.getLogger(__name__)
 
 
-PROFICIENT_PCT = 75.0
-MASTERED_PCT = 85.0
+FAMILIAR_PCT = 70.0
+PROFICIENT_PCT = 80.0
+MASTERED_PCT = 90.0
 WEAK_PCT = 50.0
 DECAY_DAYS = 30
 
@@ -48,7 +49,14 @@ def _classify(
     assignment_dates: list[date],
 ) -> tuple[str, date | None, float | None, int, int]:
     """Compute (state, last_assessed_at, last_score, attempt_count, proficient_count)
-    from a topic's contributing items. Inputs are pre-sorted oldest→newest."""
+    from a topic's contributing items. Inputs are pre-sorted oldest→newest.
+
+    Thresholds are calibrated to Vasant Valley's grading rubric, not Khan's
+    softer Western-school cutoffs:
+        familiar    ≥ 70 %
+        proficient  2× ≥ 80 %
+        mastered    3× ≥ 90 %  (matches the 'Excellence' bar at 85+)
+        weak        < 50 %     → demote one level"""
     today = today_ist()
     attempt_count = len(grades) + len(assignment_dates)
     if attempt_count == 0:
@@ -82,16 +90,15 @@ def _classify(
 
     if last_score < WEAK_PCT:
         # Demote. If they had been proficient before, fall to familiar.
-        # If they had been familiar, fall to attempted.
-        state = "familiar" if any(g[1] >= PROFICIENT_PCT for g in grades) else "attempted"
+        state = "familiar" if any(g[1] >= FAMILIAR_PCT for g in grades) else "attempted"
     elif mastered_run >= 3:
         state = "mastered"
     elif proficient_run >= 2:
         state = "proficient"
-    elif last_score >= PROFICIENT_PCT:
+    elif last_score >= FAMILIAR_PCT:
         state = "familiar"
-    else:  # 50..75
-        state = "familiar"
+    else:  # 50..70
+        state = "attempted"
 
     # Decay: if the topic isn't fresh, downgrade visually.
     if last_assessed and state in ("proficient", "mastered"):

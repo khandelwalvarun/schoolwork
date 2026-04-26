@@ -1618,6 +1618,45 @@ async def rename_spellbee_list(
 
 
 @server.tool()
+async def get_excellence_status(
+    child_id: int | None = None, ctx: Context | None = None,
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """Vasant Valley awards 'Excellence' to students who maintain ≥85 %
+    overall yearly average for 5 consecutive years. This tool shows
+    where the kid currently stands for *this* academic year:
+    grades_count, above_85_count, current_year_avg, on_track flag,
+    and the 5 most-recent <85 % items for drill-down. Pass child_id
+    to limit; otherwise both kids."""
+    started = time.monotonic()
+    err: str | None = None
+    result: Any = None
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services.excellence import status_for_all, status_for_child
+        async with get_async_session() as session:
+            if child_id is None:
+                result = await status_for_all(session)
+            else:
+                child = (
+                    await session.execute(select(Child).where(Child.id == child_id))
+                ).scalar_one_or_none()
+                if child is None:
+                    raise ValueError(f"child {child_id} not found")
+                result = (await status_for_child(session, child)).to_dict()
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_excellence_status",
+            {"child_id": child_id},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
 async def get_topic_state(
     child_id: int, ctx: Context | None = None,
 ) -> list[dict[str, Any]]:

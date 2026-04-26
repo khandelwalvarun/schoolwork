@@ -12,6 +12,7 @@ import { useUiPrefs } from "../components/useUiPrefs";
 import { SkeletonKidBlock } from "../components/Skeleton";
 import { Sparkline } from "../components/Sparkline";
 import { SubmissionHeatmap } from "../components/SubmissionHeatmap";
+import { ExcellenceStatus } from "../api";
 
 export default function ChildDetail() {
   const { id } = useParams();
@@ -23,6 +24,11 @@ export default function ChildDetail() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["child-detail", childId],
     queryFn: () => api.childDetail(childId),
+    enabled: !isNaN(childId),
+  });
+  const { data: excellence } = useQuery<ExcellenceStatus>({
+    queryKey: ["excellence", childId],
+    queryFn: () => api.excellence(childId),
     enabled: !isNaN(childId),
   });
   if (isLoading) {
@@ -44,6 +50,21 @@ export default function ChildDetail() {
         {data.syllabus_cycle && (
           <span className="chip-purple">
             {data.syllabus_cycle.name} · {data.syllabus_cycle.start} → {data.syllabus_cycle.end}
+          </span>
+        )}
+        {excellence && excellence.grades_count > 0 && (
+          <span
+            className={excellence.on_track ? "chip-green" : "chip-amber"}
+            title={
+              `Vasant Valley awards Excellence to students who maintain ≥ 85 % overall yearly avg ` +
+              `for 5 consecutive years.\n` +
+              `${excellence.year_label}: ${excellence.above_85_count}/${excellence.grades_count} grades ≥ 85 %, ` +
+              `avg ${excellence.current_year_avg?.toFixed(1) ?? "—"} %.`
+            }
+          >
+            {excellence.on_track ? "✓" : "⚠"} Excellence track ·{" "}
+            {excellence.current_year_avg?.toFixed(1) ?? "—"} % avg ·{" "}
+            {excellence.above_85_count}/{excellence.grades_count} ≥ 85 %
           </span>
         )}
       </div>
