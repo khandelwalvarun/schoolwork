@@ -23,6 +23,7 @@ import { Button } from "../components/Button";
 import { Sparkline } from "../components/Sparkline";
 import { ShakyTopicsTray } from "../components/ShakyTopicsTray";
 import { DailyBriefCard } from "../components/DailyBriefCard";
+import { SundayBriefPanel } from "../components/SundayBriefPanel";
 import { formatDate, formatRelative } from "../util/dates";
 
 const BUCKET_DEFS: Record<string, { key: keyof ChildBlock; label: string; tone: "red" | "amber" | "blue" }> = {
@@ -234,6 +235,7 @@ export default function Today() {
   const prefs = useUiPrefs();
   const [popover, setPopover] = useState<{ a: Assignment; rect: DOMRect } | null>(null);
   const [audit, setAudit] = useState<Assignment | null>(null);
+  const [sundayOpen, setSundayOpen] = useState(false);
 
   if (isLoading || !prefs.loaded) {
     return (
@@ -260,6 +262,19 @@ export default function Today() {
         onSendDigest={sendDigest}
       />
       <DailyBriefCard />
+      <div className="mb-4 flex items-center gap-2 -mt-2">
+        <button
+          type="button"
+          onClick={() => setSundayOpen(true)}
+          className="text-xs px-2 py-1 border border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100 rounded"
+          title="Open the weekly Sunday brief (Claude, ~30s/kid first time)"
+        >
+          📋 Sunday brief
+        </button>
+        <span className="text-[11px] text-gray-400">
+          4-section weekly synthesis · per kid
+        </span>
+      </div>
       <ShakyTopicsTray />
 
       {data.children.map((kid) => (
@@ -287,6 +302,9 @@ export default function Today() {
           onClose={() => setPopover(null)} onSaved={refresh} />
       )}
       {audit && <AuditDrawer a={audit} onClose={() => setAudit(null)} />}
+      {sundayOpen && (
+        <SundayBriefPanel onClose={() => setSundayOpen(false)} />
+      )}
     </div>
   );
 }

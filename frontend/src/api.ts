@@ -728,6 +728,13 @@ export const api = {
       `/api/portfolio/${attachmentId}`,
       { method: "DELETE" },
     ),
+  sundayBriefMarkdown: async (childId?: number): Promise<string> => {
+    const p = new URLSearchParams({ format: "md" });
+    if (childId) p.set("child_id", String(childId));
+    const r = await fetch(`/api/sunday-brief?${p.toString()}`);
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return r.text();
+  },
   ptmBrief: (childId: number) =>
     fetchJson<{
       child_id: number;

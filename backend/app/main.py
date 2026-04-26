@@ -912,6 +912,42 @@ async def api_explain_grade_anomaly(
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
 
 
+@app.get("/api/sunday-brief")
+async def api_sunday_brief(
+    child_id: int | None = None,
+    format: str = "json",
+) -> Any:
+    """Sunday brief — 4-section synthesis (cycle shape / one ask / teacher
+    asks / what to ignore). Backed by services/sunday_brief.py with
+    Claude as the synthesizer; falls back to rule-driven generation.
+
+    Returns a single brief if child_id is set, else a list. `format=md`
+    returns rendered markdown for the matched scope.
+    """
+    from sqlalchemy import select
+    from fastapi.responses import PlainTextResponse
+    from .models import Child
+    from .services.sunday_brief import (
+        build_brief, build_brief_for_all, render_markdown,
+    )
+    async with get_async_session() as session:
+        if child_id is not None:
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+            if child is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+            brief = await build_brief(session, child)
+            if format == "md":
+                return PlainTextResponse(render_markdown(brief), media_type="text/markdown")
+            return brief.to_dict()
+        briefs = await build_brief_for_all(session)
+        if format == "md":
+            md = "\n\n---\n\n".join(render_markdown(b) for b in briefs)
+            return PlainTextResponse(md, media_type="text/markdown")
+        return [b.to_dict() for b in briefs]
+
+
 @app.get("/api/ptm-brief")
 async def api_ptm_brief(
     child_id: int,
