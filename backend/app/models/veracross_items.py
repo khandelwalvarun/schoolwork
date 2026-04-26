@@ -49,6 +49,17 @@ class VeracrossItem(Base):
     # this; we just weren't persisting it. Stays in original language —
     # `notes_en` carries the translated-to-English copy when needed.
     body: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Phase 17 — Zimmerman self-prediction loop. The kid taps a band before
+    # the test ("high"/"mid"/"low" or numeric "%85"); after the grade lands,
+    # services/self_prediction computes the outcome ("matched"/"better"/
+    # "worse"). Together they drive the calibration sparkline on Detail.
+    self_prediction: Mapped[str | None] = mapped_column(String, nullable=True)
+    self_prediction_set_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    self_prediction_outcome: Mapped[str | None] = mapped_column(
+        String, nullable=True,
+    )
     # Professional status tracking (migration 0006)
     parent_status: Mapped[str | None] = mapped_column(String, nullable=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

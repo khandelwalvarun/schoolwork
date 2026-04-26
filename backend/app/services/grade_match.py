@@ -336,11 +336,57 @@ async def match_unlinked_grades(
     counts = {"linked": 0, "tied": 0, "no_candidates": 0, "all_weak": 0,
               "kept_existing": 0}
     details: list[dict[str, Any]] = []
+    newly_linked: list[tuple[VeracrossItem, int]] = []  # (grade_row, asg_id)
     for g in rows:
         r = await match_one_grade(
             session, g, use_llm_tiebreaker=use_llm_tiebreaker,
         )
         counts[r["action"]] = counts.get(r["action"], 0) + 1
         details.append({"grade_id": g.id, **r})
+        if r["action"] == "linked":
+            newly_linked.append((g, int(r["asg_id"])))
+
+    # Phase 17 — when a grade is newly linked, compute the matching
+    # assignment's self_prediction_outcome if a prediction is recorded.
+    # Idempotent: re-runs of the matcher recompute outcomes for the
+    # currently-linked grade.
+    sp_updates = 0
+    if newly_linked:
+        from .self_prediction import outcome_for as _sp_outcome_for
+        for grade_row, asg_id in newly_linked:
+            asg = (
+                await session.execute(
+                    select(VeracrossItem).where(VeracrossItem.id == asg_id)
+                )
+            ).scalar_one_or_none()
+            if asg is None or asg.self_prediction is None:
+                continue
+            pct = _grade_pct(grade_row)
+            if pct is None:
+                continue
+            new_outcome = _sp_outcome_for(asg.self_prediction, pct)
+            if new_outcome != asg.self_prediction_outcome:
+                asg.self_prediction_outcome = new_outcome
+                sp_updates += 1
+
     await session.commit()
-    return {"counts": counts, "details": details, "started_at": today_ist().isoformat()}
+    return {
+        "counts": counts,
+        "details": details,
+        "started_at": today_ist().isoformat(),
+        "self_prediction_updates": sp_updates,
+    }
+
+
+def _grade_pct(grade_row: VeracrossItem) -> float | None:
+    """Pull grade percentage from the normalized payload. Returns None
+    if missing or unparseable."""
+    import json
+    try:
+        n = json.loads(grade_row.normalized_json or "{}")
+        pct = n.get("grade_pct")
+        if pct is None:
+            return None
+        return float(pct)
+    except Exception:
+        return None

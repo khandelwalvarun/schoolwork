@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Assignment, SpellBeeList, StatusHistoryEntry } from "../api";
 import Attachments from "./Attachments";
+import { SelfPredictionControl } from "./SelfPredictionControl";
 import StatusPopover, { EffectiveStatusChip } from "./StatusPopover";
 import { formatDate, formatDateTime, formatDDMMMYYTime } from "../util/dates";
 
@@ -181,6 +182,8 @@ export default function AuditDrawer({
               )}
             </section>
           )}
+
+          <SelfPredictionControl a={a} />
 
           {a.tags.length > 0 && (
             <section>

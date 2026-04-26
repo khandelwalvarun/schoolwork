@@ -147,6 +147,12 @@ def _item_to_dict(
         "linked_assignment_id": getattr(item, "linked_assignment_id", None),
         "match_confidence": getattr(item, "match_confidence", None),
         "match_method": getattr(item, "match_method", None),
+        "self_prediction": getattr(item, "self_prediction", None),
+        "self_prediction_set_at": (
+            getattr(item, "self_prediction_set_at", None).isoformat()
+            if getattr(item, "self_prediction_set_at", None) else None
+        ),
+        "self_prediction_outcome": getattr(item, "self_prediction_outcome", None),
     }
     if item.normalized_json:
         try:

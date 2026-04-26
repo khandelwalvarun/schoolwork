@@ -798,6 +798,127 @@ async def api_assignment_history(item_id: int, limit: int = 200) -> list[dict[st
         return await ast.get_history(session, item_id, limit=limit)
 
 
+@app.post("/api/assignments/{item_id}/self-prediction")
+async def api_set_self_prediction(
+    item_id: int, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Set / clear the kid's self-prediction band for an assignment.
+    `prediction` ∈ {'high','mid','low','%nn'} or None to clear.
+    If a grade is already linked, the outcome is computed in-line so the
+    UI gets the post-grade state on the same response."""
+    from datetime import datetime, timezone as _tz
+    from sqlalchemy import select
+    from .models import VeracrossItem
+    from .services import self_prediction as SP
+
+    pred_raw = (payload or {}).get("prediction")
+    if pred_raw is not None and not SP.is_valid_prediction(pred_raw):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "prediction must be one of high/mid/low or '%nn' (0..100)",
+        )
+
+    async with get_async_session() as session:
+        item = (
+            await session.execute(
+                select(VeracrossItem).where(VeracrossItem.id == item_id)
+            )
+        ).scalar_one_or_none()
+        if item is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"assignment {item_id} not found")
+
+        if pred_raw is None:
+            item.self_prediction = None
+            item.self_prediction_set_at = None
+            item.self_prediction_outcome = None
+        else:
+            item.self_prediction = pred_raw.strip().lower()
+            item.self_prediction_set_at = datetime.now(tz=_tz.utc)
+            # If a grade is already linked, compute outcome immediately.
+            grade_pct = await _grade_pct_for_assignment(session, item.id)
+            item.self_prediction_outcome = SP.outcome_for(
+                item.self_prediction, grade_pct,
+            )
+        await session.commit()
+        await session.refresh(item)
+
+    return {
+        "item_id": item.id,
+        "self_prediction": item.self_prediction,
+        "self_prediction_set_at": (
+            item.self_prediction_set_at.isoformat()
+            if item.self_prediction_set_at else None
+        ),
+        "self_prediction_outcome": item.self_prediction_outcome,
+    }
+
+
+async def _grade_pct_for_assignment(session, assignment_id: int) -> float | None:
+    """Look up the most recent grade percentage linked to this assignment.
+    Returns None if no grade has been matched yet."""
+    import json
+    from sqlalchemy import select
+    from .models import VeracrossItem
+    rows = (
+        await session.execute(
+            select(VeracrossItem)
+            .where(VeracrossItem.kind == "grade")
+            .where(VeracrossItem.linked_assignment_id == assignment_id)
+            .order_by(VeracrossItem.due_or_date.desc())
+        )
+    ).scalars().all()
+    for r in rows:
+        try:
+            n = json.loads(r.normalized_json or "{}")
+            pct = n.get("grade_pct")
+            if pct is not None:
+                return float(pct)
+        except Exception:
+            continue
+    return None
+
+
+@app.get("/api/self-prediction/calibration")
+async def api_self_prediction_calibration(
+    child_id: int | None = None,
+) -> dict[str, Any]:
+    """Aggregate calibration: how often did the kid's predictions match,
+    overshoot, undershoot? Returns counts + share_matched + the recent
+    rows so the UI can render a sparkline and a list."""
+    from sqlalchemy import select
+    from .models import VeracrossItem
+    from .services import self_prediction as SP
+    async with get_async_session() as session:
+        q = (
+            select(VeracrossItem)
+            .where(VeracrossItem.kind == "assignment")
+            .where(VeracrossItem.self_prediction.isnot(None))
+            .order_by(VeracrossItem.self_prediction_set_at.desc())
+        )
+        if child_id is not None:
+            q = q.where(VeracrossItem.child_id == child_id)
+        items = (await session.execute(q)).scalars().all()
+    rows = [
+        {
+            "item_id": it.id,
+            "child_id": it.child_id,
+            "subject": it.subject,
+            "title": it.title,
+            "self_prediction": it.self_prediction,
+            "self_prediction_outcome": it.self_prediction_outcome,
+            "self_prediction_set_at": (
+                it.self_prediction_set_at.isoformat()
+                if it.self_prediction_set_at else None
+            ),
+        }
+        for it in items
+    ]
+    return {
+        "summary": SP.calibration_summary(rows),
+        "rows": rows,
+    }
+
+
 @app.get("/api/assignments/constants")
 async def api_assignment_constants() -> dict[str, Any]:
     """Surface the fixed enums (parent-statuses + tag vocabulary) to the

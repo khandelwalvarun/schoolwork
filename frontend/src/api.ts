@@ -1,3 +1,29 @@
+/** Phase 17: self-prediction band — three named tiers + a numeric escape
+ *  hatch (`%85`). Anything else is rejected by the API. */
+export type SelfPredictionBand = "high" | "mid" | "low" | string;
+
+/** Computed once a grade has been linked. */
+export type SelfPredictionOutcome = "matched" | "better" | "worse";
+
+export type SelfPredictionCalibration = {
+  summary: {
+    total: number;
+    matched: number;
+    better: number;
+    worse: number;
+    share_matched: number | null;
+  };
+  rows: Array<{
+    item_id: number;
+    child_id: number;
+    subject: string | null;
+    title: string | null;
+    self_prediction: SelfPredictionBand | null;
+    self_prediction_outcome: SelfPredictionOutcome | null;
+    self_prediction_set_at: string | null;
+  }>;
+};
+
 export type Child = {
   id: number;
   display_name: string;
@@ -37,6 +63,11 @@ export type Assignment = {
    *  be multi-paragraph. Empty/null when the planner-only path was the
    *  only source (no detail fetch). */
   body?: string | null;
+  /** Phase 17: Zimmerman self-prediction loop. Bands map to score
+   *  ranges in services/self_prediction.py. */
+  self_prediction?: SelfPredictionBand | null;
+  self_prediction_set_at?: string | null;
+  self_prediction_outcome?: SelfPredictionOutcome | null;
   due_or_date: string | null;
   status: string | null;
   portal_status: string | null;
@@ -489,6 +520,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ since_days: sinceDays, child_id: childId }),
     }),
+  setSelfPrediction: (itemId: number, prediction: string | null) =>
+    fetchJson<{
+      item_id: number;
+      self_prediction: SelfPredictionBand | null;
+      self_prediction_set_at: string | null;
+      self_prediction_outcome: SelfPredictionOutcome | null;
+    }>(`/api/assignments/${itemId}/self-prediction`, {
+      method: "POST",
+      body: JSON.stringify({ prediction }),
+    }),
+  selfPredictionCalibration: (childId?: number) =>
+    fetchJson<SelfPredictionCalibration>(
+      `/api/self-prediction/calibration${childId ? `?child_id=${childId}` : ""}`,
+    ),
   listNotificationSnoozes: () =>
     fetchJson<NotificationSnooze[]>(`/api/notification-snoozes`),
   addNotificationSnooze: (body: {
