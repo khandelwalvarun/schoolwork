@@ -304,6 +304,16 @@ async def api_overdue_trend(
         return await Q.get_overdue_trend(session, child_id=child_id, days=days)
 
 
+@app.get("/api/submission-heatmap")
+async def api_submission_heatmap(
+    child_id: int | None = None, weeks: int = 14
+) -> list[dict[str, Any]]:
+    """Daily completion counts (due/closed/ratio) over the last N weeks.
+    Drives the GitHub-style heatmap on per-kid pages."""
+    async with get_async_session() as session:
+        return await Q.get_submission_heatmap(session, child_id=child_id, weeks=weeks)
+
+
 @app.get("/api/grade-trends/annotate")
 async def api_grade_trends_annotate(child_id: int) -> list[dict[str, Any]]:
     from .services.annotations import annotate_grade_trends

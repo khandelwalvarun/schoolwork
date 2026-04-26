@@ -11,6 +11,7 @@ import { useSelection } from "../components/useSelection";
 import { useUiPrefs } from "../components/useUiPrefs";
 import { SkeletonKidBlock } from "../components/Skeleton";
 import { Sparkline } from "../components/Sparkline";
+import { SubmissionHeatmap } from "../components/SubmissionHeatmap";
 
 export default function ChildDetail() {
   const { id } = useParams();
@@ -66,22 +67,28 @@ export default function ChildDetail() {
         </div>
       </section>
 
-      {data.overdue_sparkline && (
-        <div className="surface mb-6 p-4">
-          <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">14-day overdue backlog</div>
-          <Sparkline
-            points={data.overdue_trend.map((p) => p.count)}
-            tone="red"
-            width={240}
-            height={32}
-            title={`Overdue last 14 days. Now ${data.overdue_trend[data.overdue_trend.length - 1]?.count}.`}
-          />
-          <div className="text-xs text-gray-500 mt-1">
-            {data.overdue_trend[0]?.date} → {data.overdue_trend[data.overdue_trend.length - 1]?.date}
-            &nbsp;· now {data.overdue_trend[data.overdue_trend.length - 1]?.count}
+      <div className="surface mb-6 p-4 grid md:grid-cols-2 gap-6">
+        {data.overdue_sparkline && (
+          <div>
+            <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">14-day overdue backlog</div>
+            <Sparkline
+              points={data.overdue_trend.map((p) => p.count)}
+              tone="red"
+              width={240}
+              height={32}
+              title={`Overdue last 14 days. Now ${data.overdue_trend[data.overdue_trend.length - 1]?.count}.`}
+            />
+            <div className="text-xs text-gray-500 mt-1">
+              {data.overdue_trend[0]?.date} → {data.overdue_trend[data.overdue_trend.length - 1]?.date}
+              &nbsp;· now {data.overdue_trend[data.overdue_trend.length - 1]?.count}
+            </div>
           </div>
+        )}
+        <div>
+          <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Submission pattern · 14 weeks</div>
+          <SubmissionHeatmap childId={childId} weeks={14} />
         </div>
-      )}
+      </div>
 
       <section className="surface mb-6 overflow-hidden">
         {(["overdue", "due_today", "upcoming"] as const).map((bk) => {

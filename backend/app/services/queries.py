@@ -729,6 +729,55 @@ async def get_overdue_trend(
     return out
 
 
+async def get_submission_heatmap(
+    session: AsyncSession,
+    child_id: int | None = None,
+    weeks: int = 14,
+) -> list[dict[str, Any]]:
+    """Daily completion counts over the last N weeks. For each day D in
+    [today-weeks*7+1, today] we count:
+      - `due`:    assignments whose due_or_date == D
+      - `closed`: of those, how many are in a closed parent/portal status
+                  (submitted | graded | done_at_home | dismissed) OR have
+                  parent_marked_submitted_at set on or before D.
+    The returned shape is suitable for a GitHub-style heatmap; the UI tints
+    each cell by `closed / due` (or muted when due == 0).
+
+    Optional `child_id` filters to one kid; otherwise aggregates across both.
+    Returns [{date, due, closed, ratio}] oldest → newest."""
+    today = _today_ist()
+    days = weeks * 7
+    q = select(VeracrossItem).where(VeracrossItem.kind == "assignment")
+    if child_id is not None:
+        q = q.where(VeracrossItem.child_id == child_id)
+    rows = (await session.execute(q)).scalars().all()
+
+    closed_statuses = {"submitted", "graded", "dismissed"}
+    closed_parent = {"submitted", "graded", "done_at_home"}
+
+    out: list[dict[str, Any]] = []
+    for offset in range(days - 1, -1, -1):
+        d = today - timedelta(days=offset)
+        d_iso = d.isoformat()
+        due = 0
+        closed = 0
+        for r in rows:
+            if r.due_or_date != d_iso:
+                continue
+            due += 1
+            is_closed = (
+                (r.status in closed_statuses) or
+                (r.parent_status in closed_parent) or
+                (r.parent_marked_submitted_at is not None
+                 and r.parent_marked_submitted_at.date() <= d)
+            )
+            if is_closed:
+                closed += 1
+        ratio = (closed / due) if due > 0 else 0.0
+        out.append({"date": d_iso, "due": due, "closed": closed, "ratio": ratio})
+    return out
+
+
 def _overdue_sparkline(values: list[int]) -> str:
     if not values:
         return ""
