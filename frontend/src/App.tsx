@@ -22,6 +22,7 @@ import CommandPalette from "./components/CommandPalette";
 import HelpPanel from "./components/HelpPanel";
 import SyncStatusBar from "./components/SyncStatusBar";
 import { Icon } from "./components/Icon";
+import { useListShortcuts } from "./components/useListShortcuts";
 import { api } from "./api";
 
 function NavItem({ to, label, end = true }: { to: string; label: string; end?: boolean }) {
@@ -54,9 +55,20 @@ function ChildNavLink({ id, name }: { id: number; name: string }) {
 
 export default function App() {
   const { data: children } = useQuery({ queryKey: ["children"], queryFn: api.children });
+  // j/k/Enter/x/e/s row shortcuts everywhere lists are visible.
+  useListShortcuts();
 
   return (
     <div className="min-h-screen flex flex-col">
+      {/* WCAG 2.4.1 — skip-to-content for keyboard / screen-reader users.
+          Visible only when focused (sr-only otherwise). */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70]
+                   focus:bg-blue-700 focus:text-white focus:px-3 focus:py-2 focus:rounded"
+      >
+        Skip to content
+      </a>
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
@@ -105,7 +117,7 @@ export default function App() {
       <SyncStatusBar />
       <CommandPalette />
       <HelpPanel />
-      <main className="flex-1 max-w-6xl mx-auto w-full px-5 py-6">
+      <main id="main" className="flex-1 max-w-6xl mx-auto w-full px-5 py-6">
         <Routes>
           <Route path="/" element={<Today />} />
           <Route path="/child/:id" element={<ChildDetail />} />

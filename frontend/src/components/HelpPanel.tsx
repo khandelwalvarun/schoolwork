@@ -62,8 +62,20 @@ export default function HelpPanel() {
           <div>
             <div className="h-section mb-2">Navigation</div>
             <Row label="Open command palette"  keys={["⌘", "K"]} />
+            <Row label="Skip to content"       keys={["Tab"]} />
             <Row label="Close any dialog"      keys={["Esc"]} />
             <Row label="Open this help"        keys={["?"]} />
+          </div>
+
+          <div>
+            <div className="h-section mb-2">List shortcuts (j/k everywhere)</div>
+            <Row label="Next row"               keys={["j"]} />
+            <Row label="Previous row"           keys={["k"]} />
+            <Row label="Open audit drawer"      keys={["Enter"]} />
+            <Row label="Toggle selection"       keys={["x"]} />
+            <Row label="Mark done at home"      keys={["e"]} />
+            <Row label="Snooze (open menu)"     keys={["s"]} />
+            <Row label="Undo last action"       keys={["Z"]} />
           </div>
 
           <div>

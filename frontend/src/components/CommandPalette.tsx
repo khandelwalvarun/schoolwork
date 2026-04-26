@@ -1,29 +1,40 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+/**
+ * CommandPalette — global ⌘K / Ctrl-K palette.
+ *
+ * Built on `cmdk` (the Vercel/Linear/Raycast-style palette primitive).
+ * Gains over the previous home-rolled version:
+ *   - Proper fuzzy match (not just substring)
+ *   - Grouping by category renders headers automatically
+ *   - Each item renders its keyboard shortcut alongside (Superhuman pattern)
+ *   - Built-in a11y: aria-activedescendant, role="combobox" + listbox, etc.
+ *
+ * Items group:
+ *   - Pages       (Today, Messages, Files, Notes, Summaries, Notifs, Settings)
+ *   - Per kid     (Overview / Board / Assignments / Grades / Comments / Syllabus)
+ *   - Actions     (Sync now, Send digest, Recheck syllabus, View sync log)
+ *   - Assignments (jump to one — opens audit drawer via URL hash)
+ *
+ * Recents are not yet persisted — adding that is a small follow-up
+ * (localStorage of last 5 selected ids).
+ */
+import { Command } from "cmdk";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, Assignment, Child } from "../api";
 
-type Command = {
+type Item = {
   id: string;
+  group: "Pages" | "Kids" | "Actions" | "Assignments";
   label: string;
   hint?: string;
   shortcut?: string;
+  keywords?: string[];
   action: () => void;
 };
 
-/** ⌘K / Ctrl-K anywhere opens a fuzzy command + jump palette.
- *
- *   - Pages:        Today, Messages, Files, Notes, Summaries,
- *                   Notifications, Settings, Board/Assignments/Grades
- *                   per child.
- *   - Actions:      Sync now, Send digest, Check syllabus now.
- *   - Assignments:  jump directly to an assignment (opens audit drawer).
- */
 export default function CommandPalette() {
   const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const [activeIdx, setActiveIdx] = useState(0);
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const navigate = useNavigate();
 
   // Global ⌘K / Ctrl-K hotkey
@@ -40,15 +51,7 @@ export default function CommandPalette() {
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
-  useEffect(() => {
-    if (open) {
-      setQ("");
-      setActiveIdx(0);
-      setTimeout(() => inputRef.current?.focus(), 20);
-    }
-  }, [open]);
-
-  const { data: children } = useQuery({
+  const { data: children } = useQuery<Child[]>({
     queryKey: ["children"],
     queryFn: api.children,
     enabled: open,
@@ -59,128 +62,111 @@ export default function CommandPalette() {
     enabled: open,
   });
 
-  const commands = useMemo<Command[]>(() => {
-    const cmds: Command[] = [
-      { id: "nav:today",        label: "Go to: Today",         shortcut: "g t", action: () => navigate("/") },
-      { id: "nav:messages",     label: "Go to: Messages",      action: () => navigate("/messages") },
-      { id: "nav:files",        label: "Go to: Files",         action: () => navigate("/attachments") },
-      { id: "nav:notes",        label: "Go to: Notes",         action: () => navigate("/notes") },
-      { id: "nav:summaries",    label: "Go to: Summaries",     action: () => navigate("/summaries") },
-      { id: "nav:notifs",       label: "Go to: Notifications", action: () => navigate("/notifications") },
-      { id: "nav:settings",     label: "Go to: Settings",      action: () => navigate("/settings") },
+  const items = useMemo<Item[]>(() => {
+    const xs: Item[] = [
+      { id: "p:today",    group: "Pages", label: "Today",         shortcut: "g t", action: () => navigate("/") },
+      { id: "p:messages", group: "Pages", label: "Messages",      shortcut: "g m", action: () => navigate("/messages") },
+      { id: "p:files",    group: "Pages", label: "Files",         action: () => navigate("/attachments") },
+      { id: "p:resources", group: "Pages", label: "Resources",    action: () => navigate("/resources") },
+      { id: "p:spelling", group: "Pages", label: "Spelling",      action: () => navigate("/spellbee") },
+      { id: "p:notes",    group: "Pages", label: "Notes",         action: () => navigate("/notes") },
+      { id: "p:summaries", group: "Pages", label: "Summaries",    action: () => navigate("/summaries") },
+      { id: "p:notifs",   group: "Pages", label: "Notifications", action: () => navigate("/notifications") },
+      { id: "p:settings", group: "Pages", label: "Settings",      action: () => navigate("/settings") },
+      { id: "p:vc",       group: "Pages", label: "Veracross settings", action: () => navigate("/settings/veracross") },
     ];
-    for (const c of (children as Child[] | undefined) || []) {
-      cmds.push({ id: `kid:${c.id}:overview`, label: `Go to: ${c.display_name} · Overview`, hint: c.class_section ?? undefined, action: () => navigate(`/child/${c.id}`) });
-      cmds.push({ id: `kid:${c.id}:board`,    label: `Go to: ${c.display_name} · Board`,    hint: c.class_section ?? undefined, action: () => navigate(`/child/${c.id}/board`) });
-      cmds.push({ id: `kid:${c.id}:asgn`,     label: `Go to: ${c.display_name} · Assignments`, hint: c.class_section ?? undefined, action: () => navigate(`/child/${c.id}/assignments`) });
-      cmds.push({ id: `kid:${c.id}:grades`,   label: `Go to: ${c.display_name} · Grades`,   hint: c.class_section ?? undefined, action: () => navigate(`/child/${c.id}/grades`) });
+    for (const c of children || []) {
+      const tag = c.class_section ? `· ${c.class_section}` : "";
+      xs.push({ id: `k:${c.id}:o`,  group: "Kids", label: `${c.display_name} · Overview`,    hint: tag, action: () => navigate(`/child/${c.id}`) });
+      xs.push({ id: `k:${c.id}:b`,  group: "Kids", label: `${c.display_name} · Board`,       hint: tag, action: () => navigate(`/child/${c.id}/board`) });
+      xs.push({ id: `k:${c.id}:a`,  group: "Kids", label: `${c.display_name} · Assignments`, hint: tag, action: () => navigate(`/child/${c.id}/assignments`) });
+      xs.push({ id: `k:${c.id}:g`,  group: "Kids", label: `${c.display_name} · Grades`,      hint: tag, action: () => navigate(`/child/${c.id}/grades`) });
+      xs.push({ id: `k:${c.id}:c`,  group: "Kids", label: `${c.display_name} · Comments`,    hint: tag, action: () => navigate(`/child/${c.id}/comments`) });
+      xs.push({ id: `k:${c.id}:s`,  group: "Kids", label: `${c.display_name} · Syllabus`,    hint: tag, action: () => navigate(`/child/${c.id}/syllabus`) });
     }
-    cmds.push({ id: "act:sync",      label: "Run: Sync now",            action: () => { api.syncNow(); } });
-    cmds.push({ id: "act:digest",    label: "Run: Send digest now",     action: () => { api.digestRun(); } });
-    cmds.push({ id: "act:syllabus",  label: "Run: Recheck syllabus",    action: () => { fetch("/api/syllabus/check-now", { method: "POST" }); } });
-    cmds.push({ id: "view:sync-log", label: "View: Sync log",           action: () => { document.dispatchEvent(new CustomEvent("pc:synclog:open")); } });
-    cmds.push({ id: "nav:vc-settings", label: "Go to: Veracross settings", action: () => navigate("/settings/veracross") });
-    // Assignments (top 60) — each a jump that opens audit drawer via URL hash
-    const assignments: Assignment[] = [];
+    xs.push({ id: "a:sync",     group: "Actions", label: "Sync now",         shortcut: "s",   action: () => { api.syncNow(); } });
+    xs.push({ id: "a:digest",   group: "Actions", label: "Send digest now", action: () => { api.digestRun(); } });
+    xs.push({ id: "a:syllabus", group: "Actions", label: "Recheck syllabus", action: () => { fetch("/api/syllabus/check-now", { method: "POST" }); } });
+    xs.push({ id: "a:synclog",  group: "Actions", label: "View sync log",    action: () => { document.dispatchEvent(new CustomEvent("pc:synclog:open")); } });
+    xs.push({ id: "a:matchgrades", group: "Actions", label: "Match grades to assignments", action: () => { fetch("/api/match-grades", { method: "POST" }); } });
+
     if (today) {
+      const seen: Assignment[] = [];
       for (const k of today.children) {
-        for (const a of [...k.overdue, ...k.due_today, ...k.upcoming]) {
-          assignments.push(a);
-        }
+        for (const a of [...k.overdue, ...k.due_today, ...k.upcoming]) seen.push(a);
+      }
+      for (const a of seen.slice(0, 80)) {
+        xs.push({
+          id: `as:${a.id}`,
+          group: "Assignments",
+          label: `${a.subject ?? ""} · ${a.title ?? "(untitled)"}`,
+          hint: a.due_or_date ?? undefined,
+          keywords: [a.title_en ?? "", a.subject ?? ""].filter(Boolean),
+          action: () => navigate(`/child/${a.child_id}/assignments#a=${a.id}`),
+        });
       }
     }
-    for (const a of assignments.slice(0, 80)) {
-      cmds.push({
-        id: `asgn:${a.id}`,
-        label: `${a.subject ?? ""}: ${a.title ?? ""}`.trim(),
-        hint: a.due_or_date ?? undefined,
-        action: () => {
-          const kid = a.child_id;
-          navigate(`/child/${kid}/assignments#a=${a.id}`);
-        },
-      });
-    }
-    return cmds;
+    return xs;
   }, [children, today, navigate]);
 
-  // Simple fuzzy-ish filter — substring match, case-insensitive, across label+hint.
-  const filtered = useMemo(() => {
-    if (!q.trim()) return commands.slice(0, 40);
-    const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
-    return commands
-      .map((c) => {
-        const hay = (c.label + " " + (c.hint || "")).toLowerCase();
-        const matches = tokens.every((t) => hay.includes(t));
-        return matches ? c : null;
-      })
-      .filter((x): x is Command => x !== null)
-      .slice(0, 40);
-  }, [q, commands]);
-
-  useEffect(() => { setActiveIdx(0); }, [q]);
-
-  const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActiveIdx((i) => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActiveIdx((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const chosen = filtered[activeIdx];
-      if (chosen) {
-        chosen.action();
-        setOpen(false);
-      }
-    }
-  };
+  const grouped = useMemo(() => {
+    const out: Record<Item["group"], Item[]> = {
+      Pages: [], Kids: [], Actions: [], Assignments: [],
+    };
+    for (const x of items) out[x.group].push(x);
+    return out;
+  }, [items]);
 
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center pt-[15vh]"
+      className="fixed inset-0 z-[60] flex items-start justify-center pt-[12vh]"
       style={{ background: "rgba(0,0,0,0.35)" }}
       onClick={() => setOpen(false)}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-[560px] max-w-[92vw] bg-white rounded-xl shadow-2xl border border-[color:var(--line)] overflow-hidden"
+        className="w-[600px] max-w-[92vw] bg-white rounded-xl shadow-2xl border border-[color:var(--line)] overflow-hidden"
       >
-        <input
-          ref={inputRef}
-          className="w-full px-4 py-3 text-base border-b border-[color:var(--line-soft)] outline-none"
-          placeholder="Search assignments, kids, pages, actions… (⌘K)"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={handleKey}
-        />
-        <div className="max-h-[50vh] overflow-y-auto">
-          {filtered.length === 0 && (
-            <div className="px-4 py-6 text-center text-sm text-gray-500">No matches.</div>
-          )}
-          {filtered.map((c, i) => (
-            <button
-              key={c.id}
-              onClick={() => { c.action(); setOpen(false); }}
-              onMouseEnter={() => setActiveIdx(i)}
-              className={
-                "w-full flex items-center justify-between px-4 py-2 text-left text-sm " +
-                (i === activeIdx ? "bg-[color:var(--accent-bg)] text-gray-900" : "hover:bg-gray-50")
-              }
-            >
-              <span className="truncate">{c.label}</span>
-              <span className="flex items-center gap-2 flex-shrink-0">
-                {c.hint && <span className="text-xs text-gray-400">{c.hint}</span>}
-                {c.shortcut && <span className="kbd">{c.shortcut}</span>}
-              </span>
-            </button>
-          ))}
-        </div>
-        <div className="px-4 py-2 border-t border-[color:var(--line-soft)] text-xs text-gray-500 flex justify-between">
-          <span><span className="kbd">↑</span> <span className="kbd">↓</span> navigate · <span className="kbd">⏎</span> open</span>
-          <span><span className="kbd">esc</span> close</span>
-        </div>
+        <Command label="Command palette" loop>
+          <Command.Input
+            autoFocus
+            placeholder="Search assignments, kids, pages, actions… (⌘K)"
+            className="w-full px-4 py-3 text-base border-b border-[color:var(--line-soft)] outline-none"
+          />
+          <Command.List className="max-h-[55vh] overflow-y-auto">
+            <Command.Empty className="px-4 py-6 text-center text-sm text-gray-500">
+              No matches.
+            </Command.Empty>
+            {(Object.keys(grouped) as Item["group"][]).map((g) =>
+              grouped[g].length === 0 ? null : (
+                <Command.Group key={g} heading={g} className="px-2 pt-2 pb-1 text-[10px] uppercase tracking-wider text-gray-500">
+                  {grouped[g].map((it) => (
+                    <Command.Item
+                      key={it.id}
+                      value={`${it.label} ${it.hint ?? ""} ${(it.keywords ?? []).join(" ")}`}
+                      onSelect={() => { it.action(); setOpen(false); }}
+                      className={
+                        "flex items-center justify-between gap-3 px-3 py-2 text-sm cursor-pointer rounded " +
+                        "data-[selected=true]:bg-[color:var(--accent-bg)] data-[selected=true]:text-gray-900"
+                      }
+                    >
+                      <span className="truncate">{it.label}</span>
+                      <span className="flex items-center gap-2 flex-shrink-0">
+                        {it.hint && <span className="text-xs text-gray-400">{it.hint}</span>}
+                        {it.shortcut && <span className="kbd">{it.shortcut}</span>}
+                      </span>
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              ),
+            )}
+          </Command.List>
+          <div className="px-4 py-2 border-t border-[color:var(--line-soft)] text-xs text-gray-500 flex justify-between">
+            <span><span className="kbd">↑</span> <span className="kbd">↓</span> navigate · <span className="kbd">⏎</span> open</span>
+            <span><span className="kbd">esc</span> close</span>
+          </div>
+        </Command>
       </div>
     </div>
   );

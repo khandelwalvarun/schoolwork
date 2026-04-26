@@ -74,9 +74,11 @@ export function AssignmentRow({
 }) {
   return (
     <div
-      className={"row cursor-pointer " + (isSelected ? "selected" : "")}
+      className={"row cursor-pointer focus:bg-[color:var(--accent-bg)] focus:outline-none " + (isSelected ? "selected" : "")}
       onClick={() => onOpenAudit(a)}
       role="row"
+      tabIndex={0}
+      aria-label={`${a.subject ?? ""}: ${a.title ?? "assignment"}`}
     >
       <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
         <SelectBox

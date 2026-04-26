@@ -98,6 +98,29 @@
     outline-offset: 2px;
     border-radius: 4px;
   }
+  /* WCAG 2.2 — Focus Not Obscured (2.4.11, AA new in 2.2). The sticky
+     header is 56-72 px tall depending on wrap; reserve enough scroll
+     margin so the focus ring is never hidden behind it. */
+  :is(a, button, [role="button"], input, select, textarea, [tabindex="0"]):focus-visible {
+    scroll-margin-top: 80px;
+    scroll-margin-bottom: 80px;
+  }
+  /* WCAG 2.2 — Target Size (2.5.8, AA new in 2.2). Tiny inline icon
+     buttons get a hit-area expander so they're at least 24×24 CSS px
+     even when their visible glyph is smaller. Marker class .tap-area
+     opts in. */
+  .tap-area {
+    position: relative;
+  }
+  .tap-area::after {
+    content: "";
+    position: absolute;
+    inset: 50% 50%;
+    width: 24px;
+    height: 24px;
+    transform: translate(-50%, -50%);
+    /* invisible but interactive */
+  }
 }
 
 @layer utilities {
