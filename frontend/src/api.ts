@@ -728,6 +728,41 @@ export const api = {
     }>(`/api/school-messages/${encodeURIComponent(groupId)}/summarize`, {
       method: "POST",
     }),
+  mindsparkProgress: (childId?: number) =>
+    fetchJson<{
+      kids: Array<{
+        child_id: number;
+        child_name: string;
+        sessions: Array<{
+          id: number;
+          external_id: string;
+          subject: string | null;
+          topic_name: string | null;
+          started_at: string | null;
+          duration_sec: number | null;
+          questions_total: number | null;
+          questions_correct: number | null;
+          accuracy_pct: number | null;
+        }>;
+        topics: Array<{
+          id: number;
+          subject: string;
+          topic_name: string;
+          topic_id: string | null;
+          accuracy_pct: number | null;
+          questions_attempted: number | null;
+          time_spent_sec: number | null;
+          mastery_level: string | null;
+          last_activity_at: string | null;
+          updated_at: string | null;
+        }>;
+      }>;
+    }>(`/api/mindspark/progress${childId ? `?child_id=${childId}` : ""}`),
+  mindsparkSync: (childId?: number) =>
+    fetchJson<Record<string, unknown>>(
+      `/api/mindspark/sync${childId ? `?child_id=${childId}` : ""}`,
+      { method: "POST" },
+    ),
   events: (childId?: number, daysAhead?: number, includePast = true) => {
     const p = new URLSearchParams();
     if (childId) p.set("child_id", String(childId));

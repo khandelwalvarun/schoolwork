@@ -35,6 +35,21 @@ class Settings(BaseSettings):
     veracross_username: str = ""
     veracross_password: str = ""
 
+    # Mindspark — narrow metrics-only scrape, slow rate.
+    # See migration 0020 for the scope contract (no question content;
+    # just per-session aggregates and per-topic progress snapshots).
+    mindspark_enabled: bool = False
+    mindspark_login_url: str = "https://learn.mindspark.in/Student/onboard/login/en"
+    # Credentials are per-kid since each kid has their own Mindspark
+    # account. Set MINDSPARK_USERNAME_<child_id>=… and
+    # MINDSPARK_PASSWORD_<child_id>=… in .env. The
+    # `mindspark_credentials_for(child_id)` helper resolves them.
+    # Slow-rate guards. Don't reduce these without re-confirming the
+    # ToS-risk conversation with the user.
+    mindspark_min_delay_sec: float = Field(default=15.0, ge=5.0)
+    mindspark_max_delay_sec: float = Field(default=30.0, ge=10.0)
+    mindspark_storage_state_dir: str = str(DATA_ROOT / "mindspark_state")
+
     # Scraper pacing
     scraper_min_delay_sec: float = Field(default=3.0, ge=0.5)
     scraper_max_delay_sec: float = Field(default=6.0, ge=0.5)
@@ -113,3 +128,18 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings()  # type: ignore[call-arg]
     return _settings
+
+
+def mindspark_credentials_for(child_id: int) -> tuple[str, str] | None:
+    """Resolve Mindspark credentials for a given child id.
+
+    Reads MINDSPARK_USERNAME_<id> + MINDSPARK_PASSWORD_<id> from env
+    (works around Pydantic's struggle with dynamic key sets). Returns
+    None when either is missing — caller should skip that kid.
+    """
+    import os
+    u = os.environ.get(f"MINDSPARK_USERNAME_{child_id}", "").strip()
+    p = os.environ.get(f"MINDSPARK_PASSWORD_{child_id}", "").strip()
+    if not u or not p:
+        return None
+    return (u, p)

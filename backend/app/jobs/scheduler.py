@@ -13,6 +13,7 @@ from ..config import get_settings
 from ..services.ui_prefs import load_prefs
 from .brief_warmup_job import run_brief_warmup
 from .digest_job import run_daily_digest, run_weekly_digest
+from .mindspark_job import run_mindspark_daily
 from .retention_job import run_daily_retention
 from .sync_job import run_light_sync, run_medium_sync, run_heavy_sync
 
@@ -128,6 +129,19 @@ def start_scheduler() -> AsyncIOScheduler:
         run_brief_warmup,
         CronTrigger(hour=2, minute=0),
         id="brief_warmup",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    # Mindspark daily metrics scrape — 03:30 IST. Only fires when
+    # MINDSPARK_ENABLED=true AND a kid has credentials configured.
+    # Slow-rate enforced inside the scraper (≥15-30s between page
+    # loads). Per-kid serial.
+    s.add_job(
+        run_mindspark_daily,
+        CronTrigger(hour=3, minute=30),
+        id="mindspark_daily",
         replace_existing=True,
         coalesce=True,
         max_instances=1,

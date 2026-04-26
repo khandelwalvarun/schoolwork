@@ -1665,6 +1665,101 @@ async def api_events_extract(days: int = 60, only_new: bool = True) -> dict[str,
         )
 
 
+@app.get("/api/mindspark/progress")
+async def api_mindspark_progress(child_id: int | None = None) -> dict[str, Any]:
+    """Read the cached Mindspark metrics for one (or all) kids — what
+    we already pulled at the last scheduled scrape. Does NOT trigger a
+    new scrape (use POST /api/mindspark/sync for that)."""
+    from sqlalchemy import select
+    from .models import Child, MindsparkSession, MindsparkTopicProgress
+    async with get_async_session() as session:
+        children = (await session.execute(select(Child))).scalars().all()
+        kids: list[dict[str, Any]] = []
+        for c in children:
+            if child_id is not None and c.id != child_id:
+                continue
+            sessions = (
+                await session.execute(
+                    select(MindsparkSession)
+                    .where(MindsparkSession.child_id == c.id)
+                    .order_by(MindsparkSession.started_at.desc())
+                    .limit(20)
+                )
+            ).scalars().all()
+            topics = (
+                await session.execute(
+                    select(MindsparkTopicProgress)
+                    .where(MindsparkTopicProgress.child_id == c.id)
+                    .order_by(MindsparkTopicProgress.subject, MindsparkTopicProgress.topic_name)
+                )
+            ).scalars().all()
+            kids.append({
+                "child_id": c.id,
+                "child_name": c.display_name,
+                "sessions": [
+                    {
+                        "id": s.id,
+                        "external_id": s.external_id,
+                        "subject": s.subject,
+                        "topic_name": s.topic_name,
+                        "started_at": s.started_at.isoformat() if s.started_at else None,
+                        "duration_sec": s.duration_sec,
+                        "questions_total": s.questions_total,
+                        "questions_correct": s.questions_correct,
+                        "accuracy_pct": s.accuracy_pct,
+                    }
+                    for s in sessions
+                ],
+                "topics": [
+                    {
+                        "id": t.id,
+                        "subject": t.subject,
+                        "topic_name": t.topic_name,
+                        "topic_id": t.topic_id,
+                        "accuracy_pct": t.accuracy_pct,
+                        "questions_attempted": t.questions_attempted,
+                        "time_spent_sec": t.time_spent_sec,
+                        "mastery_level": t.mastery_level,
+                        "last_activity_at": (
+                            t.last_activity_at.isoformat() if t.last_activity_at else None
+                        ),
+                        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+                    }
+                    for t in topics
+                ],
+            })
+    return {"kids": kids}
+
+
+@app.post("/api/mindspark/sync")
+async def api_mindspark_sync(child_id: int | None = None) -> dict[str, Any]:
+    """Trigger a Mindspark metrics scrape NOW. Honors the slow-rate
+    guard inside the scraper (≥15-30s between page loads) so this
+    isn't fast even when fired by hand. Pass `child_id` to scope to
+    one kid."""
+    from .scraper.mindspark.sync import run_metrics_all, run_metrics_for
+    from sqlalchemy import select
+    from .models import Child
+    if child_id is None:
+        return await run_metrics_all()
+    async with get_async_session() as session:
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        return await run_metrics_for(session, child)
+
+
+@app.post("/api/mindspark/recon")
+async def api_mindspark_recon(child_id: int) -> dict[str, Any]:
+    """Login + dump dashboard HTML + every XHR response under
+    data/mindspark_recon/<child_id>/<ts>/. Used to refine the parsers
+    against real DOM/JSON. Slow path; returns when the dump completes."""
+    from .scraper.mindspark.sync import run_recon_for
+    return await run_recon_for(child_id)
+
+
 @app.get("/api/library")
 async def api_library_list(
     child_id: int | None = None,

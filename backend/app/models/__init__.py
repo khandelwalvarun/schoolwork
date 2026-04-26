@@ -8,6 +8,7 @@ from .llm_calls import LLMCall
 from .mcp_tool_calls import MCPToolCall
 from .kid_event import KidEvent
 from .library_file import LibraryFile
+from .mindspark import MindsparkSession, MindsparkTopicProgress
 from .notes import ParentNote
 from .notification_snooze import NotificationSnooze
 from .notifications import Notification
@@ -29,6 +30,8 @@ __all__ = [
     "LLMCall",
     "LibraryFile",
     "MCPToolCall",
+    "MindsparkSession",
+    "MindsparkTopicProgress",
     "Notification",
     "NotificationSnooze",
     "ParentNote",
