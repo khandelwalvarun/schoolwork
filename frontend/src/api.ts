@@ -5,6 +5,21 @@ export type SelfPredictionBand = "high" | "mid" | "low" | string;
 /** Computed once a grade has been linked. */
 export type SelfPredictionOutcome = "matched" | "better" | "worse";
 
+export type SentimentPoint = {
+  bucket_start: string;
+  n: number;
+  mean_score: number | null;
+};
+
+export type SentimentTrend = {
+  points: SentimentPoint[];
+  total_comments: number;
+  window_days: number;
+  bucket_days: number;
+  direction: "rising" | "falling" | "flat" | null;
+  honest_caveat: string;
+};
+
 export type SelfPredictionCalibration = {
   summary: {
     total: number;
@@ -534,6 +549,13 @@ export const api = {
     fetchJson<SelfPredictionCalibration>(
       `/api/self-prediction/calibration${childId ? `?child_id=${childId}` : ""}`,
     ),
+  sentimentTrend: (childId?: number, windowDays = 28, bucketDays = 7) => {
+    const p = new URLSearchParams();
+    if (childId) p.set("child_id", String(childId));
+    p.set("window_days", String(windowDays));
+    p.set("bucket_days", String(bucketDays));
+    return fetchJson<SentimentTrend>(`/api/sentiment-trend?${p.toString()}`);
+  },
   listNotificationSnoozes: () =>
     fetchJson<NotificationSnooze[]>(`/api/notification-snoozes`),
   addNotificationSnooze: (body: {

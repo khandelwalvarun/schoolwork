@@ -14,6 +14,7 @@ import { Sparkline } from "../components/Sparkline";
 import { SubmissionHeatmap } from "../components/SubmissionHeatmap";
 import { HomeworkLoadChart } from "../components/HomeworkLoadChart";
 import { PatternsCard } from "../components/PatternsCard";
+import { SentimentTrendCard } from "../components/SentimentTrendCard";
 import { ExcellenceStatus } from "../api";
 
 export default function ChildDetail() {
@@ -119,6 +120,10 @@ export default function ChildDetail() {
 
       <div className="mb-6">
         <PatternsCard childId={childId} />
+      </div>
+
+      <div className="mb-6">
+        <SentimentTrendCard childId={childId} />
       </div>
 
       <section className="surface mb-6 overflow-hidden">

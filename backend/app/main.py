@@ -26,6 +26,7 @@ from .scraper.sync import run_sync
 from .services import queries as Q
 from .services.briefing import generate_and_store_digest
 from .services.render import render_for_digest
+from .util.time import today_ist
 
 settings = get_settings()
 
@@ -876,6 +877,83 @@ async def _grade_pct_for_assignment(session, assignment_id: int) -> float | None
         except Exception:
             continue
     return None
+
+
+@app.get("/api/sentiment-trend")
+async def api_sentiment_trend(
+    child_id: int | None = None,
+    window_days: int = 28,
+    bucket_days: int = 7,
+) -> dict[str, Any]:
+    """Rolling sentiment trend across the last N days of teacher comments.
+
+    Honest framing: an offline lexicon classifier (services/sentiment.py)
+    runs over each comment's text — no LLM, no remote calls. We surface
+    the *trend* (per-week mean), never a raw score, never a single
+    comment. The pedagogy synthesis flagged this: per-comment sentiment
+    is noisy by nature; aggregating by week and showing the direction
+    is the responsible disclosure.
+
+    Returns:
+      points  — list of {bucket_start, n, mean_score} (n=0 when the
+                bucket had no comments; mean_score=None then)
+      total_comments  — total comments in the window
+      direction        — "rising" | "falling" | "flat" | None
+                         derived from the slope of mean_scores
+    """
+    from datetime import datetime, timezone as _tz, timedelta
+    from sqlalchemy import select
+    from .models import VeracrossItem
+    from .services.sentiment import trend_points
+    from .services.grade_match import _parse_loose_date
+
+    today = today_ist()
+    since = today - timedelta(days=window_days)
+    async with get_async_session() as session:
+        q = (
+            select(VeracrossItem)
+            .where(VeracrossItem.kind == "comment")
+            .order_by(VeracrossItem.due_or_date.desc())
+        )
+        if child_id is not None:
+            q = q.where(VeracrossItem.child_id == child_id)
+        rows = (await session.execute(q)).scalars().all()
+
+    items: list[tuple[Any, str]] = []
+    for r in rows:
+        d = _parse_loose_date(r.due_or_date)
+        if d is None or d < since:
+            continue
+        text = (r.title_en or r.title or r.body or "").strip()
+        if text:
+            items.append((d, text))
+
+    points = trend_points(
+        items, today=today, window_days=window_days, bucket_days=bucket_days,
+    )
+    # Direction = sign of (last non-null point − first non-null point).
+    means = [p["mean_score"] for p in points if p.get("mean_score") is not None]
+    direction: str | None = None
+    if len(means) >= 2:
+        delta = means[-1] - means[0]  # type: ignore
+        if delta > 0.15:
+            direction = "rising"
+        elif delta < -0.15:
+            direction = "falling"
+        else:
+            direction = "flat"
+
+    return {
+        "points": points,
+        "total_comments": len(items),
+        "window_days": window_days,
+        "bucket_days": bucket_days,
+        "direction": direction,
+        "honest_caveat": (
+            "Per-comment sentiment is noisy; we surface only the rolling "
+            "trend across the window. Empty buckets are gaps, not zeros."
+        ),
+    }
 
 
 @app.get("/api/self-prediction/calibration")
