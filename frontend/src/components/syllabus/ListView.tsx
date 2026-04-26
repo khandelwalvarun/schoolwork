@@ -36,6 +36,8 @@ type Props = {
   todayISO: string;
   filters: SyllabusFilterState;
   onTopicClick: (subject: string, topic: string) => void;
+  isSubjectHidden: (subject: string) => boolean;
+  onHideSubject: (subject: string) => void;
 };
 
 export function ListView({
@@ -45,6 +47,8 @@ export function ListView({
   todayISO,
   filters,
   onTopicClick,
+  isSubjectHidden,
+  onHideSubject,
 }: Props) {
   const stateBy = useMemo(() => {
     const m = new Map<string, TopicStateRow>();
@@ -57,8 +61,10 @@ export function ListView({
     for (const c of syllabus.cycles) {
       for (const subj of Object.keys(c.topics_by_subject || {})) s.add(subj);
     }
-    return Array.from(s).sort();
-  }, [syllabus]);
+    return Array.from(s)
+      .filter((subj) => !isSubjectHidden(subj))
+      .sort();
+  }, [syllabus, isSubjectHidden]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -66,7 +72,7 @@ export function ListView({
         const lc = langOf(subject);
         const langMeta = lc ? LANG_PILL[lc] : null;
         return (
-          <section key={subject} className="surface p-3">
+          <section key={subject} className="surface p-3 group">
             <div className="flex items-center gap-2 mb-2">
               <span className="font-semibold text-gray-800">{subject}</span>
               {langMeta && (
@@ -76,6 +82,15 @@ export function ListView({
                   {langMeta.label}
                 </span>
               )}
+              <button
+                type="button"
+                onClick={() => onHideSubject(subject)}
+                title={`Hide "${subject}" — restore from Settings`}
+                aria-label={`Hide ${subject}`}
+                className="ml-auto opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 text-base leading-none transition-opacity"
+              >
+                ×
+              </button>
             </div>
 
             <div className="space-y-3">

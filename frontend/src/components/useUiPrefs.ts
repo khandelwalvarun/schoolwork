@@ -15,6 +15,11 @@ export type UiPrefs = {
    *  Per-item dismiss persists here so the same rows don't keep
    *  reappearing on every page load. */
   shaky_dismissed?: Record<string, string[]>;
+  /** Per-kid hidden subjects on the Syllabus page: childId → ["English", …].
+   *  Different kids take different subject sets, so the page filters out
+   *  the ones the parent hides. By design no "show hidden" toggle on the
+   *  syllabus surface itself; restore via Settings. */
+  hidden_subjects?: Record<string, string[]>;
 };
 
 const DEFAULT: UiPrefs = {
@@ -26,6 +31,7 @@ const DEFAULT: UiPrefs = {
   sync_window_end_hour: 22,
   nav_layout: "horizontal",
   shaky_dismissed: {},
+  hidden_subjects: {},
 };
 
 /** Client-side wrapper around GET/PUT /api/ui-prefs.
@@ -60,6 +66,7 @@ export function useUiPrefs() {
           sync_window_end_hour: p.sync_window_end_hour ?? 22,
           nav_layout: p.nav_layout ?? "horizontal",
           shaky_dismissed: p.shaky_dismissed ?? {},
+          hidden_subjects: p.hidden_subjects ?? {},
         });
         setLoaded(true);
       })
@@ -95,6 +102,9 @@ export function useUiPrefs() {
         shaky_dismissed: patch.shaky_dismissed !== undefined
           ? patch.shaky_dismissed
           : prev.shaky_dismissed,
+        hidden_subjects: patch.hidden_subjects !== undefined
+          ? patch.hidden_subjects
+          : prev.hidden_subjects,
       };
       persist(next);
       return next;
@@ -145,6 +155,48 @@ export function useUiPrefs() {
     [update],
   );
 
+  const isSubjectHidden = useCallback(
+    (childId: number, subject: string): boolean => {
+      const list = prefs.hidden_subjects?.[String(childId)] ?? [];
+      return list.includes(subject);
+    },
+    [prefs.hidden_subjects],
+  );
+
+  const hideSubject = useCallback(
+    (childId: number, subject: string) => {
+      const cur = prefs.hidden_subjects ?? {};
+      const list = new Set(cur[String(childId)] ?? []);
+      list.add(subject);
+      update({
+        hidden_subjects: { ...cur, [String(childId)]: [...list] },
+      });
+    },
+    [prefs.hidden_subjects, update],
+  );
+
+  const unhideSubject = useCallback(
+    (childId: number, subject: string) => {
+      const cur = prefs.hidden_subjects ?? {};
+      const list = new Set(cur[String(childId)] ?? []);
+      list.delete(subject);
+      update({
+        hidden_subjects: { ...cur, [String(childId)]: [...list] },
+      });
+    },
+    [prefs.hidden_subjects, update],
+  );
+
+  const restoreAllSubjectsForChild = useCallback(
+    (childId: number) => {
+      const cur = prefs.hidden_subjects ?? {};
+      const next = { ...cur };
+      delete next[String(childId)];
+      update({ hidden_subjects: next });
+    },
+    [prefs.hidden_subjects, update],
+  );
+
   return {
     prefs,
     loaded,
@@ -155,5 +207,9 @@ export function useUiPrefs() {
     bucketOrderFor,
     setKidOrder,
     setShakyDismissed,
+    isSubjectHidden,
+    hideSubject,
+    unhideSubject,
+    restoreAllSubjectsForChild,
   };
 }

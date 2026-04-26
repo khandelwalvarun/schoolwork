@@ -29,6 +29,7 @@ type Props = {
   filters: SyllabusFilterState;
   onTopicClick: (subject: string, topic: string) => void;
   onSwitchTab: (tab: "subjects" | "cycle" | "list") => void;
+  isSubjectHidden: (subject: string) => boolean;
 };
 
 function daysBetween(a: string, b: string): number {
@@ -77,6 +78,7 @@ export function CycleView({
   filters,
   onTopicClick,
   onSwitchTab,
+  isSubjectHidden,
 }: Props) {
   const stateBy = useMemo(() => {
     const m = new Map<string, TopicStateRow>();
@@ -114,12 +116,15 @@ export function CycleView({
   const daysLeft = Math.max(0, daysBetween(todayISO, cycle.end));
   const pct = totalDays > 0 ? Math.min(100, (dayN / totalDays) * 100) : 0;
 
-  const thisWeek = topicsForThisWeek(cycle, todayISO);
+  const thisWeek = topicsForThisWeek(cycle, todayISO).filter(
+    (it) => !isSubjectHidden(it.subject),
+  );
 
   // Decaying list — top-5 across all subjects, sorted by age × score.
   const decaying = useMemo(() => {
     return states
       .filter((r) => r.state === "decaying")
+      .filter((r) => !isSubjectHidden(r.subject))
       .filter((r) =>
         filterTopic(filters, langOf, r.subject, r.state, null),
       )
@@ -133,7 +138,7 @@ export function CycleView({
         return ageB - ageA;
       })
       .slice(0, 5);
-  }, [states, todayISO, filters]);
+  }, [states, todayISO, filters, isSubjectHidden]);
 
   // Coverage progress per subject in the current cycle.
   const coverage = useMemo(() => {
@@ -147,6 +152,7 @@ export function CycleView({
       uncovered: number;
     }> = [];
     for (const [subj, topics] of Object.entries(cycle.topics_by_subject || {})) {
+      if (isSubjectHidden(subj)) continue;
       const ts = cycle.topic_status?.[subj] || {};
       let covered = 0,
         inProgress = 0,
@@ -171,7 +177,7 @@ export function CycleView({
     }
     out.sort((a, b) => a.subject.localeCompare(b.subject));
     return out;
-  }, [cycle]);
+  }, [cycle, isSubjectHidden]);
 
   return (
     <div className="space-y-4">

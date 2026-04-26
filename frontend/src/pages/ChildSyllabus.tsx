@@ -23,6 +23,7 @@ import { api } from "../api";
 import ChildHeader from "../components/ChildHeader";
 import { TopicDetailPanel } from "../components/TopicDetailPanel";
 import { MasteryLegend } from "../components/MasteryLegend";
+import { useUiPrefs } from "../components/useUiPrefs";
 import {
   emptyFilters,
   SyllabusFilters,
@@ -71,6 +72,16 @@ export default function ChildSyllabus() {
     subject: string;
     topic: string;
   } | null>(null);
+
+  const { isSubjectHidden, hideSubject } = useUiPrefs();
+  const isHidden = useMemo(
+    () => (subj: string) => isSubjectHidden(childId, subj),
+    [isSubjectHidden, childId],
+  );
+  const handleHide = useMemo(
+    () => (subj: string) => hideSubject(childId, subj),
+    [hideSubject, childId],
+  );
 
   const todayISO = useMemo(() => todayISOInIST(), []);
 
@@ -182,6 +193,8 @@ export default function ChildSyllabus() {
           todayISO={todayISO}
           filters={filters}
           onTopicClick={(s, t) => setOpenTopic({ subject: s, topic: t })}
+          isSubjectHidden={isHidden}
+          onHideSubject={handleHide}
         />
       )}
       {tab === "cycle" && (
@@ -192,6 +205,7 @@ export default function ChildSyllabus() {
           filters={filters}
           onTopicClick={(s, t) => setOpenTopic({ subject: s, topic: t })}
           onSwitchTab={setTab}
+          isSubjectHidden={isHidden}
         />
       )}
       {tab === "list" && (
@@ -202,6 +216,8 @@ export default function ChildSyllabus() {
           todayISO={todayISO}
           filters={filters}
           onTopicClick={(s, t) => setOpenTopic({ subject: s, topic: t })}
+          isSubjectHidden={isHidden}
+          onHideSubject={handleHide}
         />
       )}
 

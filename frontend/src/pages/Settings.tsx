@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useUiPrefs } from "../components/useUiPrefs";
 import { api } from "../api";
 
@@ -185,12 +186,83 @@ function NavLayoutToggle() {
   );
 }
 
+/** Lists every subject the parent has hidden per kid, with one-click
+ *  restore. The syllabus page itself has no "show hidden" toggle by
+ *  design — this is the dedicated escape hatch. */
+function HiddenSubjectsManager() {
+  const { prefs, unhideSubject, restoreAllSubjectsForChild } = useUiPrefs();
+  const { data: kids } = useQuery({
+    queryKey: ["children"],
+    queryFn: () => api.children(),
+  });
+
+  const map = prefs.hidden_subjects ?? {};
+  const anyHidden = Object.values(map).some((arr) => (arr ?? []).length > 0);
+
+  return (
+    <section className="surface p-5 mb-4">
+      <div className="font-semibold text-lg mb-1">Hidden subjects</div>
+      <div className="text-sm text-gray-600 mb-3">
+        Subjects you hid on the syllabus page, per kid. Click × to restore.
+        Hidden subjects don't appear anywhere on the syllabus surface.
+      </div>
+      {!anyHidden ? (
+        <div className="text-sm text-gray-500 italic">
+          No subjects hidden.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {(kids ?? []).map((k) => {
+            const list = (map[String(k.id)] ?? []).slice().sort();
+            if (list.length === 0) return null;
+            return (
+              <div key={k.id}>
+                <div className="text-xs uppercase tracking-wider text-gray-500 mb-1 flex items-center gap-2">
+                  <span>{k.display_name}</span>
+                  <button
+                    type="button"
+                    onClick={() => restoreAllSubjectsForChild(k.id)}
+                    className="text-blue-700 hover:underline normal-case tracking-normal text-[11px]"
+                  >
+                    restore all
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {list.map((s) => (
+                    <span
+                      key={s}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-gray-300 bg-white text-sm"
+                    >
+                      {s}
+                      <button
+                        type="button"
+                        onClick={() => unhideSubject(k.id, s)}
+                        className="text-gray-400 hover:text-red-600 text-base leading-none"
+                        aria-label={`Restore ${s}`}
+                        title={`Restore ${s}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+
 export default function Settings() {
   return (
     <div>
       <h2 className="text-2xl font-bold mb-4">Settings</h2>
       <NavLayoutToggle />
       <SyncCadence />
+      <HiddenSubjectsManager />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Link to="/settings/veracross" className="surface p-5 hover:bg-gray-50">
           <div className="font-semibold text-lg">Veracross login</div>
