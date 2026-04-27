@@ -3716,6 +3716,169 @@ async def upload_spellbee_file(
         )
 
 
+# ───────────────────────── Schoolwork classifier + scheduler + syllabus validator ─────────────────────────
+
+@server.tool()
+async def classify_schoolwork_kind(
+    item_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Classify a single assignment as new_work / review / test / project /
+    presentation / submission / other based on its title + body.
+    Deterministic keyword pass — no LLM call. Returns
+    {item_id, kind, confidence, reasoning, matched_keywords}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import VeracrossItem
+        from ..services.schoolwork_kind import classify
+        async with get_async_session() as session:
+            item = (
+                await session.execute(
+                    select(VeracrossItem).where(VeracrossItem.id == item_id)
+                )
+            ).scalar_one_or_none()
+        if item is None:
+            raise ValueError(f"item {item_id} not found")
+        kr = classify(item.title or item.title_en, item.body or item.notes_en)
+        result = {
+            "item_id": item.id,
+            "title": item.title,
+            "subject": item.subject,
+            "due_or_date": item.due_or_date,
+            **kr.to_dict(),
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "classify_schoolwork_kind", {"item_id": item_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_schedule_for_date(
+    date_iso: str,
+    subject: str | None = None,
+    child_id: int | None = None,
+    classify_kinds: bool = True,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Every assignment due on a specific calendar date, optionally
+    filtered to one subject and/or one kid. With `classify_kinds=true`
+    (default), each row is tagged with its schoolwork_kind so the caller
+    can distinguish "Wednesday's social studies — review of Chapter 4"
+    from "Wednesday's social studies — new chapter".
+
+    Args:
+      date_iso     ISO YYYY-MM-DD
+      subject      optional — exact subject (cleaned, e.g. "Social Studies")
+      child_id     optional — restrict to one kid
+      classify_kinds  default true; pass false for raw rows
+
+    Returns {date, count, by_subject, items}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from datetime import date as _date
+        from sqlalchemy import or_, select
+        from ..models import VeracrossItem
+        from ..services.queries import _item_to_dict, _child_class_levels
+        from ..services.schoolwork_kind import classify_batch
+        try:
+            target = _date.fromisoformat(date_iso)
+        except ValueError:
+            raise ValueError(f"date_iso must be YYYY-MM-DD, got {date_iso!r}")
+        async with get_async_session() as session:
+            q = (
+                select(VeracrossItem)
+                .where(VeracrossItem.kind == "assignment")
+                .where(VeracrossItem.due_or_date == target.isoformat())
+                .order_by(VeracrossItem.subject, VeracrossItem.title)
+            )
+            if child_id is not None:
+                q = q.where(VeracrossItem.child_id == child_id)
+            if subject:
+                q = q.where(
+                    or_(
+                        VeracrossItem.subject == subject,
+                        VeracrossItem.subject.like(f"% {subject}"),
+                    )
+                )
+            class_levels = await _child_class_levels(session)
+            items = (await session.execute(q)).scalars().all()
+            rows = [
+                _item_to_dict(r, class_level=class_levels.get(r.child_id))
+                for r in items
+            ]
+        if classify_kinds:
+            rows = classify_batch(rows)
+        by_subject: dict[str, int] = {}
+        for r in rows:
+            s = r.get("subject") or "—"
+            by_subject[s] = by_subject.get(s, 0) + 1
+        result = {
+            "date": target.isoformat(),
+            "weekday": target.strftime("%A"),
+            "count": len(rows),
+            "by_subject": by_subject,
+            "items": rows,
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_schedule_for_date",
+            {"date_iso": date_iso, "subject": subject, "child_id": child_id,
+             "classify_kinds": classify_kinds},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def validate_syllabus(
+    class_level: int | None = None, ctx: Context | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """Run structural checks on a class's syllabus JSON file. Catches:
+      - cycle date overlaps + gaps + unsorted-by-start
+      - non-ISO dates / malformed cycle entries
+      - empty subjects / empty topic lists
+      - duplicate topics within a subject
+      - leading/trailing whitespace on topic strings
+      - mojibake markers (likely UTF-8 round-trip bugs)
+      - filename ↔ JSON class_level mismatch
+
+    Pass `class_level` for one report; omit to validate every syllabus
+    file under data/syllabus/. Returns
+      {class_level, file_path, file_exists, issues, summary, ok}.
+    Each issue is {severity (error/warning/info), where, message}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: Any = None
+    try:
+        from ..services.syllabus_validate import validate, validate_all
+        if class_level is None:
+            result = validate_all()
+        else:
+            result = validate(class_level).to_dict()
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "validate_syllabus", {"class_level": class_level},
+            None, err, started, _client_id(ctx),
+        )
+
+
 def run_stdio() -> None:
     """Entry point for `schoolwork-mcp` — stdio transport, for Claude Desktop/Code."""
     asyncio.run(server.run_stdio_async())
