@@ -26,16 +26,35 @@ settings = get_settings()
 server = FastMCP(
     name="parent-cockpit",
     instructions=(
-        "Parent-facing tracker for Vasant Valley School's Veracross portal. "
-        "Use list_children first. For backlog questions use get_overdue / get_due_today / "
-        "get_upcoming. For free-form questions across any unstructured content "
-        "(teacher comments, school messages, articles, parent notes) use `ask`. "
-        "To change an assignment's parent-side state (mark done-at-home, snooze, "
-        "priority, tags, notes) use update_assignment — call get_assignment_constants "
-        "first to see the allowed parent_status enum + tag vocabulary. "
-        "For files use list_attachments; for Spelling Bee word lists use list_spellbee_lists. "
-        "For sync observability use get_sync_runs + get_sync_run_log. "
-        "Numbers and dates are authoritative; do not invent data not returned by a tool."
+        "Parent-facing tracker for Vasant Valley School's Veracross portal "
+        "plus Ei Mindspark, parent-uploaded library files, kid events, "
+        "syllabus state, and an audit-logged action layer.\n\n"
+        "Start with list_children. Then pick a tool by domain:\n"
+        "  • Backlog: get_overdue / get_due_today / get_upcoming / list_assignments\n"
+        "  • Today's surface: get_today / get_daily_brief\n"
+        "  • Cross-cutting questions: ask (FTS5 over comments/messages/notes/articles)\n"
+        "  • Grades: get_grades / get_grade_trends / annotate_grade_trends / get_anomalies / explain_grade_anomaly\n"
+        "  • Subject mastery: get_topic_state / get_topic_detail / get_shaky_topics / get_excellence_status\n"
+        "  • Patterns: get_patterns / get_homework_load / get_sentiment_trend / get_submission_heatmap\n"
+        "  • Briefs: get_sunday_brief / get_ptm_brief (Claude-driven, cached nightly at 02:00 IST)\n"
+        "  • Worth-a-chat (parent's PTM list): get_worth_a_chat / set_worth_a_chat\n"
+        "  • Assignment state changes: update_assignment / mark_assignment_submitted / set_self_prediction\n"
+        "    — call get_assignment_constants first for the parent_status enum + tag vocabulary\n"
+        "  • Self-prediction calibration: get_self_prediction_calibration\n"
+        "  • Files (list): list_attachments / list_spellbee_lists / list_resources / list_library / list_portfolio\n"
+        "  • Files (read content): read_attachment / read_spellbee_file / read_resource_file / read_library_file / read_portfolio_file — capped at 5 MB; text returns UTF-8, binary returns base64\n"
+        "  • Files (path): resolve_*_path (for local clients with disk access)\n"
+        "  • Events (camps, auditions, exams, holidays): list_events / upsert_event / delete_event / extract_events_from_messages\n"
+        "  • Library uploads: list_library / reclassify_library_file / delete_library_file\n"
+        "  • Mindspark: get_mindspark_progress / trigger_mindspark_sync\n"
+        "  • School messages: get_messages / get_school_messages_grouped / summarize_school_message_group\n"
+        "  • Notifications: get_notifications / replay_notifications / list_notification_snoozes / add_notification_snooze\n"
+        "  • Sync observability: get_sync_runs / get_sync_run_log / get_concurrency_check / trigger_sync\n"
+        "  • Channel config: get_channel_config / update_channel_config / test_channel\n"
+        "  • Syllabus: get_syllabus / set_syllabus_cycle_override / set_syllabus_topic_status / trigger_syllabus_check\n"
+        "  • Audit: get_assignment_history / get_mcp_activity\n\n"
+        "Numbers and dates are authoritative; do not invent data not returned by a tool. "
+        "Every tool call is logged to mcp_tool_calls."
     ),
 )
 
@@ -1930,6 +1949,1508 @@ async def get_homework_load(
                 "extra_minutes_per_item": extra_minutes_per_item,
             },
             None, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── Worth-a-chat (PTM list) ─────────────────────────
+
+@server.tool()
+async def get_worth_a_chat(
+    child_id: int | None = None,
+    kind: str | None = None,
+    limit: int = 200,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Items the parent flagged as 'worth a chat' for the next parent-teacher
+    meeting. Spans every kind (assignments, grades, comments, school
+    messages). Each row carries `discuss_with_teacher_at` (ISO timestamp)
+    + `discuss_with_teacher_note` (the parent's optional reason). Newest
+    flag first. Use this to summarise what the parent wants to raise."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_worth_a_chat(
+                session, child_id=child_id, kind=kind, limit=limit,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_worth_a_chat",
+            {"child_id": child_id, "kind": kind, "limit": limit},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def set_worth_a_chat(
+    item_id: int,
+    flag: bool,
+    note: str | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Toggle the 'worth a chat' flag on any item (assignment, grade,
+    comment, school message). When flag=True, the server stamps the
+    timestamp; when False, it clears both the flag and the note.
+    Setting `note` alone (with flag=True) updates the reason text in
+    place. Audit log captures every change."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services import assignment_state as ast
+        patch: dict[str, Any] = {"discuss_with_teacher": flag}
+        if note is not None:
+            patch["discuss_with_teacher_note"] = note
+        async with get_async_session() as session:
+            r = await ast.update_assignment_state(session, item_id, patch)
+        if r is None:
+            raise ValueError(f"item {item_id} not found, or non-assignment with non-flag fields")
+        result = r
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "set_worth_a_chat",
+            {"item_id": item_id, "flag": flag, "note": note},
+            result, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── Briefs (Sunday / PTM / Daily) ─────────────────────────
+
+@server.tool()
+async def get_sunday_brief(
+    child_id: int | None = None,
+    refresh: bool = False,
+    ctx: Context | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """Sunday brief — 4-section synthesis (cycle shape / one ask /
+    teacher asks / what to ignore). Pre-warmed nightly at 02:00 IST
+    and cached on disk under data/cached_briefs/sunday/. Pass child_id
+    for one kid (full-shape dict) or omit for both (list). `refresh=True`
+    skips the cache and re-runs Claude live (~30-60s)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: Any = None
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services import cached_briefs as CB
+        from ..services.sunday_brief import build_brief, render_markdown
+        from ..util.time import today_ist
+        today = today_ist()
+        async with get_async_session() as session:
+            if child_id is None:
+                children = (await session.execute(select(Child))).scalars().all()
+                out: list[dict[str, Any]] = []
+                for c in children:
+                    slug = CB.child_slug_for(c.display_name, c.id)
+                    cached = None if refresh else CB.read_latest("sunday", slug, today=today)
+                    if cached:
+                        cached["_cache"] = {
+                            "hit": True,
+                            "freshness": CB.freshness_label(today, cached.get("generated_for")),
+                        }
+                        out.append(cached)
+                        continue
+                    brief = await build_brief(session, c)
+                    payload = brief.to_dict()
+                    md = render_markdown(brief)
+                    try:
+                        CB.write_brief("sunday", slug, today, payload, md)
+                    except Exception:
+                        pass
+                    payload["_cache"] = {"hit": False, "freshness": "today"}
+                    out.append(payload)
+                result = out
+                return result
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+            if child is None:
+                raise ValueError(f"child {child_id} not found")
+            slug = CB.child_slug_for(child.display_name, child.id)
+            if not refresh:
+                cached = CB.read_latest("sunday", slug, today=today)
+                if cached:
+                    cached["_cache"] = {
+                        "hit": True,
+                        "freshness": CB.freshness_label(today, cached.get("generated_for")),
+                    }
+                    result = cached
+                    return result
+            brief = await build_brief(session, child)
+            payload = brief.to_dict()
+            md = render_markdown(brief)
+            try:
+                CB.write_brief("sunday", slug, today, payload, md)
+            except Exception:
+                pass
+            payload["_cache"] = {"hit": False, "freshness": "today"}
+            result = payload
+            return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_sunday_brief",
+            {"child_id": child_id, "refresh": refresh},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_ptm_brief(
+    child_id: int,
+    refresh: bool = False,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Parent-Teacher Meeting brief for one kid — per-subject prep doc
+    with current state, talking points, questions for each teacher, and
+    the parent's flagged 'worth a chat' items. Cached nightly at 02:00
+    IST under data/cached_briefs/ptm/. `refresh=True` skips cache and
+    re-runs Claude (~30-60s). Returns headline, subjects[], general
+    questions, things-to-ignore, parent_raised_general, honest_caveat."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services import cached_briefs as CB
+        from ..services.ptm_brief import build_ptm_brief, render_markdown
+        from ..util.time import today_ist
+        today = today_ist()
+        async with get_async_session() as session:
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+            if child is None:
+                raise ValueError(f"child {child_id} not found")
+            slug = CB.child_slug_for(child.display_name, child.id)
+            if not refresh:
+                cached = CB.read_latest("ptm", slug, today=today)
+                if cached:
+                    cached["_cache"] = {
+                        "hit": True,
+                        "freshness": CB.freshness_label(today, cached.get("generated_for")),
+                    }
+                    result = cached
+                    return result
+            brief = await build_ptm_brief(session, child)
+            payload = brief.to_dict()
+            md = render_markdown(brief)
+            try:
+                CB.write_brief("ptm", slug, today, payload, md)
+            except Exception:
+                pass
+            payload["_cache"] = {"hit": False, "freshness": "today"}
+            result = payload
+            return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_ptm_brief", {"child_id": child_id, "refresh": refresh},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_daily_brief(
+    child_id: int | None = None,
+    refresh: bool = False,
+    ctx: Context | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """Today-page 1-paragraph synthesis. Lightweight — no nightly
+    cache, just an in-memory cache keyed by (child_id, date). Pass
+    child_id for one kid (dict) or omit for both (list).
+    Returns {summary, has_signal, pack_row_ids}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: Any = None
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services.daily_brief import build_daily_brief, invalidate_daily_brief_cache
+        if refresh:
+            invalidate_daily_brief_cache(child_id)
+        async with get_async_session() as session:
+            if child_id is None:
+                children = (await session.execute(select(Child))).scalars().all()
+                result = [
+                    (await build_daily_brief(session, c)).to_dict() for c in children
+                ]
+                return result
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+            if child is None:
+                raise ValueError(f"child {child_id} not found")
+            brief = await build_daily_brief(session, child)
+            result = brief.to_dict()
+            return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_daily_brief", {"child_id": child_id, "refresh": refresh},
+            None, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── Anomalies + summaries ─────────────────────────
+
+@server.tool()
+async def get_anomalies(
+    child_id: int | None = None, ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Off-trend grades that broke the kid's per-subject baseline (mean
+    ± stddev). Each row: grade_id, subject, graded_date, pct, reason
+    string ('drop_vs_trend' / 'spike_vs_trend' / etc). Read-only —
+    call explain_grade_anomaly to add a Claude-driven hypothesis."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services.anomaly import detect_anomalies_for_child
+        async with get_async_session() as session:
+            if child_id is None:
+                children = (await session.execute(select(Child))).scalars().all()
+                out: list[dict[str, Any]] = []
+                for c in children:
+                    out.extend(await detect_anomalies_for_child(session, c.id))
+                result = out
+            else:
+                result = await detect_anomalies_for_child(session, child_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_anomalies", {"child_id": child_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def explain_grade_anomaly(
+    grade_id: int, force: bool = False, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Claude-driven hypothesis for an off-trend grade. Returns
+    {grade_id, anomalous, reason, explanation, cached, llm_used}.
+    Cached on the row's `llm_summary` column — call again with
+    force=True to recompute."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.anomaly import explain_grade_anomaly as fn
+        async with get_async_session() as session:
+            result = await fn(session, grade_id, force=force)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "explain_grade_anomaly", {"grade_id": grade_id, "force": force},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def summarize_assignment(
+    item_id: int, force: bool = False, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """One-sentence 'the ask in plain English' for an assignment.
+    Cached on the row's `llm_summary` column. Returns {item_id,
+    summary, cached, llm_used}. force=True bypasses cache."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.assignment_summary import summarize_assignment as fn
+        async with get_async_session() as session:
+            result = await fn(session, item_id, force=force)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "summarize_assignment", {"item_id": item_id, "force": force},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_topic_detail(
+    child_id: int, subject: str, topic: str, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Composite payload for one (kid × subject × topic): mastery state,
+    every linked grade + assignment, portfolio attachments. Same data
+    the syllabus topic-detail panel uses."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        # Reuse the FastAPI handler logic via direct service composition.
+        from sqlalchemy import select
+        from ..models import Child, TopicState, VeracrossItem
+        from ..services.syllabus import fuzzy_topic_for
+        from ..services.portfolio import list_portfolio
+        from ..services.queries import _item_to_dict
+
+        def _strip_lc(t: str) -> str:
+            if t and ": " in t:
+                head, tail = t.split(": ", 1)
+                if head.strip().upper().startswith("LC"):
+                    return tail.strip()
+            return t.strip() if t else t
+
+        async with get_async_session() as session:
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+            if child is None:
+                raise ValueError(f"child {child_id} not found")
+            bare_topic = _strip_lc(topic)
+            ts = (
+                await session.execute(
+                    select(TopicState)
+                    .where(TopicState.child_id == child_id)
+                    .where(TopicState.subject == subject)
+                    .where(TopicState.topic == bare_topic)
+                )
+            ).scalar_one_or_none()
+            items = (
+                await session.execute(
+                    select(VeracrossItem)
+                    .where(VeracrossItem.child_id == child_id)
+                    .where(VeracrossItem.kind.in_(("assignment", "grade")))
+                )
+            ).scalars().all()
+            linked_grades: list[dict[str, Any]] = []
+            linked_assignments: list[dict[str, Any]] = []
+            for it in items:
+                t = fuzzy_topic_for(child.class_level, it.subject, it.title)
+                if t is None:
+                    continue
+                t_bare = _strip_lc(t)
+                if t_bare != bare_topic:
+                    continue
+                d = _item_to_dict(it, class_level=child.class_level)
+                if it.kind == "grade":
+                    linked_grades.append(d)
+                else:
+                    linked_assignments.append(d)
+            portfolio = await list_portfolio(
+                session, child_id=child_id, subject=subject, topic=topic,
+            )
+        result = {
+            "child_id": child_id,
+            "subject": subject,
+            "topic": topic,
+            "bare_topic": bare_topic,
+            "state": ts.state if ts else None,
+            "last_assessed_at": ts.last_assessed_at if ts else None,
+            "last_score": ts.last_score if ts else None,
+            "attempt_count": ts.attempt_count if ts else 0,
+            "proficient_count": ts.proficient_count if ts else 0,
+            "language_code": ts.language_code if ts else None,
+            "linked_grades": linked_grades,
+            "linked_assignments": linked_assignments,
+            "portfolio_items": portfolio,
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_topic_detail",
+            {"child_id": child_id, "subject": subject, "topic": topic},
+            None, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── Self-prediction (Zimmerman loop) ─────────────────────────
+
+@server.tool()
+async def set_self_prediction(
+    item_id: int, prediction: str | None, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Record the kid's pre-grade self-prediction band ("high"/"mid"/
+    "low" or numeric "%85"). Pass None to clear. Outcome is computed
+    automatically once the linked grade lands."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from datetime import datetime, timezone as _tz
+        from sqlalchemy import select
+        from ..models import VeracrossItem
+        from ..services import self_prediction as SP
+        async with get_async_session() as session:
+            item = (
+                await session.execute(
+                    select(VeracrossItem).where(VeracrossItem.id == item_id)
+                )
+            ).scalar_one_or_none()
+            if item is None:
+                raise ValueError(f"item {item_id} not found")
+            if prediction is not None and not SP.is_valid_prediction(prediction):
+                raise ValueError(f"invalid prediction: {prediction!r}")
+            item.self_prediction = prediction or None
+            item.self_prediction_set_at = (
+                datetime.now(tz=_tz.utc) if prediction else None
+            )
+            if not prediction:
+                item.self_prediction_outcome = None
+            await session.commit()
+            await session.refresh(item)
+        result = {
+            "item_id": item.id,
+            "self_prediction": item.self_prediction,
+            "self_prediction_set_at": (
+                item.self_prediction_set_at.isoformat()
+                if item.self_prediction_set_at else None
+            ),
+            "self_prediction_outcome": item.self_prediction_outcome,
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "set_self_prediction", {"item_id": item_id, "prediction": prediction},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_self_prediction_calibration(
+    child_id: int | None = None, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Aggregate calibration: how often the kid's predictions matched
+    vs over/under. Returns summary + per-row history."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import VeracrossItem
+        from ..services import self_prediction as SP
+        async with get_async_session() as session:
+            q = (
+                select(VeracrossItem)
+                .where(VeracrossItem.self_prediction.is_not(None))
+                .order_by(VeracrossItem.self_prediction_set_at.desc())
+            )
+            if child_id is not None:
+                q = q.where(VeracrossItem.child_id == child_id)
+            items = (await session.execute(q)).scalars().all()
+        rows = [
+            {
+                "item_id": it.id,
+                "child_id": it.child_id,
+                "subject": it.subject,
+                "title": it.title,
+                "self_prediction": it.self_prediction,
+                "self_prediction_outcome": it.self_prediction_outcome,
+                "self_prediction_set_at": (
+                    it.self_prediction_set_at.isoformat()
+                    if it.self_prediction_set_at else None
+                ),
+            }
+            for it in items
+        ]
+        result = {"summary": SP.calibration_summary(rows), "rows": rows}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_self_prediction_calibration", {"child_id": child_id},
+            None, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── School messages (grouped) ─────────────────────────
+
+@server.tool()
+async def get_school_messages_grouped(
+    limit: int = 50, ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Dedup'd school-message groups (broadcast titles collapsed across
+    kids). Each group: group_id, normalized_title, kids[], members[],
+    cached llm_summary if computed. Newest first."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from ..services.school_messages import list_grouped_messages
+        async with get_async_session() as session:
+            result = await list_grouped_messages(session, limit=limit)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_school_messages_grouped", {"limit": limit},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def summarize_school_message_group(
+    group_id: str, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Generate (or fetch cached) 1-sentence summary for a school-message
+    group. Cached on every member row's `llm_summary` so re-calls are
+    free. Returns {group_id, summary, url, members, llm_used}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.school_messages import summarize_group
+        async with get_async_session() as session:
+            r = await summarize_group(session, group_id)
+        if r is None:
+            raise ValueError(f"group {group_id!r} not found")
+        result = r
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "summarize_school_message_group", {"group_id": group_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── Sentiment + heatmap ─────────────────────────
+
+@server.tool()
+async def get_sentiment_trend(
+    child_id: int | None = None,
+    window_days: int = 28,
+    bucket_days: int = 7,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Rolling sentiment trend across teacher comments, bucketed weekly.
+    Lexicon-based (services/sentiment.py — no LLM, no remote calls).
+    Returns points[], total_comments, direction (rising/falling/flat),
+    honest_caveat. Empty buckets are gaps, not zeros."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from datetime import timedelta
+        from sqlalchemy import select
+        from ..models import VeracrossItem
+        from ..services.sentiment import trend_points
+        from ..services.grade_match import _parse_loose_date
+        from ..util.time import today_ist
+        today = today_ist()
+        since = today - timedelta(days=window_days)
+        async with get_async_session() as session:
+            q = (
+                select(VeracrossItem)
+                .where(VeracrossItem.kind == "comment")
+                .order_by(VeracrossItem.due_or_date.desc())
+            )
+            if child_id is not None:
+                q = q.where(VeracrossItem.child_id == child_id)
+            rows = (await session.execute(q)).scalars().all()
+        items: list[tuple[Any, str]] = []
+        for r in rows:
+            d = _parse_loose_date(r.due_or_date)
+            if d is None or d < since:
+                continue
+            text = (r.title_en or r.title or r.body or "").strip()
+            if text:
+                items.append((d, text))
+        points = trend_points(
+            items, today=today, window_days=window_days, bucket_days=bucket_days,
+        )
+        means = [p["mean_score"] for p in points if p.get("mean_score") is not None]
+        direction: str | None = None
+        if len(means) >= 2:
+            delta = means[-1] - means[0]  # type: ignore
+            direction = "rising" if delta > 0.15 else ("falling" if delta < -0.15 else "flat")
+        result = {
+            "points": points,
+            "total_comments": len(items),
+            "window_days": window_days,
+            "bucket_days": bucket_days,
+            "direction": direction,
+            "honest_caveat": (
+                "Per-comment sentiment is noisy; only the rolling trend is "
+                "meaningful. Empty buckets are gaps, not zeros."
+            ),
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_sentiment_trend",
+            {"child_id": child_id, "window_days": window_days, "bucket_days": bucket_days},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_submission_heatmap(
+    child_id: int | None = None, weeks: int = 14, ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Submission-pattern heatmap — per-week × per-day-of-week tally
+    of how often the kid was on-time / late / overdue. Used to show
+    a 14-week visual; returns flat list of {week_start, dow, status,
+    count} cells the caller groups."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        async with get_async_session() as session:
+            result = await Q.get_submission_heatmap(
+                session, child_id=child_id, weeks=weeks,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_submission_heatmap", {"child_id": child_id, "weeks": weeks},
+            result, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── Notification snoozes ─────────────────────────
+
+@server.tool()
+async def list_notification_snoozes(ctx: Context | None = None) -> list[dict[str, Any]]:
+    """Active (un-expired) parent-set snoozes per (rule_id, child_id).
+    Used to show 'currently snoozed until …' on the (why?) popover."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from datetime import datetime, timezone as _tz
+        from sqlalchemy import select
+        from ..models import NotificationSnooze
+        async with get_async_session() as session:
+            rows = (
+                await session.execute(
+                    select(NotificationSnooze)
+                    .where(NotificationSnooze.until > datetime.now(tz=_tz.utc))
+                    .order_by(NotificationSnooze.until.desc())
+                )
+            ).scalars().all()
+        result = [
+            {
+                "id": r.id,
+                "rule_id": r.rule_id,
+                "child_id": r.child_id,
+                "until": r.until.isoformat() if r.until else None,
+                "reason": r.reason,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "list_notification_snoozes", {}, result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def add_notification_snooze(
+    rule_id: str,
+    until: str,
+    child_id: int | None = None,
+    reason: str | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Snooze (rule_id, child_id) until ISO timestamp `until`. Idempotent
+    upsert — newer `until` replaces older. child_id=None = kid-agnostic."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from datetime import datetime, timezone as _tz
+        from sqlalchemy import select
+        from ..models import NotificationSnooze
+        try:
+            until_dt = datetime.fromisoformat(str(until).replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError(f"bad until: {until}")
+        if until_dt.tzinfo is None:
+            until_dt = until_dt.replace(tzinfo=_tz.utc)
+        async with get_async_session() as session:
+            existing = (
+                await session.execute(
+                    select(NotificationSnooze).where(
+                        NotificationSnooze.rule_id == rule_id,
+                        NotificationSnooze.child_id == child_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.until = until_dt
+                if reason is not None:
+                    existing.reason = reason
+                row = existing
+            else:
+                row = NotificationSnooze(
+                    rule_id=rule_id, child_id=child_id, until=until_dt, reason=reason,
+                )
+                session.add(row)
+            await session.commit()
+            await session.refresh(row)
+        result = {
+            "id": row.id, "rule_id": row.rule_id, "child_id": row.child_id,
+            "until": row.until.isoformat(), "reason": row.reason,
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "add_notification_snooze",
+            {"rule_id": rule_id, "until": until, "child_id": child_id, "reason": reason},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def delete_notification_snooze(
+    snooze_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Cancel an active snooze by id. Idempotent — returns ok=True
+    even if the row was already expired or absent."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import delete
+        from ..models import NotificationSnooze
+        async with get_async_session() as session:
+            await session.execute(
+                delete(NotificationSnooze).where(NotificationSnooze.id == snooze_id)
+            )
+            await session.commit()
+        result = {"ok": True, "id": snooze_id}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "delete_notification_snooze", {"snooze_id": snooze_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── Events (auditions, competitions, camps) ─────────────────────────
+
+@server.tool()
+async def list_events(
+    child_id: int | None = None,
+    days_ahead: int | None = None,
+    include_past: bool = True,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Kid-relevant events the parent has captured: auditions, exams,
+    camps, competitions, parent meetings. `child_id=None` returns all
+    (school-wide events have child_id=None). `days_ahead` caps the
+    forward horizon; `include_past=False` drops events that already
+    finished."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from datetime import timedelta
+        from ..services.kid_events import list_events as fn
+        from ..util.time import today_ist
+        today = today_ist()
+        from_date = today if (days_ahead is not None or not include_past) else None
+        to_date = (today + timedelta(days=days_ahead)) if days_ahead is not None else None
+        async with get_async_session() as session:
+            result = await fn(
+                session, child_id=child_id,
+                from_date=from_date, to_date=to_date,
+                include_past=include_past,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "list_events",
+            {"child_id": child_id, "days_ahead": days_ahead, "include_past": include_past},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def upsert_event(
+    title: str,
+    start_date: str,
+    end_date: str | None = None,
+    start_time: str | None = None,
+    child_id: int | None = None,
+    event_type: str | None = None,
+    importance: int = 1,
+    location: str | None = None,
+    description: str | None = None,
+    notes: str | None = None,
+    source: str = "manual",
+    source_ref: str | None = None,
+    event_id: int | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Create or update a kid event. Pass `event_id` to update an
+    existing row; omit to create. `start_date`/`end_date` are ISO
+    YYYY-MM-DD; `start_time` is HH:MM. importance: 1 normal · 2
+    important · 3 critical. event_type: audition | competition | camp
+    | exam | holiday | parent_meeting | trip | other."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.kid_events import upsert_event as fn
+        payload = {
+            "id": event_id,
+            "child_id": child_id,
+            "title": title,
+            "description": description,
+            "event_type": event_type,
+            "importance": importance,
+            "start_date": start_date,
+            "end_date": end_date,
+            "start_time": start_time,
+            "location": location,
+            "source": source,
+            "source_ref": source_ref,
+            "notes": notes,
+        }
+        async with get_async_session() as session:
+            result = await fn(session, payload)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "upsert_event", {"title": title, "start_date": start_date, "event_id": event_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def delete_event(event_id: int, ctx: Context | None = None) -> dict[str, Any]:
+    """Permanently delete a kid event by id. Returns {ok, id}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.kid_events import delete_event as fn
+        async with get_async_session() as session:
+            ok = await fn(session, event_id)
+        result = {"ok": ok, "id": event_id}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "delete_event", {"event_id": event_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def extract_events_from_messages(
+    days: int = 60,
+    only_new: bool = True,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Sweep school messages from the last N days and ask Claude to
+    extract dated events (auditions, camps, holidays, etc.). Idempotent
+    — when `only_new=True`, skips messages we've already extracted from.
+    Returns counts of {messages_scanned, events_extracted, inserted, skipped_dup}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.kid_events import extract_from_school_messages as fn
+        async with get_async_session() as session:
+            result = await fn(session, days=days, only_new=only_new)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "extract_events_from_messages", {"days": days, "only_new": only_new},
+            result, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── Library (parent uploads) ─────────────────────────
+
+@server.tool()
+async def list_library(
+    child_id: int | None = None,
+    kind: str | None = None,
+    subject: str | None = None,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Parent-uploaded files (textbook PDFs, EPUBs, study material).
+    Each row carries the LLM classifier output (llm_kind, llm_subject,
+    llm_summary, llm_keywords). kind/subject filters use the LLM-inferred
+    values. Use read_library_file to fetch contents."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from ..services.library import list_library as fn
+        async with get_async_session() as session:
+            result = await fn(session, child_id=child_id, kind=kind, subject=subject)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "list_library", {"child_id": child_id, "kind": kind, "subject": subject},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def reclassify_library_file(
+    library_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Re-run the LLM classifier on a library row (forces fresh
+    llm_kind / llm_subject / llm_summary / llm_keywords / llm_class_level).
+    Use after editing the file or to recover from a stale classification."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.library_classify import classify_one
+        async with get_async_session() as session:
+            # classify_one is unconditional — re-running it overwrites
+            # the previous llm_* columns regardless of staleness.
+            r = await classify_one(session, library_id)
+        result = r or {"id": library_id, "ok": False}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "reclassify_library_file", {"library_id": library_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def delete_library_file(
+    library_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Permanently delete a library file (DB row + on-disk blob).
+    Returns {ok, id}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.library import delete_library
+        async with get_async_session() as session:
+            ok = await delete_library(session, library_id)
+        result = {"ok": ok, "id": library_id}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "delete_library_file", {"library_id": library_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── Portfolio (per-topic uploads) ─────────────────────────
+
+@server.tool()
+async def list_portfolio(
+    child_id: int,
+    subject: str | None = None,
+    topic: str | None = None,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Per-(subject, topic) portfolio attachments — photos, scans,
+    drawings the parent uploaded against a syllabus topic. Bound by
+    natural key (subject + topic strings) so the rows survive nightly
+    topic_state rebuilds. Use read_portfolio_file to fetch contents."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from ..services.portfolio import list_portfolio as fn
+        async with get_async_session() as session:
+            result = await fn(session, child_id=child_id, subject=subject, topic=topic)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "list_portfolio",
+            {"child_id": child_id, "subject": subject, "topic": topic},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def delete_portfolio_file(
+    attachment_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Permanently delete a portfolio attachment. Only works for
+    source_kind='portfolio_upload' rows; other attachments are
+    rejected. Returns {ok, id}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.portfolio import delete_portfolio
+        async with get_async_session() as session:
+            ok = await delete_portfolio(session, attachment_id)
+            await session.commit()
+        result = {"ok": ok, "id": attachment_id}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "delete_portfolio_file", {"attachment_id": attachment_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── Mindspark (Ei Mindspark progress) ─────────────────────────
+
+@server.tool()
+async def get_mindspark_progress(
+    child_id: int | None = None, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Mindspark performance metrics scraped daily-ish: per-topic
+    accuracy, mastery_level, recent session aggregates, daily snapshot
+    (sparkies + section rank). NEVER includes question content — by
+    design (see migration 0020 scope contract). Pass child_id for one
+    kid, or omit for both. Returns {kids: [{child_id, child_name,
+    sessions[], topics[]}]}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import Child, MindsparkSession, MindsparkTopicProgress
+        async with get_async_session() as session:
+            cq = select(Child).order_by(Child.id)
+            if child_id is not None:
+                cq = cq.where(Child.id == child_id)
+            children = (await session.execute(cq)).scalars().all()
+            kids = []
+            for c in children:
+                sessions = (
+                    await session.execute(
+                        select(MindsparkSession)
+                        .where(MindsparkSession.child_id == c.id)
+                        .order_by(MindsparkSession.started_at.desc())
+                        .limit(50)
+                    )
+                ).scalars().all()
+                topics = (
+                    await session.execute(
+                        select(MindsparkTopicProgress)
+                        .where(MindsparkTopicProgress.child_id == c.id)
+                        .order_by(MindsparkTopicProgress.last_activity_at.desc().nulls_last())
+                    )
+                ).scalars().all()
+                kids.append({
+                    "child_id": c.id,
+                    "child_name": c.display_name,
+                    "sessions": [
+                        {
+                            "id": s.id,
+                            "external_id": s.external_id,
+                            "subject": s.subject,
+                            "topic_name": s.topic_name,
+                            "started_at": s.started_at.isoformat() if s.started_at else None,
+                            "duration_sec": s.duration_sec,
+                            "questions_total": s.questions_total,
+                            "questions_correct": s.questions_correct,
+                            "accuracy_pct": s.accuracy_pct,
+                        }
+                        for s in sessions
+                    ],
+                    "topics": [
+                        {
+                            "id": t.id,
+                            "subject": t.subject,
+                            "topic_name": t.topic_name,
+                            "topic_id": t.topic_id,
+                            "accuracy_pct": t.accuracy_pct,
+                            "questions_attempted": t.questions_attempted,
+                            "time_spent_sec": t.time_spent_sec,
+                            "mastery_level": t.mastery_level,
+                            "last_activity_at": (
+                                t.last_activity_at.isoformat() if t.last_activity_at else None
+                            ),
+                            "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+                        }
+                        for t in topics
+                    ],
+                })
+        result = {"kids": kids}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_mindspark_progress", {"child_id": child_id},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def trigger_mindspark_sync(
+    child_id: int | None = None, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Run the Mindspark scrape NOW (bypassing the every-3rd-day
+    cadence). Slow — each kid takes ~60-90s including login + page
+    settle. Mindspark has Imperva bot detection so this MUST run with
+    full stealth posture. Returns per-kid status dicts."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..scraper.mindspark.sync import run_metrics_for, run_metrics_all
+        from sqlalchemy import select
+        from ..models import Child
+        async with get_async_session() as session:
+            if child_id is None:
+                result = await run_metrics_all()
+            else:
+                child = (
+                    await session.execute(select(Child).where(Child.id == child_id))
+                ).scalar_one_or_none()
+                if child is None:
+                    raise ValueError(f"child {child_id} not found")
+                result = await run_metrics_for(session, child)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "trigger_mindspark_sync", {"child_id": child_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── File downloads (read content) ─────────────────────────
+
+# Cap on bytes returned in a single read_* call. MCP context size matters
+# more than disk — anything larger than this should be read off-disk via
+# resolve_*_path on a local client.
+_READ_FILE_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+_TEXT_MIMES = (
+    "text/", "application/json", "application/xml", "application/x-yaml",
+    "application/yaml",
+)
+
+
+def _read_file_payload(path: Any, mime_type: str | None) -> dict[str, Any]:
+    """Shared helper for read_*_file tools. Returns:
+      {filename, mime_type, size_bytes, encoding ('text'|'base64'),
+       content, truncated}.
+    Caps at _READ_FILE_MAX_BYTES; sets truncated=True if cut.
+    Text-like MIME types return UTF-8 text; everything else returns
+    base64 so binary survives the JSON wire format."""
+    import base64
+    from pathlib import Path as _P
+    p = _P(path) if not isinstance(path, _P) else path
+    full_size = p.stat().st_size
+    raw = p.read_bytes()
+    truncated = False
+    if len(raw) > _READ_FILE_MAX_BYTES:
+        raw = raw[:_READ_FILE_MAX_BYTES]
+        truncated = True
+    is_text = bool(mime_type) and any(mime_type.startswith(prefix) for prefix in _TEXT_MIMES)
+    if is_text:
+        try:
+            content = raw.decode("utf-8")
+            encoding = "text"
+        except UnicodeDecodeError:
+            content = base64.b64encode(raw).decode("ascii")
+            encoding = "base64"
+    else:
+        content = base64.b64encode(raw).decode("ascii")
+        encoding = "base64"
+    return {
+        "filename": p.name,
+        "mime_type": mime_type or "application/octet-stream",
+        "size_bytes": full_size,
+        "encoding": encoding,
+        "content": content,
+        "truncated": truncated,
+        "max_bytes": _READ_FILE_MAX_BYTES,
+    }
+
+
+@server.tool()
+async def read_attachment(
+    attachment_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Read the actual contents of a downloaded attachment. Returns
+    {filename, mime_type, size_bytes, encoding, content, truncated}.
+    Text-like files come back as UTF-8 strings; binaries (PDFs,
+    images, zips) come back as base64. Capped at 5 MB — call
+    resolve_attachment_path for larger files on local clients.
+    Path-traversal guarded."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..config import REPO_ROOT
+        from ..util import paths as P
+        async with get_async_session() as session:
+            att = await Q.get_attachment_row(session, attachment_id)
+        if att is None:
+            raise ValueError(f"attachment {attachment_id} not found")
+        path = (REPO_ROOT / att.local_path).resolve()
+        try:
+            path.relative_to(P.data_root().resolve())
+        except ValueError:
+            raise ValueError(f"attachment path escapes storage root: {att.local_path}")
+        if not path.exists():
+            raise ValueError(f"file vanished on disk: {att.local_path}")
+        result = _read_file_payload(path, att.mime_type)
+        result["attachment_id"] = att.id
+        result["sha256"] = att.sha256
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "read_attachment", {"attachment_id": attachment_id},
+            {"size_bytes": result.get("size_bytes"), "truncated": result.get("truncated")},
+            err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def read_library_file(
+    library_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Read the actual contents of a library file. Same shape +
+    truncation rules as read_attachment. Path-traversal guarded
+    (file must live under data/library/)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..config import REPO_ROOT
+        from ..services.library import get_library_row
+        async with get_async_session() as session:
+            row = await get_library_row(session, library_id)
+        if row is None:
+            raise ValueError(f"library file {library_id} not found")
+        path = (REPO_ROOT / row.local_path).resolve()
+        library_root = (REPO_ROOT / "data" / "library").resolve()
+        if not str(path).startswith(str(library_root)):
+            raise ValueError(f"library path escapes storage root: {row.local_path}")
+        if not path.exists():
+            raise ValueError(f"file vanished on disk: {row.local_path}")
+        result = _read_file_payload(path, row.mime_type)
+        result["library_id"] = row.id
+        result["sha256"] = row.sha256
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "read_library_file", {"library_id": library_id},
+            {"size_bytes": result.get("size_bytes"), "truncated": result.get("truncated")},
+            err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def read_portfolio_file(
+    attachment_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Read the actual contents of a portfolio attachment (per-topic
+    image/PDF). Same shape + truncation rules as read_attachment.
+    Path-traversal guarded (file must live under data/portfolio/)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..config import REPO_ROOT
+        from ..models import Attachment
+        async with get_async_session() as session:
+            att = (
+                await session.execute(
+                    select(Attachment).where(Attachment.id == attachment_id)
+                )
+            ).scalar_one_or_none()
+        if att is None or att.source_kind != "portfolio_upload":
+            raise ValueError(f"portfolio attachment {attachment_id} not found")
+        path = (REPO_ROOT / att.local_path).resolve()
+        portfolio_root = (REPO_ROOT / "data" / "portfolio").resolve()
+        if not str(path).startswith(str(portfolio_root)):
+            raise ValueError(f"portfolio path escapes storage root: {att.local_path}")
+        if not path.exists():
+            raise ValueError(f"file vanished on disk: {att.local_path}")
+        result = _read_file_payload(path, att.mime_type)
+        result["attachment_id"] = att.id
+        result["sha256"] = att.sha256
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "read_portfolio_file", {"attachment_id": attachment_id},
+            {"size_bytes": result.get("size_bytes"), "truncated": result.get("truncated")},
+            err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def read_resource_file(
+    scope: str,
+    category: str,
+    filename: str,
+    child_id: int | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Read a portal-harvested resource file. scope='schoolwide' or
+    'kid' (kid requires child_id). Same shape + truncation rules as
+    read_attachment. Path-traversal guarded (file must live under
+    data/rawdata/)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services import resources_index as RI
+        if scope == "schoolwide":
+            path = RI.resolve_schoolwide(category, filename)
+        elif scope == "kid":
+            if child_id is None:
+                raise ValueError("child_id required for scope='kid'")
+            async with get_async_session() as session:
+                child = (
+                    await session.execute(select(Child).where(Child.id == child_id))
+                ).scalar_one_or_none()
+            if child is None:
+                raise ValueError(f"child {child_id} not found")
+            path = RI.resolve_kid(child, category, filename)
+        else:
+            raise ValueError(f"scope must be 'schoolwide' or 'kid', got {scope!r}")
+        if path is None or not path.exists():
+            raise ValueError(f"resource not found: {scope}/{category}/{filename}")
+        mime = RI._mime(path)
+        result = _read_file_payload(path, mime)
+        result["scope"] = scope
+        result["category"] = category
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "read_resource_file",
+            {"scope": scope, "category": category, "filename": filename, "child_id": child_id},
+            {"size_bytes": result.get("size_bytes"), "truncated": result.get("truncated")},
+            err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def read_spellbee_file(
+    child_id: int, filename: str, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Read a Spelling Bee word-list file. Same shape + truncation
+    rules as read_attachment. Path-traversal guarded — file must
+    resolve under the kid's spellbee folder."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services import spellbee as SB
+        async with get_async_session() as session:
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+        if child is None:
+            raise ValueError(f"child {child_id} not found")
+        path = SB.resolve_file(child, filename)
+        if path is None or not path.exists():
+            raise ValueError(f"spellbee list {filename!r} not found for child {child_id}")
+        mime = SB._MIME_BY_EXT.get(path.suffix.lower(), "application/octet-stream")
+        result = _read_file_payload(path, mime)
+        result["child_id"] = child_id
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "read_spellbee_file", {"child_id": child_id, "filename": filename},
+            {"size_bytes": result.get("size_bytes"), "truncated": result.get("truncated")},
+            err, started, _client_id(ctx),
         )
 
 
