@@ -72,71 +72,100 @@ async def run_recon_for(child_id: int) -> dict[str, Any]:
         / datetime.now().strftime("%Y%m%d_%H%M%S")
     )
     out_dir.mkdir(parents=True, exist_ok=True)
-    captured: list[dict[str, Any]] = []
+
+    pages_captured: list[str] = []
 
     async with mindspark_session(child_id=child_id) as page:
-        # Listen on every response — keep only application/json + html.
-        async def on_response(resp):
+        # We're authenticated AND the SPA has bootstrapped.
+        # Mindspark's session is bound to the SPA router — any
+        # `page.goto(url)` for an authenticated path triggers a
+        # session-expired redirect back to /login. So we ONLY navigate
+        # by clicking menu items, like a real user.
+
+        async def _settle(extra_wait_sec: float = 4.0) -> None:
             try:
-                ct = (resp.headers.get("content-type") or "").lower()
-                if "application/json" not in ct:
-                    return
-                body = await resp.text()
-                captured.append({
-                    "url": resp.url,
-                    "status": resp.status,
-                    "body": body[:200_000],  # cap each entry
-                })
+                await page.wait_for_load_state("networkidle", timeout=20_000)
+            except Exception:
+                pass
+            # Heavy Angular SPAs render content into router-outlet AFTER
+            # networkidle. Wait extra for component data fetches.
+            await asyncio.sleep(extra_wait_sec)
+            try:
+                await humanize_page(page)
             except Exception:
                 pass
 
-        page.on("response", on_response)
-
-        # Walk the three pages with slow-rate guard between each.
-        # Use referrer-chain navigation: dashboard is the entry, then
-        # we click links inside it to reach topic-map and session-history
-        # (falling back to goto-with-Referer if the SPA's link isn't
-        # detectable). Each navigation gets humanize_page() — mouse
-        # wiggle + scroll — afterwards.
-        nav_plan = [
-            ("dashboard", DASHBOARD_PATH, ()),
-            ("topic_map", TOPIC_MAP_PATH, ("Learn", "Topic Map", "My Learning", "Subjects")),
-            ("session_history", SESSION_HISTORY_PATH, ("Reports", "History", "My Activity", "Sessions")),
-        ]
-        is_first = True
-        for label, url, hints in nav_plan:
-            await slow_jitter()
+        async def _capture(label: str) -> None:
             try:
-                if is_first:
-                    await page.goto(url, wait_until="networkidle", timeout=30_000)
-                    await humanize_page(page)
-                else:
-                    await navigate_via_link(page, url, link_text_hints=hints)
+                (out_dir / f"{label}.url.txt").write_text(page.url, encoding="utf-8")
+                (out_dir / f"{label}.html").write_text(
+                    await page.content(), encoding="utf-8",
+                )
+                pages_captured.append(label)
+                log.info("mindspark recon: captured %s at %s", label, page.url)
             except Exception as e:
-                log.warning("mindspark recon: %s nav failed: %s", label, e)
-                is_first = False
-                continue
-            is_first = False
-            try:
-                html = await page.content()
-            except Exception:
-                html = ""
-            (out_dir / f"{label}.html").write_text(html, encoding="utf-8")
+                log.warning("mindspark recon: capture failed for %s: %s", label, e)
 
-        # Dump captured XHRs.
-        for i, entry in enumerate(captured):
-            (out_dir / f"xhr_{i:03d}.json").write_text(
-                json.dumps(entry, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        (out_dir / "urls.txt").write_text(
-            "\n".join(e["url"] for e in captured), encoding="utf-8",
-        )
+        async def _click_menu(item_text: str) -> bool:
+            """Click a sidebar/top-bar menu item by visible text. Returns
+            True if the click landed."""
+            try:
+                # Strict text match first.
+                loc = page.get_by_text(item_text, exact=True).first
+                if await loc.count() > 0:
+                    await loc.click(timeout=5_000)
+                    return True
+            except Exception:
+                pass
+            try:
+                loc = page.locator(f'text="{item_text}"').first
+                if await loc.count() > 0:
+                    await loc.click(timeout=5_000)
+                    return True
+            except Exception:
+                pass
+            try:
+                # Role-based link.
+                loc = page.get_by_role("link", name=item_text)
+                if await loc.count() > 0:
+                    await loc.first.click(timeout=5_000)
+                    return True
+            except Exception:
+                pass
+            return False
+
+        # Page 0 — settle on whatever post-login landed us (typically
+        # /student/home). Wait long enough for the dashboard data
+        # widgets to populate (Mindspark loads in the router-outlet
+        # for several seconds after networkidle).
+        await _settle(extra_wait_sec=6.0)
+        await _capture("home_after_login")
+
+        # Click through the menu items the parent cares about, in order.
+        # Each: try-click → settle → capture → log.
+        menu_walk = [
+            ("Topics", "topics"),
+            ("Homework", "homework"),
+            ("Worksheets", "worksheets"),
+            ("Rewards", "rewards"),
+            ("Leaderboard", "leaderboard"),
+        ]
+        for menu_text, label in menu_walk:
+            try:
+                clicked = await _click_menu(menu_text)
+            except Exception as e:
+                log.warning("mindspark recon: click %r raised: %s", menu_text, e)
+                clicked = False
+            if not clicked:
+                log.info("mindspark recon: no '%s' menu item visible; skipping", menu_text)
+                continue
+            await _settle(extra_wait_sec=4.0)
+            await _capture(label)
 
     return {
         "child_id": child_id,
         "out_dir": str(out_dir.relative_to(REPO_ROOT)),
-        "captured_xhr_count": len(captured),
+        "pages_captured": pages_captured,
     }
 
 
@@ -144,89 +173,66 @@ async def run_metrics_for(
     session: AsyncSession,
     child: Child,
 ) -> dict[str, Any]:
-    """Pull parent-facing metrics for a kid. Upserts into
-    `mindspark_session` and `mindspark_topic_progress`.
+    """Pull parent-facing metrics for a kid. DOM-only — drives the
+    SPA via menu clicks (the only navigation that doesn't trigger
+    Mindspark's session-expiry redirect).
+
+    Walks: home → click "Topics" → click "Leaderboard".
+    Persists topics into `mindspark_topic_progress` (replace-on-update);
+    the home/leaderboard summary lands as a daily snapshot row in
+    `mindspark_session` keyed by external_id="snapshot_<YYYY-MM-DD>"
+    so we get a sparkies-over-time history with no extra schema.
     """
     if not get_settings().mindspark_enabled:
         return {"status": "disabled", "child_id": child.id}
     if mindspark_credentials_for(child.id) is None:
         return {"status": "no_creds", "child_id": child.id}
 
-    sessions_inserted = 0
-    sessions_updated = 0
     topics_upserted = 0
+    home_summary: dict[str, Any] = {}
+    leaderboard_summary: dict[str, Any] = {}
 
     async with mindspark_session(child_id=child.id) as page:
-        await slow_jitter()
+        # Settle on whatever post-login dropped us at (typically /home).
         try:
-            await page.goto(DASHBOARD_PATH, wait_until="networkidle", timeout=30_000)
+            await page.wait_for_load_state("networkidle", timeout=20_000)
+        except Exception:
+            pass
+        await asyncio.sleep(6.0)
+        try:
             await humanize_page(page)
-        except Exception as e:
-            log.warning("mindspark dashboard nav failed: %s", e)
-            return {"status": "nav_fail", "child_id": child.id, "error": repr(e)}
-        dashboard_html = await page.content()
-
-        # Recent sessions list — try to parse from the dashboard HTML.
-        # If the parser comes back empty, the page probably loads
-        # sessions via XHR; we'll need the recon dump to find the
-        # right endpoint. Until then, parsers.parse_sessions is a
-        # best-guess no-op.
-        sessions = P.parse_sessions(dashboard_html)
-        for s in sessions:
-            ext_id = str(s.get("external_id") or "").strip()
-            if not ext_id:
-                continue
-            existing = (
-                await session.execute(
-                    select(MindsparkSession).where(
-                        MindsparkSession.child_id == child.id,
-                        MindsparkSession.external_id == ext_id,
-                    )
-                )
-            ).scalar_one_or_none()
-            if existing is None:
-                row = MindsparkSession(child_id=child.id, external_id=ext_id)
-                session.add(row)
-                sessions_inserted += 1
-            else:
-                row = existing
-                sessions_updated += 1
-            row.subject = s.get("subject")
-            row.topic_name = s.get("topic_name")
-            row.started_at = s.get("started_at")
-            row.ended_at = s.get("ended_at")
-            row.duration_sec = s.get("duration_sec")
-            row.questions_total = s.get("questions_total")
-            row.questions_correct = s.get("questions_correct")
-            row.accuracy_pct = s.get("accuracy_pct")
-            row.raw_json = json.dumps(s, default=str, ensure_ascii=False)
-
-        await slow_jitter()
+        except Exception:
+            pass
         try:
-            await navigate_via_link(
-                page,
-                TOPIC_MAP_PATH,
-                link_text_hints=("Learn", "Topic Map", "My Learning", "Subjects"),
-            )
+            home_html = await page.content()
+            home_summary = P.parse_home_summary(home_html)
+            log.info("mindspark home summary: %s", home_summary)
         except Exception as e:
-            log.warning("mindspark topic_map nav failed: %s", e)
-            await session.commit()
-            return {
-                "status": "partial",
-                "child_id": child.id,
-                "sessions_inserted": sessions_inserted,
-                "sessions_updated": sessions_updated,
-                "topics_upserted": topics_upserted,
-                "error": repr(e),
-            }
-        topic_html = await page.content()
+            log.warning("mindspark home parse failed: %s", e)
 
-        topics = P.parse_topic_progress(topic_html)
+        # Click "Topics" via the SPA menu — never goto, that breaks session.
+        try:
+            loc = page.get_by_text("Topics", exact=True).first
+            if await loc.count() == 0:
+                loc = page.get_by_role("link", name="Topics")
+            await loc.click(timeout=5_000)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15_000)
+            except Exception:
+                pass
+            await asyncio.sleep(4.0)
+            await humanize_page(page)
+            topics_html = await page.content()
+        except Exception as e:
+            log.warning("mindspark topics nav/parse failed: %s", e)
+            topics_html = ""
+
+        topics = P.parse_topics_page(topics_html)
         for t in topics:
-            subj = (t.get("subject") or "").strip()
             tname = (t.get("topic_name") or "").strip()
-            if not subj or not tname:
+            if not tname:
                 continue
+            subj = t.get("subject") or "Mathematics"  # default; Mindspark Math is dominant
             existing = (
                 await session.execute(
                     select(MindsparkTopicProgress).where(
@@ -245,23 +251,76 @@ async def run_metrics_for(
                 session.add(row)
             else:
                 row = existing
-            row.topic_id = t.get("topic_id")
             row.accuracy_pct = t.get("accuracy_pct")
-            row.questions_attempted = t.get("questions_attempted")
-            row.time_spent_sec = t.get("time_spent_sec")
+            # Mindspark exposes units (not raw question count); reuse field.
+            row.questions_attempted = t.get("units_total")
             row.mastery_level = t.get("mastery_level")
-            row.last_activity_at = t.get("last_activity_at")
+            row.last_activity_at = datetime.now(tz=timezone.utc)
             row.raw_json = json.dumps(t, default=str, ensure_ascii=False)
             row.updated_at = datetime.now(tz=timezone.utc)
             topics_upserted += 1
+
+        # Click "Leaderboard" → section rank + sparkies confirmation.
+        try:
+            loc = page.get_by_text("Leaderboard", exact=True).first
+            if await loc.count() == 0:
+                loc = page.get_by_role("link", name="Leaderboard")
+            await loc.click(timeout=5_000)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15_000)
+            except Exception:
+                pass
+            await asyncio.sleep(4.0)
+            await humanize_page(page)
+            leaderboard_html = await page.content()
+            leaderboard_summary = P.parse_leaderboard_page(
+                leaderboard_html, child_name=child.display_name,
+            )
+            log.info(
+                "mindspark leaderboard: rank=%s sparkies=%s section_size=%s",
+                leaderboard_summary.get("rank"),
+                leaderboard_summary.get("sparkies"),
+                leaderboard_summary.get("section_size"),
+            )
+        except Exception as e:
+            log.warning("mindspark leaderboard nav/parse failed: %s", e)
+
+    # Daily snapshot row — repurposes mindspark_session columns:
+    # accuracy_pct = total sparkies, questions_correct = section rank,
+    # questions_total = section size, topic_name = badge if any.
+    today_iso = datetime.now(tz=timezone.utc).date().isoformat()
+    ext_id = f"snapshot_{today_iso}"
+    snap = (
+        await session.execute(
+            select(MindsparkSession).where(
+                MindsparkSession.child_id == child.id,
+                MindsparkSession.external_id == ext_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if snap is None:
+        snap = MindsparkSession(child_id=child.id, external_id=ext_id)
+        session.add(snap)
+    snap.subject = "Mathematics"
+    snap.started_at = datetime.now(tz=timezone.utc)
+    snap.questions_correct = leaderboard_summary.get("rank")
+    snap.questions_total = leaderboard_summary.get("section_size")
+    snap.accuracy_pct = home_summary.get("sparkies")
+    snap.topic_name = leaderboard_summary.get("title")
+    snap.raw_json = json.dumps({
+        "home": home_summary,
+        "leaderboard": leaderboard_summary,
+    }, default=str, ensure_ascii=False)
 
     await session.commit()
     return {
         "status": "ok",
         "child_id": child.id,
-        "sessions_inserted": sessions_inserted,
-        "sessions_updated": sessions_updated,
         "topics_upserted": topics_upserted,
+        "home": home_summary,
+        "leaderboard": {
+            k: v for k, v in leaderboard_summary.items() if k != "top_3"
+        },
     }
 
 

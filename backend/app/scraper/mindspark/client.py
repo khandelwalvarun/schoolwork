@@ -245,25 +245,57 @@ async def mindspark_session(
             # interactive Chrome session.
             await stealth_async(page)
 
-            # Probe: hit a low-cost authenticated path. If it 401s /
-            # redirects to /login, fall through to fresh-login flow.
+            # Probe: hit a low-cost authenticated path. Mindspark's
+            # Angular router renders the login component AT the
+            # destination URL when unauthenticated (URL doesn't change
+            # to /login), so we can't rely on URL alone. Wait for
+            # the SPA to settle, then check title + DOM.
             await _slow_jitter()
             await page.goto(
                 "https://learn.mindspark.in/Student/student/home",
                 wait_until="domcontentloaded",
                 timeout=30_000,
             )
-            current = page.url
-            if "login" in current.lower() or current.endswith("/onboard/login/en"):
+            try:
+                # Give the SPA a moment to bootstrap and update <title>.
+                await page.wait_for_load_state("networkidle", timeout=10_000)
+            except Exception:
+                pass
+            await asyncio.sleep(1.0)  # title swap can lag networkidle
+
+            need_login = False
+            try:
+                title = (await page.title()).lower()
+            except Exception:
+                title = ""
+            if "login" in page.url.lower() or page.url.endswith("/onboard/login/en"):
+                need_login = True
+            elif "login" in title:
+                need_login = True
+            else:
+                try:
+                    el = await page.query_selector(
+                        '#userName, input[name="userName"], '
+                        'input[formcontrolname="username"]'
+                    )
+                    if el is not None:
+                        need_login = True
+                except Exception:
+                    pass
+
+            if need_login:
                 log.info(
-                    "mindspark: storage state stale; logging in fresh for child %s",
-                    child_id,
+                    "mindspark: not authenticated (title=%r url=%s); logging in fresh for child %s",
+                    title, page.url, child_id,
                 )
                 await _login(page, settings.mindspark_login_url, username, password)
                 # Persist storage so the next run reuses the JWT.
                 await ctx.storage_state(path=str(state_path))
             else:
-                # Already on a logged-in page — let it settle, look around.
+                log.info(
+                    "mindspark: storage state ok (title=%r url=%s); skipping login",
+                    title, page.url,
+                )
                 await humanize_page(page)
 
             yield page
@@ -281,20 +313,32 @@ async def mindspark_session(
 async def _login(
     page: Page, login_url: str, username: str, password: str,
 ) -> None:
-    """Form login with human-like typing rhythm. Observed inputs
-    (subject to change as Mindspark revises their SPA): `loginid`
-    for username, `password` for password, submit button. Falls back
-    to common alternates."""
+    """Multi-step login flow.
+
+    Mindspark uses an Angular Reactive Forms wizard:
+      step 1 — `#userName` (text), `#nextButton` (Next button,
+                disabled until input has value)
+      step 2 — `#password` revealed AFTER step 1 submit, plus a final
+                submit button (often `#nextButton` reused or
+                `#loginButton` — we probe).
+
+    All typing is char-by-char with 80-180ms jitter so timing matches
+    a real touch-typist."""
     await _slow_jitter()
     await page.goto(login_url, wait_until="domcontentloaded", timeout=30_000)
     await humanize_page(page)
 
-    # Username — try a few common selectors.
+    # ─── step 1: username ───
+    # Selectors in priority order — observed Mindspark form first.
     user_sel = None
     for sel in (
+        '#userName',
+        'input[name="userName"]',
+        'input[formcontrolname="username"]',
         'input[name="loginid"]',
         'input[name="username"]',
         'input[name="email"]',
+        'input[type="text"]:visible',
         'input[type="text"]',
     ):
         try:
@@ -305,54 +349,109 @@ async def _login(
             continue
     if user_sel is None:
         raise RuntimeError("mindspark: could not find username field")
+    log.info("mindspark login: filling username via %s", user_sel)
     await _human_type(page, user_sel, username)
     await _human_pause()
 
-    # Password — same probing.
+    # Click "Next" / first-step submit. Angular disables the button
+    # until validation passes, so wait for it to be enabled before
+    # clicking.
+    next_sel = None
+    for sel in (
+        '#nextButton',
+        'button[name="nextButton"]',
+        'button.onboardBtn',
+        'button[type="submit"]:has-text("Next")',
+        'button[type="submit"]',
+    ):
+        try:
+            btn = await page.wait_for_selector(
+                sel, timeout=2_500, state="visible",
+            )
+            # Wait for it to be enabled (Angular toggles `disabled` off
+            # once form validation passes).
+            for _ in range(10):
+                disabled = await btn.get_attribute("disabled")
+                if disabled is None:
+                    break
+                await asyncio.sleep(0.2)
+            next_sel = sel
+            break
+        except Exception:
+            continue
+    if next_sel is None:
+        # Last resort — Enter key.
+        await page.keyboard.press("Enter")
+    else:
+        log.info("mindspark login: clicking Next via %s", next_sel)
+        await _human_pause(short=True)
+        await page.click(next_sel)
+
+    # ─── step 2: password ───
     pass_sel = None
     for sel in (
+        '#password',
         'input[name="password"]',
+        'input[formcontrolname="password"]',
         'input[type="password"]',
     ):
         try:
-            await page.wait_for_selector(sel, timeout=2_500, state="visible")
+            await page.wait_for_selector(sel, timeout=10_000, state="visible")
             pass_sel = sel
             break
         except Exception:
             continue
     if pass_sel is None:
-        raise RuntimeError("mindspark: could not find password field")
+        raise RuntimeError("mindspark: could not find password field after Next")
+    log.info("mindspark login: filling password via %s", pass_sel)
+    await humanize_page(page)
     await _human_type(page, pass_sel, password)
     await _human_pause()
 
-    # Submit — try the common submit selectors; fall back to Enter.
-    submitted = False
+    # Final submit — try common candidates, fallback to Enter.
+    final_sel = None
     for sel in (
+        '#loginButton',
+        '#nextButton',
+        'button[name="loginButton"]',
+        'button[name="nextButton"]',
+        'button.onboardBtn',
+        'button[type="submit"]:has-text("Login")',
+        'button[type="submit"]:has-text("Submit")',
         'button[type="submit"]',
-        'input[type="submit"]',
-        'button:has-text("Login")',
-        'button:has-text("Sign in")',
     ):
         try:
-            await page.click(sel, timeout=2_500)
-            submitted = True
+            btn = await page.wait_for_selector(
+                sel, timeout=2_500, state="visible",
+            )
+            for _ in range(10):
+                disabled = await btn.get_attribute("disabled")
+                if disabled is None:
+                    break
+                await asyncio.sleep(0.2)
+            final_sel = sel
             break
         except Exception:
             continue
-    if not submitted:
+    if final_sel is None:
         await page.keyboard.press("Enter")
+    else:
+        log.info("mindspark login: clicking final submit via %s", final_sel)
+        await _human_pause(short=True)
+        await page.click(final_sel)
 
     # Wait for navigation away from /login.
     try:
         await page.wait_for_url(
             lambda u: "login" not in u.lower(),
-            timeout=15_000,
+            timeout=20_000,
         )
     except Exception:
-        log.warning("mindspark login: did not redirect away from /login")
+        log.warning(
+            "mindspark login: did not redirect away from /login (still at %s)",
+            page.url,
+        )
     log.info("mindspark login: now at %s", page.url)
-    # Settle on the new page — let any analytics SDK see normal
-    # post-login activity (cursor moves, a scroll).
     await humanize_page(page)
 
 
