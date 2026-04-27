@@ -3454,6 +3454,268 @@ async def read_spellbee_file(
         )
 
 
+# ───────────────────────── Gap-fill: assignments / sync / mindspark ─────────────────────────
+
+@server.tool()
+async def unmark_assignment_submitted(
+    item_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Inverse of mark_assignment_submitted — clears the parent-side
+    'submitted' override (the legacy parent_marked_submitted_at flag).
+    The audit log captures the change."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        async with get_async_session() as session:
+            r = await Q.mark_assignment_submitted(session, item_id, submitted=False)
+        if r.get("status") == "not_found":
+            raise ValueError(f"assignment {item_id} not found")
+        result = r
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "unmark_assignment_submitted", {"item_id": item_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def prune_sync_runs(days: int = 7, ctx: Context | None = None) -> dict[str, Any]:
+    """Drop sync_runs older than N days so log_text doesn't accumulate
+    forever. Same operation as the nightly retention job, but on demand."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..jobs.retention_job import prune_sync_logs
+        result = await prune_sync_logs(days=days)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "prune_sync_runs", {"days": days}, result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def run_mindspark_recon(child_id: int, ctx: Context | None = None) -> dict[str, Any]:
+    """Mindspark recon mode — login + walk parent-facing pages + dump
+    every HTML/XHR under data/mindspark_recon/<child_id>/<ts>/. Used to
+    refine the DOM parsers against real Ei output. SLOW (~3-5 min,
+    full browser session); only call when you actually need a fresh
+    dump for parser development."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..scraper.mindspark.sync import run_recon_for
+        result = await run_recon_for(child_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "run_mindspark_recon", {"child_id": child_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+# ───────────────────────── File uploads (base64 in) ─────────────────────────
+
+# Same cap as the read tools — 5 MB per call. Enforced server-side
+# regardless of what the client sends, so a misbehaving caller can't
+# blow up the database with a giant blob.
+_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _decode_upload(content: str, encoding: str) -> bytes:
+    """Decode an uploaded payload. encoding='base64' (default for any
+    binary file) or 'text' (UTF-8 plain text). Caps at _UPLOAD_MAX_BYTES."""
+    import base64
+    if encoding == "text":
+        data = content.encode("utf-8")
+    elif encoding == "base64":
+        try:
+            data = base64.b64decode(content, validate=True)
+        except Exception as e:
+            raise ValueError(f"invalid base64 content: {e}")
+    else:
+        raise ValueError(f"encoding must be 'base64' or 'text', got {encoding!r}")
+    if len(data) > _UPLOAD_MAX_BYTES:
+        raise ValueError(
+            f"upload {len(data)} bytes exceeds MCP cap of "
+            f"{_UPLOAD_MAX_BYTES // (1024 * 1024)} MB"
+        )
+    return data
+
+
+@server.tool()
+async def upload_library_file(
+    filename: str,
+    content: str,
+    encoding: str = "base64",
+    child_id: int | None = None,
+    note: str | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Upload a file to the parent-uploaded library (textbook PDFs, EPUB
+    books, study material). `content` is base64-encoded by default —
+    matches what `read_library_file` returns, so a round-trip works.
+    Pass `encoding='text'` for plain text files (md / txt / csv) to
+    skip the base64 step. Capped at 5 MB.
+
+    Returns {id, filename, sha256, size_bytes, uploaded_at}. SHA-256
+    dedup means re-uploading the same content reuses the existing row.
+    LLM classification kicks off asynchronously — llm_* fields fill in
+    a few seconds after the upload returns."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        data = _decode_upload(content, encoding)
+        from ..services.library import save_library_upload
+        async with get_async_session() as session:
+            row = await save_library_upload(
+                session,
+                filename=filename, data=data,
+                child_id=child_id, note=note,
+            )
+        result = {
+            "id": row.id,
+            "filename": row.filename,
+            "sha256": row.sha256,
+            "size_bytes": row.size_bytes,
+            "mime_type": row.mime_type,
+            "child_id": row.child_id,
+            "uploaded_at": row.uploaded_at.isoformat() if row.uploaded_at else None,
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "upload_library_file",
+            {"filename": filename, "encoding": encoding,
+             "child_id": child_id, "size_hint": len(content)},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def upload_portfolio_file(
+    child_id: int,
+    subject: str,
+    topic: str,
+    filename: str,
+    content: str,
+    encoding: str = "base64",
+    note: str | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Upload a per-(subject, topic) portfolio attachment for a kid —
+    images / scans / drawings / PDFs the parent wants the cockpit to
+    track against a syllabus topic. Same content/encoding semantics as
+    upload_library_file. Capped at 5 MB. SHA-256 dedup against
+    (child × subject × topic) keeps duplicates from accumulating."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        data = _decode_upload(content, encoding)
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services.portfolio import save_portfolio_upload
+        async with get_async_session() as session:
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+            if child is None:
+                raise ValueError(f"child {child_id} not found")
+            row = await save_portfolio_upload(
+                session, child, subject, topic, filename, data, note=note,
+            )
+            await session.commit()
+        result = {
+            "id": row.id,
+            "child_id": row.child_id,
+            "subject": row.topic_subject,
+            "topic": row.topic_topic,
+            "filename": row.filename,
+            "sha256": row.sha256,
+            "size_bytes": row.size_bytes,
+            "mime_type": row.mime_type,
+            "uploaded_at": row.downloaded_at.isoformat() if row.downloaded_at else None,
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "upload_portfolio_file",
+            {"child_id": child_id, "subject": subject, "topic": topic,
+             "filename": filename, "encoding": encoding, "size_hint": len(content)},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def upload_spellbee_file(
+    child_id: int,
+    filename: str,
+    content: str,
+    encoding: str = "base64",
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Upload a Spelling Bee word-list file (PDF / image / text) for a
+    specific kid. The list-number is auto-detected from the filename
+    (e.g. `list07.pdf` → number=7). Same content/encoding semantics as
+    upload_library_file. Capped at 5 MB."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        data = _decode_upload(content, encoding)
+        from sqlalchemy import select
+        from ..models import Child
+        from ..services import spellbee as SB
+        async with get_async_session() as session:
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+        if child is None:
+            raise ValueError(f"child {child_id} not found")
+        row = SB.save_upload(child, filename, data)
+        result = {
+            "filename": row.filename,
+            "number": row.number,
+            "size_bytes": row.size_bytes,
+            "mime_type": row.mime_type,
+            "child_id": row.child_id,
+            "kid_slug": row.kid_slug,
+            "download_url": row.download_url,
+        }
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "upload_spellbee_file",
+            {"child_id": child_id, "filename": filename,
+             "encoding": encoding, "size_hint": len(content)},
+            result, err, started, _client_id(ctx),
+        )
+
+
 def run_stdio() -> None:
     """Entry point for `schoolwork-mcp` — stdio transport, for Claude Desktop/Code."""
     asyncio.run(server.run_stdio_async())

@@ -1,6 +1,6 @@
 # MCP server — Dispatch / OpenClaw / Claude Desktop wiring
 
-> 91 tools across 14 domains, all backed by the same SQLite + FastAPI codebase.
+> 97 tools across 14 domains, all backed by the same SQLite + FastAPI codebase.
 > See `docs/BUILDSPEC_ADDENDUM_MCP.md` for the original rationale.
 
 ## Transports
@@ -140,6 +140,7 @@ Both Sunday and PTM briefs are pre-warmed nightly at 02:00 IST and cached on dis
 | -------------------------- | ----------------------------- | ------------------------------------ |
 | `update_assignment`        | `item_id, parent_status?, priority?, snooze_until?, status_notes?, tags?, note?` | updated state |
 | `mark_assignment_submitted`| `item_id`                     | parent-side submitted flag           |
+| `unmark_assignment_submitted` | `item_id`                  | clear the parent-side submitted override |
 | `set_self_prediction`      | `item_id, prediction (high/mid/low/%NN)` | Zimmerman pre-grade prediction       |
 | `get_self_prediction_calibration` | `child_id?`            | summary + per-row history             |
 | `summarize_assignment`     | `item_id, force=false`        | 1-sentence "the ask" (cached)        |
@@ -183,6 +184,7 @@ Both Sunday and PTM briefs are pre-warmed nightly at 02:00 IST and cached on dis
 | -------------------------- | --------------------- | ------------------------------------ |
 | `get_mindspark_progress`   | `child_id?`           | sessions[] + topics[] per kid        |
 | `trigger_mindspark_sync`   | `child_id?`           | runs the slow scrape NOW (bypasses cadence guard) |
+| `run_mindspark_recon`      | `child_id`            | recon-mode dump (HTML + XHR) for parser dev — slow ~3-5 min |
 
 Mindspark scope is intentionally narrow: per-session aggregates + per-topic mastery only. **No question content, no answers, no responses** (see migration 0020 scope contract).
 
@@ -197,6 +199,16 @@ These return file content directly (text or base64) capped at **5 MB**. For larg
 | `read_portfolio_file` | `attachment_id` (must be `portfolio_upload`) | per-topic portfolio attachment                                |
 | `read_resource_file`  | `scope, category, filename, child_id?`    | portal-harvested resource file (`scope` = `schoolwide` or `kid`) |
 | `read_spellbee_file`  | `child_id, filename`                      | Spelling Bee word-list file                                      |
+
+### File uploads — push content
+
+Counterparts to the read tools. Same 5 MB cap; same `{content, encoding}` shape so an upload→read round-trip is symmetric. `encoding="base64"` for any binary file (the default) or `encoding="text"` for plain UTF-8 text. SHA-256 dedup on the server keeps the same content from accumulating multiple rows.
+
+| Tool                    | Args                                                                 | Notes                                                                  |
+| ----------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `upload_library_file`   | `filename, content, encoding="base64", child_id?, note?`              | textbook PDFs / EPUBs / study material; LLM classification kicks off async |
+| `upload_portfolio_file` | `child_id, subject, topic, filename, content, encoding="base64", note?` | per-(subject, topic) attachment for a kid                              |
+| `upload_spellbee_file`  | `child_id, filename, content, encoding="base64"`                      | list-number auto-detected from filename                                |
 
 Response shape:
 
@@ -256,6 +268,7 @@ Response shape:
 | `get_concurrency_check`       | —                                                | which sync ids hold the on-disk lock   |
 | `get_veracross_status`        | —                                                | freshness / last sync                  |
 | `trigger_sync`                | `tier="light", blocking=false`                  | runs sync (light/medium/heavy)         |
+| `prune_sync_runs`             | `days=7`                                         | drop sync_runs older than N days (admin) |
 
 ### Misc
 
@@ -518,6 +531,20 @@ for t in sorted(tools, key=lambda t: t.name):
     print(f'  {t.name}')
 "
 ```
+
+## Coverage
+
+Every meaningful FastAPI endpoint has a matching MCP tool. The audit (every `@app.<verb>("/api/...")` cross-checked against `@server.tool()` definitions) leaves only these endpoints intentionally **not** exposed via MCP:
+
+| Endpoint                              | Why it's not an MCP tool                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------- |
+| `GET /` (HTML home)                   | UI surface, not data                                                      |
+| `GET /health`                         | Liveness probe — meant for ops, not LLM consumption                       |
+| `GET /api/ui-prefs` / `PUT /api/ui-prefs` | Device-local UI state (collapsed bucket order, etc.) — has no agent value |
+| `GET /api/veracross/credentials` / `PUT /api/veracross/credentials` | Security-sensitive secrets — kept out of LLM context window               |
+| `GET /api/veracross/login/*` / `POST /api/veracross/login/*` / `DELETE /api/veracross/login` | Interactive captcha-fallback login flow with screenshots — designed for the React UI, makes no sense in MCP |
+
+If you need any of these for a specific automation, ping the file owner — most can be added but were left out by design.
 
 ## Adding a new tool
 
