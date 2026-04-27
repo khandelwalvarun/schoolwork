@@ -76,6 +76,10 @@ export default function StatusPopover({
   const [snooze, setSnooze] = useState<string | null>(a.snooze_until);
   const [tags, setTags] = useState<string[]>(a.tags || []);
   const [note, setNote] = useState<string>(a.status_notes || "");
+  const [worthAChat, setWorthAChat] = useState<boolean>(!!a.discuss_with_teacher_at);
+  const [worthAChatNote, setWorthAChatNote] = useState<string>(
+    a.discuss_with_teacher_note || ""
+  );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -99,6 +103,14 @@ export default function StatusPopover({
         snooze_until: snooze ?? null,
         status_notes: note || null,
         tags,
+        // Only emit the flag fields when they actually changed — avoids
+        // re-stamping discuss_with_teacher_at every save.
+        ...(worthAChat !== !!a.discuss_with_teacher_at
+          ? { discuss_with_teacher: worthAChat }
+          : {}),
+        ...(worthAChat
+          ? { discuss_with_teacher_note: worthAChatNote || null }
+          : {}),
       }, { label: "Status updated" });
       if (onSaved) onSaved();
       onClose();
@@ -227,6 +239,27 @@ export default function StatusPopover({
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="mb-3 p-2 rounded border border-violet-200 bg-violet-50/40">
+        <label className="flex items-center gap-2 text-xs font-semibold text-violet-900 mb-1 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={worthAChat}
+            onChange={(e) => setWorthAChat(e.target.checked)}
+            className="h-3.5 w-3.5 accent-violet-700"
+          />
+          <span>💬 Worth a chat at the next PTM</span>
+        </label>
+        {worthAChat && (
+          <input
+            type="text"
+            placeholder="Optional reason — e.g. ask why score dropped"
+            value={worthAChatNote}
+            onChange={(e) => setWorthAChatNote(e.target.value)}
+            className="w-full border border-violet-200 rounded px-2 py-1 text-xs mt-1"
+          />
+        )}
       </div>
 
       <div className="mb-3">

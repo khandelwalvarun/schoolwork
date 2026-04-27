@@ -27,6 +27,26 @@ import { useToast } from "./Toast";
 
 type CacheSnapshot = { queryKey: readonly unknown[]; data: unknown }[];
 
+function applyPatchToRow(
+  row: Record<string, unknown>,
+  patch: AssignmentPatch,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...row, ...patch };
+  // The patch wire-format is `{ discuss_with_teacher: bool }` but the
+  // cached row exposes `discuss_with_teacher_at` (timestamp). Translate
+  // so the optimistic update flips the visible state correctly.
+  if ("discuss_with_teacher" in patch) {
+    next.discuss_with_teacher_at = patch.discuss_with_teacher
+      ? (row.discuss_with_teacher_at ?? new Date().toISOString())
+      : null;
+    if (!patch.discuss_with_teacher) {
+      next.discuss_with_teacher_note = null;
+    }
+    delete (next as Record<string, unknown>).discuss_with_teacher;
+  }
+  return next;
+}
+
 function walkAndPatch(
   data: unknown,
   itemId: number,
@@ -39,7 +59,7 @@ function walkAndPatch(
     const obj = data as Record<string, unknown>;
     // Direct match: a bare Assignment row
     if (typeof obj.id === "number" && obj.id === itemId && "parent_status" in obj) {
-      return { ...obj, ...patch };
+      return applyPatchToRow(obj, patch);
     }
     // Object containing Assignment arrays — walk into each value
     const out: Record<string, unknown> = { ...obj };
@@ -63,6 +83,12 @@ function snapshotPrev(item: Assignment, patch: AssignmentPatch): AssignmentPatch
   if ("snooze_until" in patch) reverse.snooze_until = item.snooze_until ?? null;
   if ("status_notes" in patch) reverse.status_notes = item.status_notes ?? null;
   if ("tags" in patch) reverse.tags = [...(item.tags ?? [])];
+  if ("discuss_with_teacher" in patch) {
+    reverse.discuss_with_teacher = !!item.discuss_with_teacher_at;
+  }
+  if ("discuss_with_teacher_note" in patch) {
+    reverse.discuss_with_teacher_note = item.discuss_with_teacher_note ?? null;
+  }
   return reverse;
 }
 

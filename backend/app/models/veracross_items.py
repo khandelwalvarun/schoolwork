@@ -80,5 +80,15 @@ class VeracrossItem(Base):
     )
     match_confidence: Mapped[float | None] = mapped_column(nullable=True)
     match_method: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Phase 23 — "worth a chat" flag for the next parent-teacher
+    # meeting. Timestamp doubles as the on/off bit (NULL = not flagged).
+    # The optional note carries the parent's one-line reason so the
+    # PTM brief can render it as a talking point verbatim.
+    discuss_with_teacher_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    discuss_with_teacher_note: Mapped[str | None] = mapped_column(
+        String, nullable=True,
+    )
 
     child = relationship("Child", back_populates="items")

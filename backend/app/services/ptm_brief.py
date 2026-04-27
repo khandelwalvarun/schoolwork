@@ -53,6 +53,30 @@ log = logging.getLogger(__name__)
 
 
 @dataclass
+class ParentRaised:
+    """An item the parent flagged as 'worth a chat' for the PTM. Each
+    one renders verbatim — we never let the LLM rephrase the parent's
+    own concerns. Claude can still weave these into talking_points if
+    relevant, but the parent's list is canonical."""
+    item_id: int
+    kind: str             # assignment | grade | comment | school_message
+    title: str | None
+    title_en: str | None
+    due_or_date: str | None
+    note: str | None      # the parent's reason, free-text
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "item_id": self.item_id,
+            "kind": self.kind,
+            "title": self.title,
+            "title_en": self.title_en,
+            "due_or_date": self.due_or_date,
+            "note": self.note,
+        }
+
+
+@dataclass
 class SubjectSection:
     name: str
     teacher: str | None
@@ -63,6 +87,7 @@ class SubjectSection:
     talking_points: list[str] = field(default_factory=list)
     questions_for_teacher: list[str] = field(default_factory=list)
     evidence_row_ids: list[int] = field(default_factory=list)
+    parent_raised: list[ParentRaised] = field(default_factory=list)
 
 
 @dataclass
@@ -75,6 +100,11 @@ class PTMBrief:
     subjects: list[SubjectSection]
     general_questions: list[str]
     things_to_ignore: list[str]
+    # Parent-flagged items that don't fit any single subject (school
+    # messages, kind=other comments). Subject-scoped flags hang off
+    # SubjectSection.parent_raised. Renders as its own "Worth a chat"
+    # block above general questions.
+    parent_raised_general: list[ParentRaised]
     honest_caveat: str
     llm_used: bool
 
@@ -96,11 +126,13 @@ class PTMBrief:
                     "talking_points": s.talking_points,
                     "questions_for_teacher": s.questions_for_teacher,
                     "evidence_row_ids": s.evidence_row_ids,
+                    "parent_raised": [p.to_dict() for p in s.parent_raised],
                 }
                 for s in self.subjects
             ],
             "general_questions": self.general_questions,
             "things_to_ignore": self.things_to_ignore,
+            "parent_raised_general": [p.to_dict() for p in self.parent_raised_general],
             "honest_caveat": self.honest_caveat,
             "llm_used": self.llm_used,
         }
@@ -219,6 +251,42 @@ async def _build_pack(
         })
         bucket.setdefault("topic_states", []).append(ts)
 
+    # Parent-flagged "worth a chat" items — the explicit list the parent
+    # built up between PTMs. These are CANONICAL: they get rendered
+    # verbatim and the LLM can echo them as talking points but never
+    # rephrase them. Subject-scoped items hang off the subject bucket;
+    # subject-less items (most school messages) fall into a general
+    # bucket the renderer surfaces above the cross-subject section.
+    flagged = (
+        await session.execute(
+            select(VeracrossItem)
+            .where(VeracrossItem.child_id == child.id)
+            .where(VeracrossItem.discuss_with_teacher_at.is_not(None))
+            .order_by(VeracrossItem.discuss_with_teacher_at.desc())
+        )
+    ).scalars().all()
+    parent_raised_general: list[dict[str, Any]] = []
+    for it in flagged:
+        entry = {
+            "row_id": it.id,
+            "kind": it.kind,
+            "title": it.title,
+            "title_en": it.title_en,
+            "due_or_date": it.due_or_date,
+            "note": it.discuss_with_teacher_note,
+        }
+        subj = normalize_subject(it.subject) if it.subject else None
+        if subj and subj in by_subject:
+            by_subject[subj].setdefault("parent_raised", []).append(entry)
+        elif subj:
+            # Subject is set but we have no other signal for it — open
+            # a fresh bucket so the parent's flag isn't lost.
+            by_subject.setdefault(subj, {
+                "grades": [], "assignments": [], "teacher": None,
+            }).setdefault("parent_raised", []).append(entry)
+        else:
+            parent_raised_general.append(entry)
+
     # Cross-subject signals.
     excellence = (await status_for_child(session, child)).to_dict()
     patterns = await list_patterns(session, child.id)
@@ -256,6 +324,7 @@ async def _build_pack(
         "shaky_topics": shaky,
         "off_trend_grades": anomalies,
         "homework_load": load,
+        "parent_raised_general": parent_raised_general,
     }
 
     # _row_ids index for the validator.
@@ -267,8 +336,12 @@ async def _build_pack(
                 row_ids.add(int(g["linked_assignment_id"]))
         for a in b.get("assignments", []):
             row_ids.add(int(a["row_id"]))
+        for p in b.get("parent_raised", []):
+            row_ids.add(int(p["row_id"]))
     for it in anomalies:
         row_ids.add(int(it.get("grade_id", 0)))
+    for p in parent_raised_general:
+        row_ids.add(int(p["row_id"]))
     pack["_row_ids"] = sorted([r for r in row_ids if r > 0])
 
     return pack
@@ -280,7 +353,9 @@ The reader is a parent attending a PTM in the next 1-2 weeks. They want a one-pa
 
 You will receive a JSON DATA PACK with everything we know about this kid:
   - per-subject grades (with bodies and prior anomaly hypotheses), upcoming assignments, topic-mastery states, teacher names
+  - per-subject `parent_raised`: items the parent EXPLICITLY flagged as worth discussing — these are CANONICAL questions the parent already wrote down. They will be rendered verbatim under a "Worth a chat" sub-block. You should ALSO weave each one into a question_for_teacher when relevant (echoing the parent's note, not paraphrasing it), and cite its row_id in evidence_row_ids
   - cross-subject: Excellence arithmetic, pattern flags this month, shaky topics, off-trend grades, homework load
+  - top-level `parent_raised_general`: subject-less flagged items (typically school messages) — surface these as general_questions when they fit
 
 OUTPUT — strict JSON only, matching this schema:
 
@@ -402,7 +477,8 @@ def _rule_skeleton(pack: dict[str, Any]) -> dict[str, Any]:
     for name, b in pack.get("by_subject", {}).items():
         grades = b.get("grades") or []
         n = len(grades)
-        if n == 0 and not b.get("assignments"):
+        parent_raised = b.get("parent_raised") or []
+        if n == 0 and not b.get("assignments") and not parent_raised:
             continue
         avg = (
             sum(g.get("pct", 0) for g in grades) / n if n > 0 else None
@@ -413,6 +489,16 @@ def _rule_skeleton(pack: dict[str, Any]) -> dict[str, Any]:
         upcoming = b.get("assignments") or []
         if upcoming:
             tps.append(f"{len(upcoming)} upcoming in next 21 days.")
+        # Translate parent's flagged-item notes into questions verbatim
+        # so the rule fallback still surfaces them prominently.
+        questions: list[str] = []
+        for p in parent_raised:
+            note = (p.get("note") or "").strip()
+            title = p.get("title_en") or p.get("title") or "this item"
+            if note:
+                questions.append(f"{note} (re: {title})")
+            else:
+                questions.append(f"Could you walk me through {title}?")
         subjects.append({
             "name": name,
             "teacher": b.get("teacher"),
@@ -424,8 +510,11 @@ def _rule_skeleton(pack: dict[str, Any]) -> dict[str, Any]:
                 + (f", avg {avg:.0f}%." if avg is not None else ".")
             ),
             "talking_points": tps,
-            "questions_for_teacher": [],
-            "evidence_row_ids": [g["row_id"] for g in grades[:3]],
+            "questions_for_teacher": questions[:3],
+            "evidence_row_ids": (
+                [g["row_id"] for g in grades[:3]]
+                + [int(p["row_id"]) for p in parent_raised[:3] if p.get("row_id")]
+            ),
         })
     return {
         "headline": "Brief generated without LLM — see per-subject sections for the data.",
@@ -454,7 +543,22 @@ async def build_ptm_brief(
     if out is None:
         out = _rule_skeleton(pack)
 
+    def _to_parent_raised(items: list[dict[str, Any]]) -> list[ParentRaised]:
+        return [
+            ParentRaised(
+                item_id=int(p.get("row_id", 0)),
+                kind=p.get("kind") or "assignment",
+                title=p.get("title"),
+                title_en=p.get("title_en"),
+                due_or_date=p.get("due_or_date"),
+                note=p.get("note"),
+            )
+            for p in items
+            if int(p.get("row_id", 0)) > 0
+        ]
+
     sections: list[SubjectSection] = []
+    seen_subjects: set[str] = set()
     for s in out.get("subjects", []):
         nm = s.get("name", "")
         bucket = pack.get("by_subject", {}).get(nm, {})
@@ -471,6 +575,30 @@ async def build_ptm_brief(
             talking_points=list(s.get("talking_points", [])),
             questions_for_teacher=list(s.get("questions_for_teacher", [])),
             evidence_row_ids=list(s.get("evidence_row_ids", [])),
+            parent_raised=_to_parent_raised(bucket.get("parent_raised") or []),
+        ))
+        seen_subjects.add(nm)
+
+    # Subjects that have ONLY parent-raised items but nothing else
+    # (no grades, no upcoming assignments) get appended so the parent's
+    # flagged concerns are never silently dropped.
+    for nm, bucket in (pack.get("by_subject") or {}).items():
+        if nm in seen_subjects:
+            continue
+        pr = bucket.get("parent_raised") or []
+        if not pr:
+            continue
+        sections.append(SubjectSection(
+            name=nm,
+            teacher=bucket.get("teacher"),
+            n_grades=len(bucket.get("grades") or []),
+            avg_pct=None,
+            direction="parent_raised",
+            current_state="No graded data — surfaced because you flagged item(s) for this subject.",
+            talking_points=[],
+            questions_for_teacher=[],
+            evidence_row_ids=[int(p.get("row_id", 0)) for p in pr if p.get("row_id")],
+            parent_raised=_to_parent_raised(pr),
         ))
 
     return PTMBrief(
@@ -482,6 +610,7 @@ async def build_ptm_brief(
         subjects=sections,
         general_questions=list(out.get("general_questions", [])),
         things_to_ignore=list(out.get("things_to_ignore", [])),
+        parent_raised_general=_to_parent_raised(pack.get("parent_raised_general") or []),
         honest_caveat=HONEST_CAVEAT,
         llm_used=llm_used,
     )
@@ -520,6 +649,30 @@ def render_markdown(brief: PTMBrief) -> str:
             for q in s.questions_for_teacher:
                 lines.append(f"- {q}")
             lines.append("")
+        if s.parent_raised:
+            lines.append("**💬 Worth a chat — your list**")
+            for p in s.parent_raised:
+                title = p.title_en or p.title or "(untitled)"
+                bullet = f"- _{p.kind}_ — **{title}**"
+                if p.due_or_date:
+                    bullet += f" ({p.due_or_date})"
+                if p.note:
+                    bullet += f" → {p.note}"
+                lines.append(bullet)
+            lines.append("")
+
+    if brief.parent_raised_general:
+        lines.append("## 💬 Worth a chat — your list (general)")
+        lines.append("")
+        for p in brief.parent_raised_general:
+            title = p.title_en or p.title or "(untitled)"
+            bullet = f"- _{p.kind}_ — **{title}**"
+            if p.due_or_date:
+                bullet += f" ({p.due_or_date})"
+            if p.note:
+                bullet += f" → {p.note}"
+            lines.append(bullet)
+        lines.append("")
 
     if brief.general_questions:
         lines.append("## General — across subjects")

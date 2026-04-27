@@ -93,7 +93,21 @@ export function AssignmentRow({
         {a.subject}
       </div>
       <div className="min-w-0">
-        <TitleBlock title={a.title} titleEn={a.title_en} className="truncate" />
+        <div className="flex items-center gap-1.5 min-w-0">
+          <TitleBlock title={a.title} titleEn={a.title_en} className="truncate" />
+          {a.discuss_with_teacher_at && (
+            <span
+              className="shrink-0 inline-flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-200"
+              title={
+                a.discuss_with_teacher_note
+                  ? `Worth a chat at PTM — ${a.discuss_with_teacher_note}`
+                  : "Worth a chat at PTM"
+              }
+            >
+              💬 PTM
+            </span>
+          )}
+        </div>
         {(a.syllabus_context || (a.attachments && a.attachments.length > 0) || a.tags.length > 0) && (
           <div className="text-xs mt-0.5 space-y-0.5">
             {a.syllabus_context && (

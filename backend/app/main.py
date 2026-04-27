@@ -895,6 +895,20 @@ async def api_assignment_history(item_id: int, limit: int = 200) -> list[dict[st
         return await ast.get_history(session, item_id, limit=limit)
 
 
+@app.get("/api/worth-a-chat")
+async def api_worth_a_chat(
+    child_id: int | None = None,
+    kind: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Items the parent flagged as 'worth a chat' at the next PTM. The
+    PTM brief consumes this; the ChildBoard tray surfaces it live."""
+    async with get_async_session() as session:
+        return await Q.get_worth_a_chat(
+            session, child_id=child_id, kind=kind, limit=limit,
+        )
+
+
 @app.post("/api/grades/{grade_id}/explain-anomaly")
 async def api_explain_grade_anomaly(
     grade_id: int, force: bool = False,

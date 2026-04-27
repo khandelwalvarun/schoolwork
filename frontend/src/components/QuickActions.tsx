@@ -7,6 +7,7 @@ import { daysFromTodayIST, nextWeekendIST, todayISOInIST } from "../util/ist";
 
 /** Row-level one-click actions for an assignment.
  *   ✓     — toggle done-at-home
+ *   💬    — toggle "worth a chat at PTM" (with optional reason note)
  *   💤    — dropdown: 1d / 3d / weekend / 1w / 2w / pick date / clear
  *   ⋯     — full StatusPopover (priority, tags, notes, other states)
  */
@@ -50,6 +51,7 @@ export default function QuickActions({ a }: { a: Assignment }) {
   const isDone = a.parent_status === "done_at_home" || a.parent_status === "submitted";
   const todayIso = todayISOInIST();
   const isSnoozed = !!a.snooze_until && a.snooze_until > todayIso;
+  const isWorthAChat = !!a.discuss_with_teacher_at;
 
   const box =
     "w-7 h-7 inline-flex items-center justify-center rounded border text-sm transition-colors " +
@@ -58,6 +60,13 @@ export default function QuickActions({ a }: { a: Assignment }) {
   const toggleDone = () => {
     const next: ParentStatus | null = isDone && a.parent_status === "done_at_home" ? null : "done_at_home";
     patch(next === null ? "Marked not done" : "Marked done at home", { parent_status: next });
+  };
+
+  const toggleWorthAChat = () => {
+    patch(
+      isWorthAChat ? "Cleared 'worth a chat'" : "Flagged for PTM chat",
+      { discuss_with_teacher: !isWorthAChat },
+    );
   };
 
   const snooze = (dateIso: string | null) => {
@@ -89,6 +98,19 @@ export default function QuickActions({ a }: { a: Assignment }) {
         aria-label={isDone ? "Mark not done" : "Mark done at home"}
       >
         {isDone ? "✓" : "☐"}
+      </button>
+      <button
+        className={box + (isWorthAChat ? " bg-violet-50 border-violet-400 text-violet-800" : " border-gray-300 text-gray-500")}
+        onClick={toggleWorthAChat}
+        disabled={busy !== null}
+        title={
+          isWorthAChat
+            ? `Worth a chat at PTM${a.discuss_with_teacher_note ? ` — ${a.discuss_with_teacher_note}` : ""} (click to clear)`
+            : "Mark 'worth a chat' at next PTM"
+        }
+        aria-label={isWorthAChat ? "Cleared 'worth a chat'" : "Flag as worth a chat at PTM"}
+      >
+        💬
       </button>
       <button
         ref={snoozeRef}

@@ -196,6 +196,12 @@ export type Assignment = {
   tags: string[];
   effective_status: string | null;
   parent_marked_submitted_at: string | null;
+  /** Phase 23: parent flagged this item as "worth a chat" at the next
+   *  PTM. Timestamp = on; null = off. The optional note carries the
+   *  parent's reason (e.g. "ask why score dropped"). The PTM brief
+   *  surfaces flagged items as a dedicated subsection per subject. */
+  discuss_with_teacher_at?: string | null;
+  discuss_with_teacher_note?: string | null;
   syllabus_context: string | null;
   external_id: string;
   first_seen_at: string | null;
@@ -215,6 +221,12 @@ export type AssignmentPatch = Partial<{
   snooze_until: string | null;
   status_notes: string | null;
   tags: string[];
+  /** Toggle "worth a chat" flag. true = flag on (server stamps now()),
+   *  false = clear flag + clear note. Sending only the note (without
+   *  this) updates the note while preserving the on/off state — and
+   *  also implicitly turns the flag on if the note is non-empty. */
+  discuss_with_teacher: boolean;
+  discuss_with_teacher_note: string | null;
   note: string;
   actor: string;
 }>;
@@ -900,9 +912,25 @@ export const api = {
         talking_points: string[];
         questions_for_teacher: string[];
         evidence_row_ids: number[];
+        parent_raised: Array<{
+          item_id: number;
+          kind: string;
+          title: string | null;
+          title_en: string | null;
+          due_or_date: string | null;
+          note: string | null;
+        }>;
       }>;
       general_questions: string[];
       things_to_ignore: string[];
+      parent_raised_general: Array<{
+        item_id: number;
+        kind: string;
+        title: string | null;
+        title_en: string | null;
+        due_or_date: string | null;
+        note: string | null;
+      }>;
       honest_caveat: string;
       llm_used: boolean;
     }>(`/api/ptm-brief?child_id=${childId}`),
@@ -963,6 +991,13 @@ export const api = {
     }),
   assignmentHistory: (itemId: number) =>
     fetchJson<StatusHistoryEntry[]>(`/api/assignments/${itemId}/history`),
+  worthAChat: (childId?: number, kind?: string, limit = 200) => {
+    const p = new URLSearchParams();
+    if (childId) p.set("child_id", String(childId));
+    if (kind) p.set("kind", kind);
+    p.set("limit", String(limit));
+    return fetchJson<Assignment[]>(`/api/worth-a-chat?${p.toString()}`);
+  },
   assignmentConstants: () =>
     fetchJson<AssignmentConstants>("/api/assignments/constants"),
   resources: (childId?: number) =>

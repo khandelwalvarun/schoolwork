@@ -19,6 +19,7 @@ import AuditDrawer from "../components/AuditDrawer";
 import QuickActions from "../components/QuickActions";
 import { SkeletonBoardColumn } from "../components/Skeleton";
 import { useOptimisticPatch } from "../components/useOptimisticPatch";
+import { WorthAChatTray } from "../components/WorthAChatTray";
 import { formatDate } from "../util/dates";
 
 type ColumnKey = "not_started" | "in_progress" | "done_at_home" | "submitted" | "graded";
@@ -80,7 +81,21 @@ function Card({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="text-xs text-gray-500 truncate">{a.subject}</div>
-        <PriorityStar n={a.priority} />
+        <div className="flex items-center gap-1">
+          {a.discuss_with_teacher_at && (
+            <span
+              className="text-[10px] px-1 py-0 rounded bg-violet-100 text-violet-800 border border-violet-200"
+              title={
+                a.discuss_with_teacher_note
+                  ? `Worth a chat at PTM — ${a.discuss_with_teacher_note}`
+                  : "Worth a chat at PTM"
+              }
+            >
+              💬
+            </span>
+          )}
+          <PriorityStar n={a.priority} />
+        </div>
       </div>
       <div className="text-sm font-medium leading-tight">{a.title}</div>
       {a.title_en && a.title_en !== a.title && (
@@ -221,6 +236,8 @@ export default function ChildBoard() {
       <div className="text-xs text-gray-500 mb-3">
         Drag cards between columns · click status chip to edit priority/snooze/tags · click card for timeline
       </div>
+
+      <WorthAChatTray childId={childId} onOpenAudit={(a) => setAudit(a)} />
 
       <DndContext sensors={sensors} onDragStart={onStart} onDragEnd={onEnd}>
         <div className="flex gap-3 overflow-x-auto pb-4">

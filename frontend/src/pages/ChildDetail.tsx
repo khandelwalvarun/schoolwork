@@ -17,6 +17,7 @@ import { PatternsCard } from "../components/PatternsCard";
 import { SentimentTrendCard } from "../components/SentimentTrendCard";
 import { PTMBriefPanel } from "../components/PTMBriefPanel";
 import { SundayBriefPanel } from "../components/SundayBriefPanel";
+import { WorthAChatTray } from "../components/WorthAChatTray";
 import { ExcellenceStatus } from "../api";
 
 export default function ChildDetail() {
@@ -147,6 +148,8 @@ export default function ChildDetail() {
       <div className="mb-6">
         <SentimentTrendCard childId={childId} />
       </div>
+
+      <WorthAChatTray childId={childId} onOpenAudit={setAudit} />
 
       <section className="surface mb-6 overflow-hidden">
         {(["overdue", "due_today", "upcoming"] as const).map((bk) => {

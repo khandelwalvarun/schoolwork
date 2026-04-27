@@ -128,7 +128,15 @@ async def update_assignment_state(
     item = (
         await session.execute(select(VeracrossItem).where(VeracrossItem.id == item_id))
     ).scalar_one_or_none()
-    if item is None or item.kind != "assignment":
+    if item is None:
+        return None
+    # Most fields are assignment-only by the parent-status semantics we
+    # defined. The "worth a chat" flag, however, applies to any item the
+    # parent might raise at PTM (a grade, a comment, a school message)
+    # so we allow the patch through for non-assignments BUT only if the
+    # patch is restricted to flag-only keys; otherwise reject.
+    flag_only_keys = {"discuss_with_teacher", "discuss_with_teacher_note", "note", "actor"}
+    if item.kind != "assignment" and not (set(patch.keys()) <= flag_only_keys):
         return None
 
     now = datetime.now(tz=timezone.utc)
@@ -195,6 +203,38 @@ async def update_assignment_state(
             _record("tags", json.dumps(current_tags), json.dumps(new_tags))
             item.tags_json = json.dumps(new_tags) if new_tags else None
 
+    # discuss_with_teacher — boolean toggle. True flips the timestamp on
+    # to `now`; False clears both the timestamp AND the note. Sending
+    # the note alone (without `discuss_with_teacher`) just updates the
+    # note while preserving on/off state.
+    if "discuss_with_teacher" in patch:
+        flag = bool(patch["discuss_with_teacher"])
+        had = item.discuss_with_teacher_at is not None
+        if flag and not had:
+            _record("discuss_with_teacher", None, now.isoformat())
+            item.discuss_with_teacher_at = now
+        elif (not flag) and had:
+            _record("discuss_with_teacher", item.discuss_with_teacher_at.isoformat(), None)
+            item.discuss_with_teacher_at = None
+            # Clearing the flag also clears any note that went with it —
+            # otherwise a stale note resurfaces if the parent re-flags later.
+            if item.discuss_with_teacher_note:
+                _record("discuss_with_teacher_note", item.discuss_with_teacher_note, None)
+                item.discuss_with_teacher_note = None
+
+    if "discuss_with_teacher_note" in patch:
+        raw = patch["discuss_with_teacher_note"]
+        new_note = (raw or "").strip() or None
+        if new_note != item.discuss_with_teacher_note:
+            _record("discuss_with_teacher_note", item.discuss_with_teacher_note, new_note)
+            item.discuss_with_teacher_note = new_note
+            # Convenience: setting a note implicitly turns the flag on
+            # (parent typed something — they meant to flag). Cleared note
+            # alone does NOT turn the flag off (use discuss_with_teacher=false).
+            if new_note and item.discuss_with_teacher_at is None:
+                _record("discuss_with_teacher", None, now.isoformat())
+                item.discuss_with_teacher_at = now
+
     for c in changes:
         session.add(c)
     await session.commit()
@@ -207,6 +247,11 @@ async def update_assignment_state(
         "snooze_until": item.snooze_until,
         "status_notes": item.status_notes,
         "tags": parse_tags(item.tags_json),
+        "discuss_with_teacher_at": (
+            item.discuss_with_teacher_at.isoformat()
+            if item.discuss_with_teacher_at else None
+        ),
+        "discuss_with_teacher_note": item.discuss_with_teacher_note,
     }
 
 

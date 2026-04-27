@@ -168,8 +168,55 @@ export function PTMBriefPanel({
                       </ul>
                     </div>
                   )}
+                  {s.parent_raised && s.parent_raised.length > 0 && (
+                    <div className="mt-2 p-2 rounded border border-violet-200 bg-violet-50/50">
+                      <div className="text-[10px] uppercase tracking-wider text-violet-800 mb-1">
+                        💬 Worth a chat — your list
+                      </div>
+                      <ul className="space-y-1 text-sm text-gray-800">
+                        {s.parent_raised.map((p) => (
+                          <li key={p.item_id} className="leading-snug">
+                            <span className="text-[10px] uppercase tracking-wide text-violet-700 mr-1.5">
+                              {p.kind}
+                            </span>
+                            <span className="font-medium">{p.title_en || p.title || "(untitled)"}</span>
+                            {p.due_or_date && (
+                              <span className="text-xs text-gray-500"> · {p.due_or_date}</span>
+                            )}
+                            {p.note && (
+                              <div className="text-xs text-violet-900 italic ml-1">↳ {p.note}</div>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </section>
               ))}
+
+              {data.parent_raised_general && data.parent_raised_general.length > 0 && (
+                <section className="border-t border-gray-100 pt-4">
+                  <h4 className="font-semibold text-violet-800 mb-2">
+                    💬 Worth a chat — general
+                  </h4>
+                  <ul className="space-y-1 text-sm text-gray-800">
+                    {data.parent_raised_general.map((p) => (
+                      <li key={p.item_id} className="leading-snug">
+                        <span className="text-[10px] uppercase tracking-wide text-violet-700 mr-1.5">
+                          {p.kind}
+                        </span>
+                        <span className="font-medium">{p.title_en || p.title || "(untitled)"}</span>
+                        {p.due_or_date && (
+                          <span className="text-xs text-gray-500"> · {p.due_or_date}</span>
+                        )}
+                        {p.note && (
+                          <div className="text-xs text-violet-900 italic ml-1">↳ {p.note}</div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
 
               {data.general_questions.length > 0 && (
                 <section className="border-t border-gray-100 pt-4">

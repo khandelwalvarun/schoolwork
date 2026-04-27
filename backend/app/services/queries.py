@@ -154,6 +154,11 @@ def _item_to_dict(
         ),
         "self_prediction_outcome": getattr(item, "self_prediction_outcome", None),
         "llm_summary": getattr(item, "llm_summary", None),
+        "discuss_with_teacher_at": (
+            getattr(item, "discuss_with_teacher_at", None).isoformat()
+            if getattr(item, "discuss_with_teacher_at", None) else None
+        ),
+        "discuss_with_teacher_note": getattr(item, "discuss_with_teacher_note", None),
     }
     if item.normalized_json:
         try:
@@ -612,6 +617,38 @@ async def get_grades(
         out.append(d)
     out.sort(key=lambda x: x.get("graded_date") or "")
     return out
+
+
+async def get_worth_a_chat(
+    session: AsyncSession,
+    child_id: int | None = None,
+    kind: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Items the parent flagged as 'worth a chat' at the next PTM.
+
+    Spans every kind (assignments, grades, comments, school messages) —
+    the parent might want to discuss a low grade, a confusing comment,
+    or a homework that didn't make sense. Sorted by flag time, newest
+    first so the most recent concerns surface at the top of the tray.
+    """
+    q = (
+        select(VeracrossItem)
+        .where(VeracrossItem.discuss_with_teacher_at.is_not(None))
+    )
+    if child_id is not None:
+        q = q.where(VeracrossItem.child_id == child_id)
+    if kind:
+        q = q.where(VeracrossItem.kind == kind)
+    q = q.order_by(VeracrossItem.discuss_with_teacher_at.desc()).limit(limit)
+    class_levels = await _child_class_levels(session)
+    items = (await session.execute(q)).scalars().all()
+    att_map = await _attachments_for_items(session, [i.id for i in items])
+    return [
+        {**_item_to_dict(r, class_level=class_levels.get(r.child_id)),
+         "attachments": att_map.get(r.id, [])}
+        for r in items
+    ]
 
 
 async def get_all_assignments(
