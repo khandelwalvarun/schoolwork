@@ -32,7 +32,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...config import REPO_ROOT, get_settings, mindspark_credentials_for
 from ...db import get_async_session
 from ...models import Child, MindsparkSession, MindsparkTopicProgress
-from .client import mindspark_session, slow_jitter
+from .client import (
+    humanize_page,
+    mindspark_session,
+    navigate_via_link,
+    slow_jitter,
+)
 from . import parsers as P
 
 
@@ -88,17 +93,30 @@ async def run_recon_for(child_id: int) -> dict[str, Any]:
         page.on("response", on_response)
 
         # Walk the three pages with slow-rate guard between each.
-        for label, url in (
-            ("dashboard", DASHBOARD_PATH),
-            ("topic_map", TOPIC_MAP_PATH),
-            ("session_history", SESSION_HISTORY_PATH),
-        ):
+        # Use referrer-chain navigation: dashboard is the entry, then
+        # we click links inside it to reach topic-map and session-history
+        # (falling back to goto-with-Referer if the SPA's link isn't
+        # detectable). Each navigation gets humanize_page() — mouse
+        # wiggle + scroll — afterwards.
+        nav_plan = [
+            ("dashboard", DASHBOARD_PATH, ()),
+            ("topic_map", TOPIC_MAP_PATH, ("Learn", "Topic Map", "My Learning", "Subjects")),
+            ("session_history", SESSION_HISTORY_PATH, ("Reports", "History", "My Activity", "Sessions")),
+        ]
+        is_first = True
+        for label, url, hints in nav_plan:
             await slow_jitter()
             try:
-                await page.goto(url, wait_until="networkidle", timeout=30_000)
+                if is_first:
+                    await page.goto(url, wait_until="networkidle", timeout=30_000)
+                    await humanize_page(page)
+                else:
+                    await navigate_via_link(page, url, link_text_hints=hints)
             except Exception as e:
                 log.warning("mindspark recon: %s nav failed: %s", label, e)
+                is_first = False
                 continue
+            is_first = False
             try:
                 html = await page.content()
             except Exception:
@@ -142,6 +160,7 @@ async def run_metrics_for(
         await slow_jitter()
         try:
             await page.goto(DASHBOARD_PATH, wait_until="networkidle", timeout=30_000)
+            await humanize_page(page)
         except Exception as e:
             log.warning("mindspark dashboard nav failed: %s", e)
             return {"status": "nav_fail", "child_id": child.id, "error": repr(e)}
@@ -184,7 +203,11 @@ async def run_metrics_for(
 
         await slow_jitter()
         try:
-            await page.goto(TOPIC_MAP_PATH, wait_until="networkidle", timeout=30_000)
+            await navigate_via_link(
+                page,
+                TOPIC_MAP_PATH,
+                link_text_hints=("Learn", "Topic Map", "My Learning", "Subjects"),
+            )
         except Exception as e:
             log.warning("mindspark topic_map nav failed: %s", e)
             await session.commit()

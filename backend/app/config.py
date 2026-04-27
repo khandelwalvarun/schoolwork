@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     mindspark_min_delay_sec: float = Field(default=15.0, ge=5.0)
     mindspark_max_delay_sec: float = Field(default=30.0, ge=10.0)
     mindspark_storage_state_dir: str = str(DATA_ROOT / "mindspark_state")
+    # Stealth posture: visible browser by default. Override with
+    # MINDSPARK_HEADLESS=true if running on a server without a display
+    # (the scraper still applies playwright-stealth + the other 6 fixes).
+    mindspark_headless: bool = False
 
     # Scraper pacing
     scraper_min_delay_sec: float = Field(default=3.0, ge=0.5)
