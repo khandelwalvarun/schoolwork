@@ -15,8 +15,47 @@ All three share the same tool implementations (`backend/app/mcp/server.py`) and 
 
 ## Auth
 
-- **stdio:** none (local trusted process).
-- **HTTP / SSE:** optional bearer token via env var `MCP_BEARER_TOKEN`. When set, clients must send `Authorization: Bearer <token>`.
+- **stdio:** none — local trusted process.
+- **HTTP / SSE:** bearer token enforced by an ASGI middleware (`mcp_bearer_middleware` in `backend/app/main.py`) that gates `/mcp*` and `/mcp-sse*` paths. Set `MCP_BEARER_TOKEN` in `.env` once the host is reachable off-LAN; until then, requests pass through unchallenged (dev mode).
+
+### Generate a token
+
+```bash
+# Cryptographically secure 256-bit random token, base64.
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Or:
+openssl rand -hex 32
+```
+
+Then in `.env`:
+
+```bash
+MCP_BEARER_TOKEN=<the-token-you-just-generated>
+```
+
+Restart `schoolwork-api`. `/health` reports `mcp_auth_required: true` once the gate is on.
+
+### Verify the gate
+
+```bash
+# 401 expected when token is set but missing/wrong:
+curl -i -X POST http://localhost:7778/mcp \
+     -H 'Accept: application/json, text/event-stream' \
+     -H 'Content-Type: application/json' \
+     -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+# → HTTP/1.1 401 Unauthorized
+# → {"error":"Missing bearer token","hint":"Authorization: Bearer <token>"}
+
+# 200 (or proper MCP response) once header is present:
+curl -X POST http://localhost:7778/mcp \
+     -H 'Accept: application/json, text/event-stream' \
+     -H 'Content-Type: application/json' \
+     -H "Authorization: Bearer $MCP_BEARER_TOKEN" \
+     -d '{"jsonrpc":"2.0","method":"initialize","id":1,
+          "params":{"protocolVersion":"2024-11-05","capabilities":{},
+                    "clientInfo":{"name":"curl","version":"0"}}}'
+```
 
 ## Tool surface
 
@@ -263,50 +302,213 @@ Surfaced in the web UI under `/notifications → MCP activity` tab. Useful for s
 
 ## Client configurations
 
-### Claude Desktop (stdio)
+There are two ways to connect every client: **stdio** (the local `schoolwork-mcp` process talks directly to the SQLite DB) or **HTTP** (the running `schoolwork-api` serves MCP at `/mcp`). Stdio is fastest and needs no bearer token. HTTP is the only option when the consumer can't run a local Python process — Claude Dispatch, OpenClaw, anything in the cloud.
 
-`~/.config/Claude/claude_desktop_config.json`:
+### Claude Desktop
+
+**Config file location:**
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+**A. Stdio (recommended — local, no auth, fastest):**
 
 ```json
 {
   "mcpServers": {
     "parent-cockpit": {
       "command": "uv",
-      "args": ["--directory", "/Users/varun/dev/schoolwork", "run", "schoolwork-mcp"]
+      "args": [
+        "--directory", "/Users/varun/dev/schoolwork",
+        "run", "schoolwork-mcp"
+      ]
     }
   }
 }
 ```
 
-### Claude Code (stdio, per-project)
+**B. HTTP (when Desktop runs on a different machine than `schoolwork-api`):**
 
-`.claude/settings.local.json`:
+Recent Claude Desktop builds support HTTP MCP natively:
 
 ```json
 {
   "mcpServers": {
-    "parent-cockpit": { "command": "uv", "args": ["run", "schoolwork-mcp"] }
+    "parent-cockpit": {
+      "transport": "http",
+      "url": "https://your-host/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      }
+    }
   }
 }
 ```
 
-### Claude Dispatch / OpenClaw (HTTP)
+If your Claude Desktop build doesn't recognise `transport: "http"`, use `mcp-remote` as a stdio↔HTTP bridge:
 
-Point at `https://<your-host>/mcp`. Set `MCP_BEARER_TOKEN` in `.env` and provide the same value as a bearer token from the client.
+```json
+{
+  "mcpServers": {
+    "parent-cockpit": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote",
+        "https://your-host/mcp",
+        "--header", "Authorization:Bearer YOUR_TOKEN"
+      ]
+    }
+  }
+}
+```
+
+`mcp-remote` ships on npm (`npm install -g mcp-remote` or use `npx -y` as above).
+
+**Restart Claude Desktop** after editing the config. Tools appear under the 🔌 menu.
+
+### Claude Code
+
+**Stdio (per-project, recommended):**
+
+`.claude/settings.local.json` in the repo:
+
+```json
+{
+  "mcpServers": {
+    "parent-cockpit": {
+      "command": "uv",
+      "args": ["run", "schoolwork-mcp"]
+    }
+  }
+}
+```
+
+Or globally (`~/.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "parent-cockpit": {
+      "command": "uv",
+      "args": [
+        "--directory", "/Users/varun/dev/schoolwork",
+        "run", "schoolwork-mcp"
+      ]
+    }
+  }
+}
+```
+
+**HTTP** (when Claude Code runs in a different repo or container):
+
+Same `transport: "http"` + headers shape as Claude Desktop, or use the `mcp-remote` bridge.
+
+You can also wire it via the CLI:
+
+```bash
+claude mcp add parent-cockpit \
+  --transport http \
+  --url https://your-host/mcp \
+  --header "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Claude Agent SDK / Claude API direct
+
+If you're driving Claude programmatically with the Agent SDK and want it to call the cockpit's tools, register the MCP server in your agent config:
+
+```python
+# agent_config.py — Python SDK example
+mcp_servers = {
+    "parent-cockpit": {
+        "transport": "http",
+        "url": "https://your-host/mcp",
+        "headers": {"Authorization": f"Bearer {os.environ['MCP_BEARER_TOKEN']}"},
+    }
+}
+```
+
+Stdio works too if your agent is on the same host as the cockpit:
+
+```python
+mcp_servers = {
+    "parent-cockpit": {
+        "command": "uv",
+        "args": ["--directory", "/Users/varun/dev/schoolwork", "run", "schoolwork-mcp"],
+    }
+}
+```
+
+### Claude Dispatch (HTTP, scheduled agent)
+
+In Dispatch's MCP server config:
+
+| Field | Value |
+| --- | --- |
+| Transport | Streamable HTTP |
+| URL | `https://your-host/mcp` |
+| Auth header | `Authorization: Bearer YOUR_TOKEN` |
+
+Dispatch can then compose digests, run ad-hoc cockpit queries, and trigger `trigger_sync` / `trigger_mindspark_sync` on its own cadence.
+
+### OpenClaw (HTTP or SSE)
+
+Whichever transport OpenClaw prefers — both are served. Same bearer token. If OpenClaw supports multiple MCP servers, add this alongside others; the `instructions=` string at the top of `backend/app/mcp/server.py` tells OpenClaw's LLM how to navigate the surface.
+
+In OpenClaw's MCP server settings:
+
+| Field | Streamable HTTP | SSE |
+| --- | --- | --- |
+| URL | `https://your-host/mcp` | `https://your-host/mcp-sse` |
+| Auth | `Bearer YOUR_TOKEN` (same token works for both transports) |
+
+If OpenClaw uses a config-file format, the shape is usually:
+
+```yaml
+mcp_servers:
+  - name: parent-cockpit
+    transport: streamable_http
+    url: https://your-host/mcp
+    headers:
+      Authorization: Bearer YOUR_TOKEN
+```
+
+### Exposing your cockpit off-LAN
+
+If `schoolwork-api` only listens on `127.0.0.1`, the simplest hardened setup is:
+
+1. **Tailscale** — install on the machine running `schoolwork-api` and on every client. Each client connects to the cockpit's MagicDNS hostname (`http://your-mac:7778/mcp`). Bearer token still required, but you've eliminated the public-internet attack surface.
+2. **Cloudflare Tunnel** — `cloudflared tunnel --url http://localhost:7778`. Cloudflare proxies `https://<random>.trycloudflare.com` (or your subdomain) to your local port. Still set `MCP_BEARER_TOKEN`.
+3. **Reverse proxy on a real host** — nginx/caddy in front of port 7778 with TLS termination. Add IP allowlists or mTLS at the proxy if you want defence in depth.
+
+Whatever you pick, **set `MCP_BEARER_TOKEN`** before exposing the host. The 91-tool surface includes destructive operations (`update_assignment`, `delete_event`, `delete_library_file`, `trigger_mindspark_sync`, `read_attachment` for any kid's downloads) — you do not want this open.
 
 ## Local dev
 
 ```bash
-# Run the API + HTTP MCP together:
+# Run the API + HTTP MCP together (port from APP_PORT, default 7777):
 uv run schoolwork-api
-# Then:
-#   curl http://127.0.0.1:7777/health
-#   curl -H 'Authorization: Bearer <tok>' http://127.0.0.1:7777/mcp
 
-# Or stdio MCP alone (for Claude Desktop/Code):
+# Health (no auth, always open):
+curl http://127.0.0.1:7777/health
+# → {... "mcp_auth_required": false ...}   (or true once you set the token)
+
+# Hit MCP without a token while MCP_BEARER_TOKEN is unset → works:
+curl -X POST http://127.0.0.1:7777/mcp \
+     -H 'Accept: application/json, text/event-stream' \
+     -H 'Content-Type: application/json' \
+     -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+
+# Same call after setting MCP_BEARER_TOKEN → 401 unless you include header:
+curl -X POST http://127.0.0.1:7777/mcp \
+     -H 'Accept: application/json, text/event-stream' \
+     -H 'Content-Type: application/json' \
+     -H "Authorization: Bearer $MCP_BEARER_TOKEN" \
+     -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+
+# Stdio MCP alone (for Claude Desktop/Code):
 uv run schoolwork-mcp
 
-# Quick tool-list smoke test:
+# Tool-list smoke test:
 uv run python -c "
 from app.mcp import server as S
 import asyncio

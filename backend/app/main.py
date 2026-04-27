@@ -11,9 +11,9 @@ Stdio transport is a separate entry point (`schoolwork-mcp`) in backend/app/mcp/
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Header, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -72,19 +72,45 @@ app.add_middleware(
 
 
 # ─── auth for MCP endpoints ──────────────────────────────────────────────────
+# The streamable-HTTP and SSE transports are mounted as ASGI sub-apps via
+# `app.mount(...)`, so FastAPI dependencies don't propagate into them. We
+# enforce `MCP_BEARER_TOKEN` with an ASGI middleware that wraps the whole
+# parent app and short-circuits unauthorised requests under /mcp* before
+# they reach the sub-apps.
 
-async def require_mcp_bearer(
-    authorization: Annotated[str | None, Header()] = None,
-) -> None:
+_MCP_PATH_PREFIXES = ("/mcp", "/mcp-sse")
+
+
+def _is_mcp_path(path: str) -> bool:
+    """True if the request would land on either MCP transport mount.
+    `path == prefix` covers root requests; `path.startswith(prefix + "/")`
+    covers everything underneath. Avoids matching incidental neighbours
+    like `/mcp-activity` or `/mcp-foo`."""
+    for prefix in _MCP_PATH_PREFIXES:
+        if path == prefix or path.startswith(prefix + "/"):
+            return True
+    return False
+
+
+@app.middleware("http")
+async def mcp_bearer_middleware(request, call_next):  # noqa: ANN001
+    """Bearer-token gate for /mcp and /mcp-sse. No-op when
+    `MCP_BEARER_TOKEN` is unset — that's the dev default, suitable for
+    localhost / Tailscale. Set the env var in `.env` once the host is
+    reachable off-LAN."""
     expected = settings.mcp_bearer_token
-    if not expected:
-        # No token configured → allow (dev mode). In prod, set MCP_BEARER_TOKEN.
-        return
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing bearer token")
-    provided = authorization.split(None, 1)[1].strip()
-    if provided != expected:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid bearer token")
+    if expected and _is_mcp_path(request.url.path):
+        auth = request.headers.get("authorization") or ""
+        if not auth.lower().startswith("bearer "):
+            return JSONResponse(
+                {"error": "Missing bearer token", "hint": "Authorization: Bearer <token>"},
+                status_code=401,
+                headers={"WWW-Authenticate": 'Bearer realm="parent-cockpit-mcp"'},
+            )
+        provided = auth.split(None, 1)[1].strip()
+        if provided != expected:
+            return JSONResponse({"error": "Invalid bearer token"}, status_code=401)
+    return await call_next(request)
 
 
 # ─── health + web API ─────────────────────────────────────────────────────────
