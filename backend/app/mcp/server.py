@@ -3879,6 +3879,361 @@ async def validate_syllabus(
         )
 
 
+# ───────────────────────── Practice-prep sessions (iterative cowork) ─────────────────────────
+
+@server.tool()
+async def start_practice_session(
+    child_id: int,
+    subject: str,
+    topic: str | None = None,
+    linked_assignment_id: int | None = None,
+    title: str | None = None,
+    initial_prompt: str | None = None,
+    use_llm: bool = True,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Spin up a new practice-prep workspace and run the FIRST iteration.
+
+    Returns the full session payload (incl. `iterations[0]` = initial draft).
+    Pass `linked_assignment_id` to ground the prep against a specific
+    upcoming review/test row. Pass `topic` for free-form study not tied
+    to an assignment. `initial_prompt` lets you steer the first round
+    explicitly (e.g. "focus on word problems"); leave blank for the
+    default LLM behaviour.
+
+    `use_llm=False` skips the Opus call and produces a rule skeleton —
+    handy when offline or when you want to seed the workspace cheaply
+    before iterating."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.practice_session import start_session
+        async with get_async_session() as session:
+            result = await start_session(
+                session,
+                child_id=child_id, subject=subject, topic=topic,
+                linked_assignment_id=linked_assignment_id,
+                title=title, initial_prompt=initial_prompt,
+                use_llm=use_llm,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "start_practice_session",
+            {"child_id": child_id, "subject": subject, "topic": topic,
+             "linked_assignment_id": linked_assignment_id,
+             "use_llm": use_llm},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def iterate_practice_session(
+    session_id: int,
+    parent_prompt: str,
+    use_llm: bool = True,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Append one more iteration steered by `parent_prompt` ("harder",
+    "remove Q3", "more word problems", "in Hindi", "fewer marks").
+    The LLM sees the prior iteration's draft + the parent's prompt and
+    refines rather than regenerating from scratch.
+
+    Returns the full session with the new iteration appended. The new
+    iteration becomes the preferred draft automatically (use
+    set_preferred_practice_iteration to revert)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.practice_session import iterate
+        async with get_async_session() as session:
+            result = await iterate(
+                session, session_id,
+                parent_prompt=parent_prompt, use_llm=use_llm,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "iterate_practice_session",
+            {"session_id": session_id, "parent_prompt_len": len(parent_prompt or ""),
+             "use_llm": use_llm},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def get_practice_session(
+    session_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Full payload for one prep session — every iteration's markdown
+    + parsed JSON, every classwork scan with extraction summary, the
+    preferred-iteration pointer, and metadata."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.practice_session import get_session
+        async with get_async_session() as session:
+            result = await get_session(session, session_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "get_practice_session", {"session_id": session_id},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def list_practice_sessions(
+    child_id: int | None = None,
+    subject: str | None = None,
+    include_archived: bool = False,
+    limit: int = 100,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """Listing view — one row per session, no per-iteration content.
+    Use get_practice_session(id) to drill into a specific workspace."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from ..services.practice_session import list_sessions
+        async with get_async_session() as session:
+            result = await list_sessions(
+                session, child_id=child_id, subject=subject,
+                include_archived=include_archived, limit=limit,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "list_practice_sessions",
+            {"child_id": child_id, "subject": subject,
+             "include_archived": include_archived, "limit": limit},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def archive_practice_session(
+    session_id: int,
+    archive: bool = True,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Soft-archive (or un-archive) a session. Archived sessions hide
+    from list_practice_sessions by default but stay queryable via
+    include_archived=True. Pass `archive=False` to restore."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.practice_session import archive_session
+        async with get_async_session() as session:
+            result = await archive_session(session, session_id, archive=archive)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "archive_practice_session",
+            {"session_id": session_id, "archive": archive},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def set_preferred_practice_iteration(
+    iteration_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Star a specific iteration as the canonical draft for its session
+    (overrides the latest-wins default). Useful when iteration N+2 was
+    a regression and you want to revert to N+1."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.practice_session import set_preferred
+        async with get_async_session() as session:
+            result = await set_preferred(session, iteration_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "set_preferred_practice_iteration", {"iteration_id": iteration_id},
+            None, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def upload_classwork_scan(
+    child_id: int,
+    subject: str,
+    filename: str,
+    content: str,
+    encoding: str = "base64",
+    session_id: int | None = None,
+    extract: bool = True,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Upload a classwork scan (notebook page, blackboard photo, PDF
+    worksheet) to ground the practice generator. Same {content, encoding}
+    shape as upload_library_file. With `extract=true` (default) Claude
+    Vision runs inline and returns the parsed summary + topics; pass
+    `extract=false` to skip the Vision call (e.g. when you already have
+    extracted text from another source).
+
+    Bind to a session via `session_id`, or upload free-floating and
+    bind later with bind_classwork_scan. Allowed: image/* + PDF; cap 10 MB."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        import base64 as _b64
+        from sqlalchemy import select
+        from ..models import Child
+        if encoding == "text":
+            data = content.encode("utf-8")
+        elif encoding == "base64":
+            try:
+                data = _b64.b64decode(content, validate=True)
+            except Exception as decode_err:
+                raise ValueError(f"invalid base64 content: {decode_err}")
+        else:
+            raise ValueError(f"encoding must be 'base64' or 'text', got {encoding!r}")
+        from ..services.classwork_scan import save_scan
+        async with get_async_session() as session:
+            child = (
+                await session.execute(select(Child).where(Child.id == child_id))
+            ).scalar_one_or_none()
+            if child is None:
+                raise ValueError(f"child {child_id} not found")
+            result = await save_scan(
+                session, child,
+                subject=subject, filename=filename, data=data,
+                session_id=session_id, extract=extract,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "upload_classwork_scan",
+            {"child_id": child_id, "subject": subject, "filename": filename,
+             "encoding": encoding, "session_id": session_id, "extract": extract,
+             "size_hint": len(content)},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def list_classwork_scans(
+    child_id: int | None = None,
+    subject: str | None = None,
+    session_id: int | None = None,
+    unbound_only: bool = False,
+    limit: int = 100,
+    ctx: Context | None = None,
+) -> list[dict[str, Any]]:
+    """List classwork scans, filtered by kid / subject / bound session.
+    `unbound_only=true` returns only scans not yet attached to any
+    practice session (so the parent can sweep them into a workspace)."""
+    started = time.monotonic()
+    err: str | None = None
+    result: list[dict[str, Any]] = []
+    try:
+        from ..services.classwork_scan import list_scans
+        async with get_async_session() as session:
+            result = await list_scans(
+                session,
+                child_id=child_id, subject=subject,
+                session_id=session_id, unbound_only=unbound_only,
+                limit=limit,
+            )
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "list_classwork_scans",
+            {"child_id": child_id, "subject": subject,
+             "session_id": session_id, "unbound_only": unbound_only,
+             "limit": limit},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def bind_classwork_scan(
+    scan_id: int,
+    practice_session_id: int | None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Move a scan in/out of a practice session. Pass
+    `practice_session_id=null` to detach. The next practice iteration
+    in the bound session picks up the scan as grounding context."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.classwork_scan import bind_scan
+        async with get_async_session() as session:
+            result = await bind_scan(session, scan_id, practice_session_id)
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "bind_classwork_scan",
+            {"scan_id": scan_id, "practice_session_id": practice_session_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
+@server.tool()
+async def delete_classwork_scan(
+    scan_id: int, ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Permanently delete a classwork scan + its underlying attachment
+    row. The on-disk file is left in place (retention job sweeps it
+    later). Returns {ok, id}."""
+    started = time.monotonic()
+    err: str | None = None
+    result: dict[str, Any] = {}
+    try:
+        from ..services.classwork_scan import delete_scan
+        async with get_async_session() as session:
+            ok = await delete_scan(session, scan_id)
+        result = {"ok": ok, "id": scan_id}
+        return result
+    except Exception as e:
+        err = repr(e)
+        raise
+    finally:
+        await _audit(
+            "delete_classwork_scan", {"scan_id": scan_id},
+            result, err, started, _client_id(ctx),
+        )
+
+
 def run_stdio() -> None:
     """Entry point for `schoolwork-mcp` — stdio transport, for Claude Desktop/Code."""
     asyncio.run(server.run_stdio_async())

@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     claude_cli_model: str = ""  # e.g. "claude-haiku-4-5"; empty = CLI default
     claude_cli_timeout_sec: int = 120
 
+    # Override the model used by services/practice_session.py — the
+    # iterative practice-prep generator. Defaults to claude-opus-4-5
+    # because Opus's reasoning + curriculum grounding is the right tier
+    # for student-facing test material. Override per-deployment if Opus
+    # quota is tight.
+    practice_llm_model: str = "claude-opus-4-5"
+
     # Ollama (local, no billing)
     # Set OLLAMA_BASE_URL / OLLAMA_MODEL in .env if non-default.
     ollama_base_url: str = "http://localhost:11434"

@@ -13,6 +13,7 @@ from .notes import ParentNote
 from .notification_snooze import NotificationSnooze
 from .notifications import Notification
 from .pattern_state import PatternState
+from .practice import PracticeClassworkScan, PracticeIteration, PracticeSession
 from .status_history import AssignmentStatusHistory
 from .summaries import Summary
 from .syllabus_overrides import SyllabusCycleOverride, SyllabusTopicStatus
@@ -36,6 +37,9 @@ __all__ = [
     "NotificationSnooze",
     "ParentNote",
     "PatternState",
+    "PracticeClassworkScan",
+    "PracticeIteration",
+    "PracticeSession",
     "Summary",
     "SyllabusCycleOverride",
     "SyllabusTopicStatus",
