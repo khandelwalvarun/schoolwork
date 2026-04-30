@@ -23,6 +23,7 @@ import { Button } from "../components/Button";
 import { Sparkline } from "../components/Sparkline";
 import { ShakyTopicsTray } from "../components/ShakyTopicsTray";
 import { DailyBriefCard } from "../components/DailyBriefCard";
+import { FreshnessPelletStrip } from "../components/FreshnessPellet";
 import { formatDate, formatRelative } from "../util/dates";
 
 const BUCKET_DEFS: Record<string, { key: keyof ChildBlock; label: string; tone: "red" | "amber" | "blue" }> = {
@@ -178,12 +179,13 @@ function KidSection({
   return (
     <section className="surface mb-6 overflow-hidden">
       <header className="px-4 py-3 border-b border-[color:var(--line)] flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Link to={`/child/${kid.child.id}`} className="text-lg font-semibold hover:text-blue-700">
             {kid.child.display_name}
           </Link>
           <span className="text-sm text-gray-500">· {kid.child.class_section}</span>
           <CycleBadge cycle={kid.syllabus_cycle} />
+          <FreshnessPelletStrip pellets={kid.fresh_pellets} />
         </div>
         <div className="flex items-center gap-4">
           <KidBacklog sparkline={kid.overdue_sparkline}

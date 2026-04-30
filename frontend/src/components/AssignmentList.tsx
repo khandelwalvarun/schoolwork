@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Assignment } from "../api";
@@ -72,9 +72,22 @@ export function AssignmentRow({
   onOpenAudit: (a: Assignment) => void;
   onOpenPopover: (a: Assignment, rect: DOMRect) => void;
 }) {
+  // Phase 24 — attention zone styles. Fresh: amber left-rule + soft tint.
+  // Archived: muted text + line-through title. Steady: default.
+  const zone = a.attention_zone || "steady";
+  const zoneClass =
+    zone === "fresh"
+      ? " border-l-4 border-l-amber-300 bg-amber-50/30"
+      : zone === "archived"
+      ? " text-gray-400"
+      : "";
   return (
     <div
-      className={"row cursor-pointer focus:bg-[color:var(--accent-bg)] focus:outline-none " + (isSelected ? "selected" : "")}
+      className={
+        "row cursor-pointer focus:bg-[color:var(--accent-bg)] focus:outline-none " +
+        (isSelected ? "selected " : "") +
+        zoneClass
+      }
       onClick={() => onOpenAudit(a)}
       role="row"
       tabIndex={0}
@@ -88,13 +101,25 @@ export function AssignmentRow({
           ariaLabel={`Select ${a.title ?? "assignment"}`}
         />
       </div>
-      <div className="text-gray-600 truncate">
+      <div className={"truncate " + (zone === "archived" ? "text-gray-400" : "text-gray-600")}>
         <PriorityStar n={a.priority} />
         {a.subject}
       </div>
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
-          <TitleBlock title={a.title} titleEn={a.title_en} className="truncate" />
+          <TitleBlock
+            title={a.title}
+            titleEn={a.title_en}
+            className={"truncate " + (zone === "archived" ? "line-through decoration-gray-300" : "")}
+          />
+          {zone === "fresh" && (
+            <span
+              className="shrink-0 text-[10px] font-medium text-amber-700 uppercase tracking-wider"
+              title="New within the last 48 hours"
+            >
+              new
+            </span>
+          )}
           {a.discuss_with_teacher_at && (
             <span
               className="shrink-0 inline-flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-200"
@@ -274,16 +299,89 @@ export function AssignmentList({
         onToggleCollapsed={onToggleCollapsed}
         dragHandle={dragHandle}
       />
-      {!collapsed && rows.map((a) => (
-        <AssignmentRow
-          key={a.id}
-          a={a}
-          isSelected={selection.ids.has(a.id)}
-          onToggleSelect={selection.toggle}
+      {!collapsed && (
+        <ZoneSplitRows
+          rows={rows}
+          selection={selection}
           onOpenAudit={onOpenAudit}
           onOpenPopover={onOpenPopover}
         />
-      ))}
+      )}
     </div>
+  );
+}
+
+/** Phase 24: Partition rows by attention_zone and render in
+ *   FRESH → STEADY → ARCHIVED order. ARCHIVED items collapse behind a
+ *   "Done · N" toggle so the eye doesn't have to scan past completed
+ *   work to find what still needs attention. The split is invisible
+ *   when every row is in the same zone (e.g. all-fresh, or all-steady
+ *   on a quiet day). */
+function ZoneSplitRows({
+  rows,
+  selection,
+  onOpenAudit,
+  onOpenPopover,
+}: {
+  rows: Assignment[];
+  selection: {
+    ids: Set<number>;
+    toggle: (id: number) => void;
+    selectMany: (ids: Iterable<number>) => void;
+    deselectMany: (ids: Iterable<number>) => void;
+  };
+  onOpenAudit: (a: Assignment) => void;
+  onOpenPopover: (a: Assignment, rect: DOMRect) => void;
+}) {
+  const fresh = rows.filter((r) => r.attention_zone === "fresh");
+  const archived = rows.filter((r) => r.attention_zone === "archived");
+  const steady = rows.filter(
+    (r) => r.attention_zone !== "fresh" && r.attention_zone !== "archived",
+  );
+  const [archiveOpen, setArchiveOpen] = useState(false);
+
+  const renderRow = (a: Assignment) => (
+    <AssignmentRow
+      key={a.id}
+      a={a}
+      isSelected={selection.ids.has(a.id)}
+      onToggleSelect={selection.toggle}
+      onOpenAudit={onOpenAudit}
+      onOpenPopover={onOpenPopover}
+    />
+  );
+
+  return (
+    <>
+      {fresh.length > 0 && fresh.map(renderRow)}
+      {steady.length > 0 && steady.map(renderRow)}
+      {archived.length > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setArchiveOpen((v) => !v)}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-500 bg-[color:var(--bg-app)] hover:bg-[color:var(--bg-muted)] border-t border-[color:var(--line-soft)] text-left"
+            aria-expanded={archiveOpen}
+          >
+            <span
+              className={
+                "inline-block text-gray-400 transition-transform " +
+                (archiveOpen ? "rotate-90" : "")
+              }
+              style={{ width: 8 }}
+              aria-hidden
+            >
+              ▶
+            </span>
+            <span>Done</span>
+            <span className="font-semibold text-gray-600">· {archived.length}</span>
+            <span className="ml-auto text-[11px] text-gray-400">
+              auto-hidden after 24h
+            </span>
+          </button>
+          {archiveOpen && archived.map(renderRow)}
+        </>
+      )}
+    </>
   );
 }

@@ -18,6 +18,7 @@ import { SentimentTrendCard } from "../components/SentimentTrendCard";
 import { PTMBriefPanel } from "../components/PTMBriefPanel";
 import { SundayBriefPanel } from "../components/SundayBriefPanel";
 import { WorthAChatTray } from "../components/WorthAChatTray";
+import { FreshnessPelletStrip } from "../components/FreshnessPellet";
 import { ExcellenceStatus } from "../api";
 
 export default function ChildDetail() {
@@ -60,6 +61,7 @@ export default function ChildDetail() {
             {data.syllabus_cycle.name} · {data.syllabus_cycle.start} → {data.syllabus_cycle.end}
           </span>
         )}
+        <FreshnessPelletStrip pellets={data.fresh_pellets} />
         {excellence && excellence.grades_count > 0 && (
           <span
             className={excellence.on_track ? "chip-green" : "chip-amber"}

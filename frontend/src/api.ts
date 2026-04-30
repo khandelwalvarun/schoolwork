@@ -195,6 +195,9 @@ export type Assignment = {
   status_notes: string | null;
   tags: string[];
   effective_status: string | null;
+  /** Phase 24 — attention-lifecycle zone, computed server-side. Drives
+   *  the FRESH / STEADY / ARCHIVED partitioning of every assignment list. */
+  attention_zone?: "fresh" | "steady" | "archived";
   parent_marked_submitted_at: string | null;
   /** Phase 23: parent flagged this item as "worth a chat" at the next
    *  PTM. Timestamp = on; null = off. The optional note carries the
@@ -263,12 +266,28 @@ export type SyllabusCycle = {
 
 export type OverduePoint = { date: string; count: number };
 
+/** Phase 24 — recently-graded item rendered as a pellet next to the
+ *  kid's name. Stays visible for ~48h after the grade lands; anomalous
+ *  grades stay until the underlying anomaly score recovers. */
+export type FreshGradePellet = {
+  item_id: number;
+  subject: string | null;
+  title: string | null;
+  pct: number;
+  score_text: string | null;
+  graded_date: string | null;
+  hours_ago: number | null;
+  tone: "green" | "amber" | "red" | "gray";
+  anomalous: boolean;
+};
+
 export type ChildBlock = {
   child: Child;
   overdue: Assignment[];
   due_today: Assignment[];
   upcoming: Assignment[];
   grade_trends: GradeTrend[];
+  fresh_pellets?: FreshGradePellet[];
   syllabus_cycle: SyllabusCycle | null;
   overdue_trend: OverduePoint[];
   overdue_sparkline: string;
@@ -317,6 +336,7 @@ export type ChildDetail = {
   due_today: Assignment[];
   upcoming: Assignment[];
   grade_trends: GradeTrend[];
+  fresh_pellets?: FreshGradePellet[];
   overdue_trend: OverduePoint[];
   overdue_sparkline: string;
   syllabus_cycle: SyllabusCycle | null;

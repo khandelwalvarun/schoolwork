@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
 from ..models import Attachment, Child, Event, Notification, ParentNote, Summary, SyncRun, VeracrossItem
 from . import assignment_state as ast
+from . import freshness as fresh
 from . import syllabus as syl
 from ..util.time import IST, now_ist, today_ist
 
@@ -167,6 +168,8 @@ def _item_to_dict(
             pass
     if item.kind == "assignment" and class_level is not None:
         out["syllabus_context"] = syl.fuzzy_topic_for(class_level, item.subject, item.title)
+    # Attention-zone is computed last so it can read every field above.
+    out["attention_zone"] = fresh.attention_zone(out)
     return out
 
 
@@ -411,6 +414,117 @@ async def get_digest_summary(
     }
 
 
+async def fresh_grade_pellets(
+    session: AsyncSession,
+    child_id: int,
+    *,
+    hours: int = fresh.FRESH_WINDOW_HOURS,
+    include_anomalies: bool = True,
+    limit_fresh: int = 4,
+    limit_anomalies: int = 2,
+) -> list[dict[str, Any]]:
+    """Recently-graded items + still-prominent anomalies for a kid's
+    header-pellet strip. Returns at most `limit` rows, newest first.
+
+    `include_anomalies=True` (default) keeps off-trend grades visible
+    past the freshness window — the only signal the UI lets cross the
+    fresh→steady boundary. They render with tone='red'.
+
+    Each pellet:
+        {item_id, subject, pct, score_text, graded_date, hours_ago,
+         tone, anomalous}
+    """
+    from datetime import datetime as _dt
+    from .grade_match import _parse_loose_date
+
+    today_d = _today_ist()
+    threshold = today_d - timedelta(hours=hours, days=0).resolution * 0  # noqa: F841 (use date math below)
+    threshold_d = today_d - timedelta(days=max(1, hours // 24 + 1))
+
+    # Pull every grade for the kid; filter loose-date in Python because
+    # due_or_date can be "2026-04-30" OR "May 22" depending on source.
+    q = (
+        select(VeracrossItem)
+        .where(VeracrossItem.child_id == child_id)
+        .where(VeracrossItem.kind == "grade")
+        .order_by(VeracrossItem.due_or_date.desc())
+    )
+    all_rows = (await session.execute(q)).scalars().all()
+    # Pre-filter by parsed date to keep the loop tight. Exclude future-dated
+    # rows (some grades are stamped with the cycle's end date, not the
+    # grading date — those would otherwise show as "fresh" forever).
+    rows = [
+        r for r in all_rows
+        if (d := _parse_loose_date(r.due_or_date))
+        and d >= threshold_d and d <= today_d
+    ]
+
+    # Anomaly set — small list, fetched via the existing detector.
+    anomaly_ids: set[int] = set()
+    if include_anomalies:
+        try:
+            from .anomaly import detect_anomalies_for_child
+            anomalies = await detect_anomalies_for_child(session, child_id)
+            anomaly_ids = {int(a.get("grade_id", 0)) for a in anomalies if a.get("grade_id")}
+        except Exception:
+            pass
+
+    # Build pellet payloads — split into "fresh-real" and "anomaly-extra"
+    # so each gets its own quota; fresh wins ties on newness.
+    out: list[dict[str, Any]] = []
+    now_d = today_d
+    seen: set[int] = set()
+    sources: list[tuple[list[VeracrossItem], int, bool]] = [
+        (rows, limit_fresh, False),
+    ]
+    if include_anomalies and anomaly_ids:
+        anomaly_rows = [
+            r for r in all_rows
+            if r.id in anomaly_ids and r.id not in {x.id for x in rows}
+        ]
+        sources.append((anomaly_rows, limit_anomalies, True))
+
+    for source_rows, cap, anomaly_only in sources:
+        added = 0
+        for r in source_rows:
+            if added >= cap:
+                break
+            if r.id in seen:
+                continue
+            try:
+                n = json.loads(r.normalized_json or "{}")
+            except Exception:
+                n = {}
+            pct = n.get("grade_pct")
+            if pct is None:
+                continue
+            try:
+                pct_val = float(pct)
+            except (TypeError, ValueError):
+                continue
+            graded_at_d = _parse_loose_date(r.due_or_date)
+            hours_ago = (
+                int((now_d - graded_at_d).days * 24)
+                if graded_at_d else None
+            )
+            anomalous = r.id in anomaly_ids
+            out.append({
+                "item_id": r.id,
+                "subject": syl.normalize_subject(r.subject) or r.subject,
+                "title": r.title,
+                "pct": pct_val,
+                "score_text": n.get("score_text"),
+                "graded_date": graded_at_d.isoformat() if graded_at_d else None,
+                "hours_ago": hours_ago,
+                "tone": fresh.grade_pellet_tone(pct_val, anomalous=anomalous),
+                "anomalous": anomalous,
+            })
+            seen.add(r.id)
+            added += 1
+    out.sort(key=lambda p: (p["graded_date"] or "", p["item_id"]), reverse=True)
+    return out
+
+
 async def get_today(session: AsyncSession) -> dict[str, Any]:
     """The Today view data shape. Same structure used by the 4pm digest renderers."""
     children = await list_children(session)
@@ -431,6 +545,7 @@ async def get_today(session: AsyncSession) -> dict[str, Any]:
             if c.get("class_level") else None
         )
         backlog_counts = [b["count"] for b in backlog]
+        pellets = await fresh_grade_pellets(session, c["id"])
         per_kid.append(
             {
                 "child": c,
@@ -438,6 +553,7 @@ async def get_today(session: AsyncSession) -> dict[str, Any]:
                 "due_today": due_today,
                 "upcoming": upcoming,
                 "grade_trends": grade_trends,
+                "fresh_pellets": pellets,
                 "syllabus_cycle": (
                     {
                         "name": cycle.name,
@@ -489,6 +605,7 @@ async def get_child_detail(session: AsyncSession, child_id: int) -> dict[str, An
             .where(VeracrossItem.child_id == child_id)
         )
     ).scalar_one()
+    pellets = await fresh_grade_pellets(session, child_id)
     return {
         "child": child,
         "overdue": overdue,
@@ -497,6 +614,7 @@ async def get_child_detail(session: AsyncSession, child_id: int) -> dict[str, An
         "grade_trends": grade_trends,
         "overdue_trend": backlog,
         "overdue_sparkline": _overdue_sparkline([b["count"] for b in backlog]),
+        "fresh_pellets": pellets,
         "syllabus_cycle": (
             {"name": cycle.name, "start": cycle.start.isoformat(), "end": cycle.end.isoformat()}
             if cycle else None

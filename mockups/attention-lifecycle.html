@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mockup — Attention lifecycle (Today / kid detail)</title>
+<style>
+  /* Mirror the production tokens — same look-and-feel as the real app. */
+  :root {
+    --ink-primary:   oklch(20%  0.005 280);
+    --ink-secondary: oklch(45%  0.005 280);
+    --ink-tertiary:  oklch(60%  0.005 280);
+    --ink-muted:     oklch(76%  0.005 280);
+    --bg-app:        oklch(98%  0.005 280);
+    --bg-card:       oklch(100% 0     0);
+    --bg-muted:      oklch(96%  0.005 280);
+    --bg-sunken:     oklch(93%  0.005 280);
+    --line:          oklch(91%  0.005 280);
+    --line-soft:     oklch(94%  0.005 280);
+    --accent:        oklch(40%  0.16  260);
+    --accent-bg:     oklch(92%  0.04  260);
+    --red:           oklch(50%  0.18  25);
+    --red-bg:        oklch(97%  0.015 25);
+    --amber:         oklch(55%  0.14  60);
+    --amber-bg:      oklch(98%  0.025 60);
+    --amber-rule:    oklch(85%  0.10  60);
+    --green:         oklch(50%  0.13  150);
+    --green-bg:      oklch(96%  0.04  150);
+    --blue:          oklch(48%  0.17  255);
+    --blue-bg:       oklch(97%  0.02  255);
+    --purple:        oklch(40%  0.22  290);
+    --purple-bg:     oklch(96%  0.03  290);
+    --violet:        oklch(45%  0.22  300);
+    --violet-bg:     oklch(95%  0.04  300);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg-app);
+    color: var(--ink-primary);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+  .legend {
+    background: var(--bg-card);
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: var(--ink-secondary);
+  }
+  .legend strong { color: var(--ink-primary); font-weight: 600; }
+  .legend code {
+    background: var(--bg-muted);
+    padding: 0.5px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+
+  .kid-card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-bottom: 32px;
+    overflow: hidden;
+  }
+
+  /* Header — kid name + freshness pellets ride alongside */
+  .kid-header {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line-soft);
+    flex-wrap: wrap;
+  }
+  .kid-name { font-size: 18px; font-weight: 700; }
+  .kid-meta {
+    font-size: 12px;
+    color: var(--ink-tertiary);
+  }
+
+  /* The fresh-grade pellet — drops in next to the kid's name when a grade
+     just landed within the 48h window. After the window, it disappears. */
+  .pellet {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid var(--green);
+    box-shadow: 0 0 0 4px oklch(96% 0.04 150 / 0.5);
+    transition: box-shadow 0.2s;
+  }
+  .pellet.amber { background: var(--amber-bg); color: var(--amber); border-color: var(--amber);
+                  box-shadow: 0 0 0 4px oklch(98% 0.025 60 / 0.5); }
+  .pellet.red   { background: var(--red-bg); color: var(--red); border-color: var(--red);
+                  box-shadow: 0 0 0 4px oklch(97% 0.015 25 / 0.5); }
+  .pellet:hover { box-shadow: 0 0 0 6px oklch(96% 0.04 150 / 0.6); }
+  .pellet .age { color: var(--ink-tertiary); font-weight: 400; font-size: 11px; }
+
+  /* Zone divider — a thin amber rule + label */
+  .zone-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-tertiary);
+  }
+  .zone-label.fresh   { color: var(--amber); }
+  .zone-label.steady  { color: var(--ink-tertiary); }
+  .zone-label.archive { color: var(--ink-muted); }
+
+  .zone-label .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor;
+  }
+  .zone-label .count {
+    margin-left: auto;
+    font-weight: 400;
+    color: var(--ink-tertiary);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  /* Row — single assignment / grade entry */
+  .row {
+    display: grid;
+    grid-template-columns: 110px 1fr 110px auto;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 20px;
+    border-top: 1px solid var(--line-soft);
+    cursor: pointer;
+  }
+  .row:hover { background: var(--bg-muted); }
+  .row .subj { font-size: 13px; color: var(--ink-secondary); }
+  .row .title { font-weight: 500; }
+  .row .title .en { color: var(--ink-tertiary); font-style: italic; font-weight: 400; font-size: 13px; }
+  .row .ctx { font-size: 12px; color: var(--ink-tertiary); margin-top: 2px; }
+  .row .due { font-size: 12px; color: var(--ink-tertiary); white-space: nowrap; text-align: right; }
+
+  /* FRESH zone differs visually: a soft amber LEFT rule + slight tint. */
+  .row.fresh {
+    border-left: 3px solid var(--amber-rule);
+    padding-left: 17px;
+    background: linear-gradient(to right, var(--amber-bg) 0%, transparent 80px);
+  }
+  .row.fresh .title::after {
+    content: " 🆕";
+    font-size: 10px;
+    color: var(--amber);
+    margin-left: 2px;
+  }
+
+  /* ARCHIVED zone: compact + faded. Visible only when expanded. */
+  .row.archived {
+    color: var(--ink-tertiary);
+    background: var(--bg-app);
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .row.archived .title { font-weight: 400; text-decoration: line-through; text-decoration-color: var(--ink-muted); }
+  .row.archived .title::after {
+    content: "";
+  }
+
+  /* Status chip on the right */
+  .chip {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .chip-red    { background: var(--red-bg);    color: var(--red);    }
+  .chip-amber  { background: var(--amber-bg);  color: var(--amber);  }
+  .chip-blue   { background: var(--blue-bg);   color: var(--blue);   }
+  .chip-green  { background: var(--green-bg);  color: var(--green);  }
+  .chip-purple { background: var(--purple-bg); color: var(--purple); }
+  .chip-gray   { background: var(--bg-muted);  color: var(--ink-secondary); }
+  .chip-violet { background: var(--violet-bg); color: var(--violet); border: 1px solid var(--violet); }
+
+  /* "Completed this week (12)" collapsed chip */
+  .archive-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 20px;
+    background: var(--bg-app);
+    border-top: 1px solid var(--line-soft);
+    color: var(--ink-secondary);
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+  }
+  .archive-toggle:hover { background: var(--bg-muted); color: var(--ink-primary); }
+  .archive-toggle .arrow { color: var(--ink-tertiary); transition: transform 0.15s; }
+  .archive-toggle.expanded .arrow { transform: rotate(90deg); }
+  .archive-toggle .count {
+    margin-left: 6px;
+    font-weight: 600;
+    color: var(--ink-tertiary);
+  }
+  .archive-toggle .meta { margin-left: auto; font-size: 12px; color: var(--ink-tertiary); }
+
+  /* Quick actions sit at the right */
+  .actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .actions button {
+    width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--ink-secondary);
+  }
+  .actions button:hover { background: var(--bg-muted); color: var(--ink-primary); }
+
+  /* Top of page — page title + setting toggle */
+  h1 { margin: 0 0 6px 0; font-size: 22px; }
+  .subtitle { color: var(--ink-tertiary); font-size: 13px; margin-bottom: 24px; }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    font-size: 12px;
+    color: var(--ink-secondary);
+  }
+  .toolbar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  .compare {
+    background: oklch(99% 0.005 60);
+    border: 1px dashed var(--amber-rule);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 24px;
+  }
+  .compare h3 { margin: 0 0 6px 0; font-size: 13px; color: var(--amber); text-transform: uppercase; letter-spacing: 0.05em; }
+  .compare ul { margin: 4px 0 0 18px; padding: 0; font-size: 13px; color: var(--ink-secondary); }
+  .compare li { margin: 2px 0; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<h1>Today · 2026-04-30 (Thu)</h1>
+<div class="subtitle">Mockup of the proposed attention-lifecycle layout. Source data is illustrative — same shapes you see today, sorted into FRESH / STEADY / ARCHIVED zones.</div>
+
+<div class="legend">
+  <strong>How the zones work.</strong>
+  Every row carries a computed <code>attention_zone</code>: <code>fresh</code> (new in last 48h or status just changed), <code>steady</code> (known, in-flight), <code>archived</code> (done > 24h ago).
+  FRESH gets the amber left-rule + 🆕 marker; STEADY is normal style; ARCHIVED collapses behind a "Completed this week" chip you click to expand. Grades that landed in the last 48h ride along as a freshness <em>pellet</em> next to the kid's name on every page.
+</div>
+
+<div class="toolbar">
+  <label><input type="checkbox" /> Show archived</label>
+  <span style="margin-left:auto">Pellet expires: 48h after <code>graded_date</code> · Auto-archive: 24h after status closes</span>
+</div>
+
+<!-- TEJAS — class 6 -->
+<div class="kid-card">
+  <div class="kid-header">
+    <div class="kid-name">Tejas</div>
+    <div class="kid-meta">Class 6 · LC1</div>
+    <span class="pellet">
+      ✓ Math · 87% <span class="age">· 4h ago</span>
+    </span>
+    <span class="pellet amber">
+      ↗ English · 91% <span class="age">· yesterday</span>
+    </span>
+    <span class="pellet red" title="Off-trend grade — anomaly">
+      ⚠ Hindi · 64% <span class="age">· 2d ago — anomaly</span>
+    </span>
+  </div>
+
+  <!-- FRESH zone -->
+  <div class="zone-label fresh">
+    <span class="dot"></span>
+    Fresh
+    <span class="count">3 items · last 48h</span>
+  </div>
+
+  <div class="row fresh">
+    <div class="subj">English</div>
+    <div>
+      <div class="title">Snake Trouble — book cover artwork <span class="en">(Hindi → English)</span></div>
+      <div class="ctx">↳ Snake Trouble by Ruskin Bond · just assigned 6h ago</div>
+    </div>
+    <div class="due">Tue, May 5</div>
+    <div class="actions">
+      <span class="chip chip-amber">pending</span>
+      <button title="Mark done at home">☐</button>
+      <button title="Snooze">💤</button>
+      <button title="Worth a chat">💬</button>
+    </div>
+  </div>
+
+  <div class="row fresh">
+    <div class="subj">Mathematics</div>
+    <div>
+      <div class="title">Worksheet 4 — Decimals (revision)</div>
+      <div class="ctx">↳ Decimals · status changed → "in progress" 18h ago</div>
+    </div>
+    <div class="due">Fri, May 1</div>
+    <div class="actions">
+      <span class="chip chip-amber">in progress</span>
+      <button>☐</button>
+      <button>💤</button>
+      <button>💬</button>
+    </div>
+  </div>
+
+  <div class="row fresh">
+    <div class="subj">Hindi</div>
+    <div>
+      <div class="title">मातृभूमि — कविता पाठ <span class="en">(→ Mātṛbhūmi recitation)</span></div>
+      <div class="ctx">↳ कविता · graded 64% — off-trend — <a href="#" style="color:var(--accent)">why?</a></div>
+    </div>
+    <div class="due">graded 2d ago</div>
+    <div class="actions">
+      <span class="chip chip-red">anomaly</span>
+      <button title="Worth a chat at PTM">💬</button>
+    </div>
+  </div>
+
+  <!-- STEADY zone -->
+  <div class="zone-label steady">
+    <span class="dot"></span>
+    Steady
+    <span class="count">5 items</span>
+  </div>
+
+  <div class="row">
+    <div class="subj">Social Science</div>
+    <div>
+      <div class="title">Map work — Indian Subcontinent</div>
+      <div class="ctx">↳ Geography ch. 2 · upcoming</div>
+    </div>
+    <div class="due">Mon, May 5</div>
+    <div class="actions">
+      <span class="chip chip-blue">upcoming</span>
+      <button>☐</button>
+      <button>💤</button>
+      <button>💬</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="subj">English</div>
+    <div>
+      <div class="title">Reading log — week 3</div>
+      <div class="ctx">↳ Wonder by R.J. Palacio · weekly recurring</div>
+    </div>
+    <div class="due">weekly</div>
+    <div class="actions">
+      <span class="chip chip-blue">upcoming</span>
+      <button>☐</button>
+      <button>💤</button>
+      <button>💬</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="subj">Sanskrit</div>
+    <div>
+      <div class="title">श्लोकमाला — pratidina shloka</div>
+      <div class="ctx">↳ pronunciation · ongoing</div>
+    </div>
+    <div class="due">recurring</div>
+    <div class="actions">
+      <span class="chip chip-amber">in progress</span>
+      <button>☐</button>
+      <button>💤</button>
+      <button>💬</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="subj">Mathematics</div>
+    <div>
+      <div class="title">Unit 4 review — fractions + decimals</div>
+      <div class="ctx">↳ <strong>Review</strong> classified · upcoming · <a href="#" style="color:var(--accent)">prep sheet?</a></div>
+    </div>
+    <div class="due">Wed, May 7</div>
+    <div class="actions">
+      <span class="chip chip-violet">review</span>
+      <button>☐</button>
+      <button>💤</button>
+      <button>💬</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="subj">Computing</div>
+    <div>
+      <div class="title">Scratch project — bouncing ball</div>
+      <div class="ctx">↳ assigned last week · in progress</div>
+    </div>
+    <div class="due">Fri, May 8</div>
+    <div class="actions">
+      <span class="chip chip-amber">in progress</span>
+      <button>☐</button>
+      <button>💤</button>
+      <button>💬</button>
+    </div>
+  </div>
+
+  <!-- ARCHIVED — collapsed -->
+  <div class="archive-toggle">
+    <span class="arrow">▶</span>
+    Completed this week
+    <span class="count">12</span>
+    <span class="meta">11 graded ✓ · 1 done at home · auto-hidden after 24h</span>
+  </div>
+</div>
+
+<!-- SAMARTH — class 4 -->
+<div class="kid-card">
+  <div class="kid-header">
+    <div class="kid-name">Samarth</div>
+    <div class="kid-meta">Class 4 · LC1</div>
+    <!-- No fresh grades for Samarth — quiet header -->
+    <span style="color:var(--ink-tertiary); font-size:12px;">No new grades in the last 48h</span>
+  </div>
+
+  <!-- FRESH zone — only 1 item, the new assignment -->
+  <div class="zone-label fresh">
+    <span class="dot"></span>
+    Fresh
+    <span class="count">1 item · last 48h</span>
+  </div>
+
+  <div class="row fresh">
+    <div class="subj">EVS</div>
+    <div>
+      <div class="title">Plant my seed — observation log starting tomorrow</div>
+      <div class="ctx">↳ assigned 3h ago · needs supplies (seeds + small pot)</div>
+    </div>
+    <div class="due">starts Fri, May 1</div>
+    <div class="actions">
+      <span class="chip chip-amber">pending</span>
+      <button>☐</button>
+      <button>💤</button>
+      <button>💬</button>
+    </div>
+  </div>
+
+  <!-- STEADY zone -->
+  <div class="zone-label steady">
+    <span class="dot"></span>
+    Steady
+    <span class="count">3 items</span>
+  </div>
+
+  <div class="row">
+    <div class="subj">Mathematics</div>
+    <div>
+      <div class="title">Worksheet — multiplication tables 6 & 7</div>
+      <div class="ctx">↳ Tables · upcoming</div>
+    </div>
+    <div class="due">Mon, May 5</div>
+    <div class="actions">
+      <span class="chip chip-blue">upcoming</span>
+      <button>☐</button>
+      <button>💤</button>
+      <button>💬</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="subj">Social Studies</div>
+    <div>
+      <div class="title">Spelling Bee List 7 — practice for class test</div>
+      <div class="ctx">↳ <strong>Test</strong> classified · upcoming · <a href="#" style="color:var(--accent)">prep sheet?</a> · <a href="#" style="color:var(--accent)">List 7 PDF</a></div>
+    </div>
+    <div class="due">Thu, May 7</div>
+    <div class="actions">
+      <span class="chip chip-violet">test</span>
+      <button>☐</button>
+      <button>💤</button>
+      <button>💬</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="subj">English</div>
+    <div>
+      <div class="title">Listening exercise — Friend's prayer</div>
+      <div class="ctx">↳ recitation · weekly</div>
+    </div>
+    <div class="due">recurring</div>
+    <div class="actions">
+      <span class="chip chip-amber">in progress</span>
+      <button>☐</button>
+      <button>💤</button>
+      <button>💬</button>
+    </div>
+  </div>
+
+  <!-- ARCHIVED — collapsed -->
+  <div class="archive-toggle">
+    <span class="arrow">▶</span>
+    Completed this week
+    <span class="count">7</span>
+    <span class="meta">6 graded ✓ · 1 submitted</span>
+  </div>
+</div>
+
+<!-- Comparison block at bottom — what's gone away -->
+<div class="compare">
+  <h3>What's different from the current Today page</h3>
+  <ul>
+    <li><strong>Fresh-grade pellets ride next to the kid's name</strong> — Math 87% just landed; you absorb it on the way to whatever you came for. Auto-disappears after 48h.</li>
+    <li><strong>FRESH zone surfaces only the 3-4 things that changed in the last 48h</strong> — newly assigned work, newly graded items, status flips. Everything stable drops to STEADY below.</li>
+    <li><strong>Completed work auto-hides after 24h</strong> behind one "Completed this week (12)" chip per kid — the dozen done items don't compete for attention anymore. Click to expand if you need to verify something.</li>
+    <li><strong>The Hindi anomaly stays prominent</strong> — even past the 48h fresh window, anomalous grades keep their red pellet + chip until you acknowledge them. That's the only signal that crosses the freshness boundary.</li>
+    <li><strong>Reviews + tests get a violet chip</strong> + an inline "prep sheet?" link, leaning into (b) — the LLM-driven practice generator we'll build next.</li>
+    <li><strong>Quiet days look quiet</strong> — Samarth's row says "No new grades in the last 48h" instead of a forest of zero-counts.</li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+  // Tiny toggle so you can click "Completed this week" and see expansion behaviour
+  document.querySelectorAll('.archive-toggle').forEach(el => {
+    el.addEventListener('click', () => {
+      el.classList.toggle('expanded');
+      // Find or create the expansion area
+      let exp = el.nextElementSibling;
+      if (!exp || !exp.classList.contains('archive-expanded')) {
+        exp = document.createElement('div');
+        exp.className = 'archive-expanded';
+        exp.innerHTML = `
+          <div class="row archived">
+            <div class="subj">Mathematics</div>
+            <div><div class="title">Worksheet — long division</div><div class="ctx">↳ done at home · graded 92%</div></div>
+            <div class="due">2d ago</div>
+            <div class="actions"><span class="chip chip-green">graded · 92</span></div>
+          </div>
+          <div class="row archived">
+            <div class="subj">Hindi</div>
+            <div><div class="title">अनुच्छेद लेखन — मेरी बहन</div><div class="ctx">↳ submitted · graded 88%</div></div>
+            <div class="due">3d ago</div>
+            <div class="actions"><span class="chip chip-green">graded · 88</span></div>
+          </div>
+          <div class="row archived">
+            <div class="subj">Social Science</div>
+            <div><div class="title">Map work — political India</div><div class="ctx">↳ submitted · awaiting grade</div></div>
+            <div class="due">3d ago</div>
+            <div class="actions"><span class="chip chip-blue">submitted</span></div>
+          </div>
+          <div style="padding:10px 20px; color:var(--ink-tertiary); font-size:12px; border-top: 1px solid var(--line-soft);">
+            … 9 more rows hidden. Same compact style for the rest.
+          </div>
+        `;
+        exp.style.display = 'none';
+        el.parentNode.insertBefore(exp, el.nextSibling);
+      }
+      exp.style.display = exp.style.display === 'none' ? 'block' : 'none';
+    });
+  });
+</script>
+
+</body>
+</html>
