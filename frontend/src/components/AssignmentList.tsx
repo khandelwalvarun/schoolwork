@@ -5,6 +5,7 @@ import { Assignment } from "../api";
 import TitleBlock from "./TitleBlock";
 import Attachments from "./Attachments";
 import QuickActions from "./QuickActions";
+import { ReviewPracticeButton } from "./ReviewPracticeButton";
 import { EffectiveStatusChip } from "./StatusPopover";
 import { formatDate } from "../util/dates";
 
@@ -132,6 +133,7 @@ export function AssignmentRow({
               💬 PTM
             </span>
           )}
+          <ReviewPracticeButton a={a} />
         </div>
         {(a.syllabus_context || (a.attachments && a.attachments.length > 0) || a.tags.length > 0) && (
           <div className="text-xs mt-0.5 space-y-0.5">

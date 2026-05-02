@@ -2141,6 +2141,207 @@ async def api_mcp_activity(limit: int = 50) -> list[dict[str, Any]]:
         ]
 
 
+# ─── practice-prep workspace (iterative LLM cowork) ──────────────────────────
+
+@app.post("/api/practice/sessions")
+async def api_practice_session_start(payload: dict[str, Any]) -> dict[str, Any]:
+    """Start a new practice-prep session. Body:
+       {child_id, subject, topic?, linked_assignment_id?, title?,
+        initial_prompt?, use_llm?}"""
+    from .services.practice_session import start_session
+    child_id = (payload or {}).get("child_id")
+    subject = (payload or {}).get("subject")
+    if child_id is None or not subject:
+        raise HTTPException(400, "child_id and subject are required")
+    try:
+        async with get_async_session() as session:
+            return await start_session(
+                session,
+                child_id=int(child_id),
+                subject=subject,
+                topic=payload.get("topic"),
+                linked_assignment_id=payload.get("linked_assignment_id"),
+                title=payload.get("title"),
+                initial_prompt=payload.get("initial_prompt"),
+                use_llm=bool(payload.get("use_llm", True)),
+            )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/practice/sessions/{session_id}/iterate")
+async def api_practice_session_iterate(
+    session_id: int, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Append one more iteration steered by the parent's prompt. Body:
+       {parent_prompt: str, use_llm?: bool}"""
+    from .services.practice_session import iterate
+    prompt = (payload or {}).get("parent_prompt") or ""
+    if not prompt.strip():
+        raise HTTPException(400, "parent_prompt is required")
+    try:
+        async with get_async_session() as session:
+            return await iterate(
+                session, session_id,
+                parent_prompt=prompt,
+                use_llm=bool((payload or {}).get("use_llm", True)),
+            )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/practice/sessions/{session_id}")
+async def api_practice_session_get(session_id: int) -> dict[str, Any]:
+    from .services.practice_session import get_session
+    try:
+        async with get_async_session() as session:
+            return await get_session(session, session_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/practice/sessions")
+async def api_practice_sessions_list(
+    child_id: int | None = None,
+    subject: str | None = None,
+    include_archived: bool = False,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    from .services.practice_session import list_sessions
+    async with get_async_session() as session:
+        return await list_sessions(
+            session,
+            child_id=child_id, subject=subject,
+            include_archived=include_archived, limit=limit,
+        )
+
+
+@app.post("/api/practice/sessions/{session_id}/archive")
+async def api_practice_session_archive(
+    session_id: int, payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Body: {archive: bool} — defaults to true. Pass false to restore."""
+    from .services.practice_session import archive_session
+    archive = True
+    if payload and "archive" in payload:
+        archive = bool(payload["archive"])
+    try:
+        async with get_async_session() as session:
+            return await archive_session(session, session_id, archive=archive)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/practice/iterations/{iteration_id}/preferred")
+async def api_practice_set_preferred(iteration_id: int) -> dict[str, Any]:
+    from .services.practice_session import set_preferred
+    try:
+        async with get_async_session() as session:
+            return await set_preferred(session, iteration_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/practice/sessions/{session_id}/iterations/{iteration_id}/markdown")
+async def api_practice_iteration_markdown(session_id: int, iteration_id: int) -> Any:
+    """Plain-text markdown for one iteration — for "copy to clipboard"
+    and "download as .md" affordances on the panel."""
+    from fastapi.responses import PlainTextResponse
+    from sqlalchemy import select
+    from .models import PracticeIteration
+    async with get_async_session() as session:
+        row = (
+            await session.execute(
+                select(PracticeIteration)
+                .where(PracticeIteration.id == iteration_id)
+                .where(PracticeIteration.session_id == session_id)
+            )
+        ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(404, "iteration not found")
+    return PlainTextResponse(row.output_md, media_type="text/markdown")
+
+
+@app.post("/api/practice/scans/upload")
+async def api_practice_scan_upload(
+    files: list[UploadFile] = File(...),  # noqa: B008
+    child_id: int | None = None,
+    subject: str | None = None,
+    session_id: int | None = None,
+    extract: bool = True,
+) -> dict[str, Any]:
+    """Upload one or more classwork scans. The Vision pass runs inline
+    when extract=true (default); set extract=false to skip."""
+    from sqlalchemy import select
+    from .models import Child
+    from .services.classwork_scan import save_scan
+    if child_id is None or not subject:
+        raise HTTPException(400, "child_id and subject are required")
+    saved: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    async with get_async_session() as session:
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(404, f"child {child_id} not found")
+        for f in files:
+            try:
+                data = await f.read()
+                scan = await save_scan(
+                    session, child,
+                    subject=subject,
+                    filename=f.filename or "unnamed",
+                    data=data,
+                    session_id=session_id,
+                    extract=extract,
+                )
+                saved.append(scan)
+            except ValueError as e:
+                errors.append({"filename": f.filename or "", "error": str(e)})
+    return {"saved": saved, "errors": errors}
+
+
+@app.get("/api/practice/scans")
+async def api_practice_scans_list(
+    child_id: int | None = None,
+    subject: str | None = None,
+    session_id: int | None = None,
+    unbound_only: bool = False,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    from .services.classwork_scan import list_scans
+    async with get_async_session() as session:
+        return await list_scans(
+            session,
+            child_id=child_id, subject=subject,
+            session_id=session_id, unbound_only=unbound_only,
+            limit=limit,
+        )
+
+
+@app.post("/api/practice/scans/{scan_id}/bind")
+async def api_practice_scan_bind(
+    scan_id: int, payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Body: {practice_session_id: int | null}"""
+    from .services.classwork_scan import bind_scan
+    practice_session_id = (payload or {}).get("practice_session_id")
+    try:
+        async with get_async_session() as session:
+            return await bind_scan(session, scan_id, practice_session_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.delete("/api/practice/scans/{scan_id}")
+async def api_practice_scan_delete(scan_id: int) -> dict[str, Any]:
+    from .services.classwork_scan import delete_scan
+    async with get_async_session() as session:
+        ok = await delete_scan(session, scan_id)
+    return {"ok": ok, "id": scan_id}
+
+
 # ─── mount MCP transports ─────────────────────────────────────────────────────
 # Streamable-HTTP (preferred) at /mcp, SSE (compat) at /mcp/sse.
 

@@ -281,6 +281,83 @@ export type FreshGradePellet = {
   anomalous: boolean;
 };
 
+/** Phase 25 — practice-prep workspace types. A session is a stateful
+ *  prep workspace; iterations accumulate as the parent steers the LLM
+ *  with prompts; classwork scans ground the next iteration. */
+export type PracticeIterationOut = {
+  id: number;
+  session_id: number;
+  iteration_index: number;
+  parent_prompt: string | null;
+  output_md: string;
+  output_json: {
+    title?: string;
+    instructions?: string;
+    questions?: Array<{
+      n: number;
+      stem: string;
+      type: string;
+      marks: number;
+      expected_answer?: string;
+      expected_solution_md?: string;
+      topic_ref?: string;
+    }>;
+    answer_key?: string;
+    honest_caveat?: string;
+  } | null;
+  llm_used: boolean;
+  llm_model: string | null;
+  llm_input_tokens: number | null;
+  llm_output_tokens: number | null;
+  duration_ms: number | null;
+  error: string | null;
+  created_at: string | null;
+};
+
+export type PracticeClassworkScanOut = {
+  id: number;
+  session_id: number | null;
+  child_id: number;
+  subject: string;
+  attachment_id: number;
+  extracted_summary: string | null;
+  extracted_topics: string[] | null;
+  extracted_text_present: boolean;
+  extracted_at: string | null;
+  uploaded_at: string | null;
+};
+
+export type PracticeSessionOut = {
+  id: number;
+  child_id: number;
+  subject: string;
+  topic: string | null;
+  linked_assignment_id: number | null;
+  title: string;
+  status: string;
+  preferred_iteration_id: number | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+  iterations: PracticeIterationOut[];
+  scans: PracticeClassworkScanOut[];
+};
+
+export type PracticeSessionListItem = {
+  id: number;
+  child_id: number;
+  subject: string;
+  topic: string | null;
+  title: string;
+  status: string;
+  iteration_count: number;
+  linked_assignment_id: number | null;
+  preferred_iteration_id: number | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
 export type ChildBlock = {
   child: Child;
   overdue: Assignment[];
@@ -1011,6 +1088,117 @@ export const api = {
     }),
   assignmentHistory: (itemId: number) =>
     fetchJson<StatusHistoryEntry[]>(`/api/assignments/${itemId}/history`),
+  // ── practice-prep workspace ─────────────────────────────────────────
+  practiceStartSession: (body: {
+    child_id: number;
+    subject: string;
+    topic?: string | null;
+    linked_assignment_id?: number | null;
+    title?: string | null;
+    initial_prompt?: string | null;
+    use_llm?: boolean;
+  }) =>
+    fetchJson<PracticeSessionOut>(`/api/practice/sessions`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  practiceIterateSession: (sessionId: number, parentPrompt: string, useLlm = true) =>
+    fetchJson<PracticeSessionOut>(
+      `/api/practice/sessions/${sessionId}/iterate`,
+      {
+        method: "POST",
+        body: JSON.stringify({ parent_prompt: parentPrompt, use_llm: useLlm }),
+      },
+    ),
+  practiceGetSession: (sessionId: number) =>
+    fetchJson<PracticeSessionOut>(`/api/practice/sessions/${sessionId}`),
+  practiceListSessions: (
+    childId?: number,
+    subject?: string,
+    includeArchived = false,
+    limit = 100,
+  ) => {
+    const p = new URLSearchParams();
+    if (childId) p.set("child_id", String(childId));
+    if (subject) p.set("subject", subject);
+    if (includeArchived) p.set("include_archived", "true");
+    p.set("limit", String(limit));
+    return fetchJson<PracticeSessionListItem[]>(
+      `/api/practice/sessions?${p.toString()}`,
+    );
+  },
+  practiceArchiveSession: (sessionId: number, archive = true) =>
+    fetchJson<PracticeSessionOut>(
+      `/api/practice/sessions/${sessionId}/archive`,
+      { method: "POST", body: JSON.stringify({ archive }) },
+    ),
+  practiceSetPreferred: (iterationId: number) =>
+    fetchJson<PracticeSessionOut>(
+      `/api/practice/iterations/${iterationId}/preferred`,
+      { method: "POST" },
+    ),
+  practiceIterationMarkdown: async (sessionId: number, iterationId: number) => {
+    const r = await fetch(
+      `/api/practice/sessions/${sessionId}/iterations/${iterationId}/markdown`,
+    );
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return r.text();
+  },
+  practiceUploadScans: async (
+    childId: number,
+    subject: string,
+    files: File[],
+    sessionId?: number,
+    extract = true,
+  ) => {
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f, f.name);
+    const p = new URLSearchParams({
+      child_id: String(childId),
+      subject,
+    });
+    if (sessionId) p.set("session_id", String(sessionId));
+    p.set("extract", String(extract));
+    const r = await fetch(`/api/practice/scans/upload?${p.toString()}`, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+    });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return (await r.json()) as {
+      saved: PracticeClassworkScanOut[];
+      errors: Array<{ filename: string; error: string }>;
+    };
+  },
+  practiceListScans: (
+    childId?: number,
+    subject?: string,
+    sessionId?: number,
+    unboundOnly = false,
+  ) => {
+    const p = new URLSearchParams();
+    if (childId) p.set("child_id", String(childId));
+    if (subject) p.set("subject", subject);
+    if (sessionId) p.set("session_id", String(sessionId));
+    if (unboundOnly) p.set("unbound_only", "true");
+    return fetchJson<PracticeClassworkScanOut[]>(
+      `/api/practice/scans?${p.toString()}`,
+    );
+  },
+  practiceBindScan: (scanId: number, practiceSessionId: number | null) =>
+    fetchJson<PracticeClassworkScanOut>(
+      `/api/practice/scans/${scanId}/bind`,
+      {
+        method: "POST",
+        body: JSON.stringify({ practice_session_id: practiceSessionId }),
+      },
+    ),
+  practiceDeleteScan: (scanId: number) =>
+    fetchJson<{ ok: boolean; id: number }>(
+      `/api/practice/scans/${scanId}`,
+      { method: "DELETE" },
+    ),
+
   worthAChat: (childId?: number, kind?: string, limit = 200) => {
     const p = new URLSearchParams();
     if (childId) p.set("child_id", String(childId));

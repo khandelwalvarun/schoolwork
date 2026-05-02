@@ -19,6 +19,7 @@ import AuditDrawer from "../components/AuditDrawer";
 import QuickActions from "../components/QuickActions";
 import { SkeletonBoardColumn } from "../components/Skeleton";
 import { useOptimisticPatch } from "../components/useOptimisticPatch";
+import { ReviewPracticeButton } from "../components/ReviewPracticeButton";
 import { WorthAChatTray } from "../components/WorthAChatTray";
 import { formatDate } from "../util/dates";
 
@@ -94,6 +95,7 @@ function Card({
               💬
             </span>
           )}
+          <ReviewPracticeButton a={a} />
           <PriorityStar n={a.priority} />
         </div>
       </div>
