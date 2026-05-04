@@ -150,6 +150,35 @@ function CycleBadge({ cycle }: { cycle: SyllabusCycle | null }) {
   );
 }
 
+/** Phase 26 — small inline chip on the Today kid header showing how
+ *  much classwork the school has reported in the last 14 days. Click
+ *  to jump to the kid detail's classwork section, expanded. Hidden
+ *  when there's no classwork — keeps the header tight on quiet days. */
+function ClassworkChip({ childId }: { childId: number }) {
+  const { data } = useQuery({
+    queryKey: ["classwork-count", childId],
+    queryFn: () =>
+      fetch(`/api/classwork?child_id=${childId}&days=14`).then(
+        (r) => r.json() as Promise<unknown[]>,
+      ),
+    staleTime: 60_000,
+  });
+  const count = data?.length ?? 0;
+  if (count === 0) return null;
+  return (
+    <Link
+      to={`/child/${childId}#classwork`}
+      className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+      title={`${count} classwork item${count === 1 ? "" : "s"} reported in the last 14 days — informational, not actionable`}
+    >
+      <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded text-white text-[8px] font-bold bg-gray-500">
+        C
+      </span>
+      <span>{count} this fortnight</span>
+    </Link>
+  );
+}
+
 function KidSection({
   kid,
   selection,
@@ -186,6 +215,7 @@ function KidSection({
           <span className="text-sm text-gray-500">· {kid.child.class_section}</span>
           <CycleBadge cycle={kid.syllabus_cycle} />
           <FreshnessPelletStrip pellets={kid.fresh_pellets} />
+          <ClassworkChip childId={kid.child.id} />
         </div>
         <div className="flex items-center gap-4">
           <KidBacklog sparkline={kid.overdue_sparkline}

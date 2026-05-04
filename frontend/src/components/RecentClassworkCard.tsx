@@ -28,8 +28,12 @@ export function RecentClassworkCard({
   });
 
   const count = data?.length ?? 0;
+  // Default-open when we actually have classwork to show. Empty
+  // sections collapse so they don't take vertical space when the
+  // school hasn't posted any classwork rows.
+  const defaultOpen = count > 0;
   return (
-    <details className="surface mb-6 group">
+    <details className="surface mb-6 group" open={defaultOpen}>
       <summary className="px-4 py-3 cursor-pointer flex items-center gap-2 text-sm select-none">
         <span
           className="text-gray-400 transition-transform group-open:rotate-90 inline-block w-3"
@@ -37,9 +41,12 @@ export function RecentClassworkCard({
         >
           ▶
         </span>
-        <span className="font-semibold text-gray-700">📚 Recent classwork</span>
+        <span className="inline-flex items-center justify-center w-5 h-5 rounded text-white text-[10px] font-bold bg-gray-500" title="Classwork (informational)">
+          C
+        </span>
+        <span className="font-semibold text-gray-700">Recent classwork</span>
         <span className="text-xs text-gray-500">
-          · {isLoading ? "loading…" : `${count} item${count === 1 ? "" : "s"} · last ${days} days · informational`}
+          · {isLoading ? "loading…" : `${count} item${count === 1 ? "" : "s"} · last ${days} days · informational, not actionable`}
         </span>
       </summary>
       <div className="border-t border-[color:var(--line-soft)] px-4 py-3">

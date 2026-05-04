@@ -117,6 +117,8 @@ export default function ChildDetail() {
         </div>
       </section>
 
+      <RecentClassworkCard childId={childId} days={30} />
+
       <details className="surface mb-6 group" open={false}>
         <summary className="px-4 py-3 cursor-pointer flex items-center gap-2 text-sm select-none">
           <span className="text-gray-400 transition-transform group-open:rotate-90 inline-block w-3" aria-hidden>▶</span>
@@ -153,8 +155,6 @@ export default function ChildDetail() {
       </details>
 
       <WorthAChatTray childId={childId} onOpenAudit={setAudit} />
-
-      <RecentClassworkCard childId={childId} days={30} />
 
       <section className="surface mb-6 overflow-hidden">
         {(["overdue", "due_today", "upcoming"] as const).map((bk) => {
