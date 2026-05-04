@@ -116,40 +116,40 @@ export default function ChildDetail() {
         </div>
       </section>
 
-      <div className="surface mb-6 p-4 grid md:grid-cols-2 gap-6">
-        {data.overdue_sparkline && (
-          <div>
-            <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">14-day overdue backlog</div>
-            <Sparkline
-              points={data.overdue_trend.map((p) => p.count)}
-              tone="red"
-              width={240}
-              height={32}
-              title={`Overdue last 14 days. Now ${data.overdue_trend[data.overdue_trend.length - 1]?.count}.`}
-            />
-            <div className="text-xs text-gray-500 mt-1">
-              {data.overdue_trend[0]?.date} → {data.overdue_trend[data.overdue_trend.length - 1]?.date}
-              &nbsp;· now {data.overdue_trend[data.overdue_trend.length - 1]?.count}
+      <details className="surface mb-6 group" open={false}>
+        <summary className="px-4 py-3 cursor-pointer flex items-center gap-2 text-sm select-none">
+          <span className="text-gray-400 transition-transform group-open:rotate-90 inline-block w-3" aria-hidden>▶</span>
+          <span className="font-semibold text-gray-700">📊 Analytics</span>
+          <span className="text-xs text-gray-500">overdue trend · submission heatmap · homework load · patterns · sentiment</span>
+        </summary>
+        <div className="border-t border-[color:var(--line-soft)] px-4 py-4 space-y-6">
+          <div className="grid md:grid-cols-2 gap-6">
+            {data.overdue_sparkline && (
+              <div>
+                <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">14-day overdue backlog</div>
+                <Sparkline
+                  points={data.overdue_trend.map((p) => p.count)}
+                  tone="red"
+                  width={240}
+                  height={32}
+                  title={`Overdue last 14 days. Now ${data.overdue_trend[data.overdue_trend.length - 1]?.count}.`}
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  {data.overdue_trend[0]?.date} → {data.overdue_trend[data.overdue_trend.length - 1]?.date}
+                  &nbsp;· now {data.overdue_trend[data.overdue_trend.length - 1]?.count}
+                </div>
+              </div>
+            )}
+            <div>
+              <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Submission pattern · 14 weeks</div>
+              <SubmissionHeatmap childId={childId} weeks={14} />
             </div>
           </div>
-        )}
-        <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Submission pattern · 14 weeks</div>
-          <SubmissionHeatmap childId={childId} weeks={14} />
+          <HomeworkLoadChart childId={childId} weeks={8} />
+          <PatternsCard childId={childId} />
+          <SentimentTrendCard childId={childId} />
         </div>
-      </div>
-
-      <div className="mb-6">
-        <HomeworkLoadChart childId={childId} weeks={8} />
-      </div>
-
-      <div className="mb-6">
-        <PatternsCard childId={childId} />
-      </div>
-
-      <div className="mb-6">
-        <SentimentTrendCard childId={childId} />
-      </div>
+      </details>
 
       <WorthAChatTray childId={childId} onOpenAudit={setAudit} />
 

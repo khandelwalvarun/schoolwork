@@ -159,6 +159,11 @@ export function Sidebar({ children, onOpenSearch, onOpenHelp }: Props) {
           <Icon name="Spelling" size={16} className="text-gray-500" /> Spelling
         </NavLink>
 
+        <div className={SECTION_HEAD}>Insight</div>
+        <NavLink to="/analysis" className={navClass}>
+          <Icon name="Library" size={16} className="text-gray-500" /> 🔍 Ask Claude
+        </NavLink>
+
         <div className={SECTION_HEAD}>Personal</div>
         <NavLink to="/notes" className={navClass}>
           <Icon name="Notes" size={16} className="text-gray-500" /> Notes

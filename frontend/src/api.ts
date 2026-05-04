@@ -284,6 +284,47 @@ export type FreshGradePellet = {
 /** Phase 25 — practice-prep workspace types. A session is a stateful
  *  prep workspace; iterations accumulate as the parent steers the LLM
  *  with prompts; classwork scans ground the next iteration. */
+/** Free-form LLM analysis ("Ask Claude") — see /analysis page. */
+export type AnalysisFinding = {
+  title: string;
+  evidence: string;
+  confidence?: "high" | "medium" | "low";
+  scope?: string;
+};
+
+export type AnalysisOutputJson = {
+  headline: string;
+  findings: AnalysisFinding[];
+  pointers?: string[];
+  caveats?: string[];
+  raw_data_used: {
+    grades_count: number;
+    assignments_count: number;
+    comments_count: number;
+    messages_count: number;
+    scope_days: number;
+    children: string[];
+  };
+};
+
+export type AnalysisOut = {
+  id: number;
+  child_id: number | null;
+  query: string;
+  scope_days: number;
+  output_md: string | null;
+  output_json: AnalysisOutputJson | null;
+  llm_used: boolean;
+  llm_model: string | null;
+  llm_input_tokens: number | null;
+  llm_output_tokens: number | null;
+  duration_ms: number | null;
+  error: string | null;
+  created_at: string | null;
+};
+
+export type AnalysisListItem = Omit<AnalysisOut, "output_md" | "output_json" | "llm_input_tokens" | "llm_output_tokens">;
+
 export type PracticeKind = "review_prep" | "assignment_help" | "review_work";
 
 export type PinnedSourceType = "library" | "resource" | "syllabus_topic";
@@ -1142,6 +1183,25 @@ export const api = {
     }),
   assignmentHistory: (itemId: number) =>
     fetchJson<StatusHistoryEntry[]>(`/api/assignments/${itemId}/history`),
+  // ── ask Claude / free-form analysis ──────────────────────────────────
+  analysisRun: (body: {
+    query: string;
+    child_id?: number | null;
+    scope_days?: number;
+    use_llm?: boolean;
+  }) =>
+    fetchJson<AnalysisOut>(`/api/analysis`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  analysisList: (childId?: number, limit = 50) => {
+    const p = new URLSearchParams();
+    if (childId) p.set("child_id", String(childId));
+    p.set("limit", String(limit));
+    return fetchJson<AnalysisListItem[]>(`/api/analysis?${p.toString()}`);
+  },
+  analysisGet: (id: number) => fetchJson<AnalysisOut>(`/api/analysis/${id}`),
+
   // ── practice-prep workspace ─────────────────────────────────────────
   practiceStartSession: (body: {
     child_id: number;

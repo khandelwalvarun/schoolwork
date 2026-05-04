@@ -21,6 +21,7 @@ import Resources from "./pages/Resources";
 import Library from "./pages/Library";
 import Events from "./pages/Events";
 import Mindspark from "./pages/Mindspark";
+import Analysis from "./pages/Analysis";
 import CommandPalette from "./components/CommandPalette";
 import HelpPanel from "./components/HelpPanel";
 import SyncStatusBar from "./components/SyncStatusBar";
@@ -183,6 +184,7 @@ function AppRoutes() {
       <Route path="/library" element={<Library />} />
       <Route path="/events" element={<Events />} />
       <Route path="/mindspark" element={<Mindspark />} />
+      <Route path="/analysis" element={<Analysis />} />
       <Route path="/notes" element={<Notes />} />
       <Route path="/summaries" element={<Summaries />} />
       <Route path="/notifications" element={<Notifications />} />

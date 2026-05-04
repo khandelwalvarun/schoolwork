@@ -4,6 +4,7 @@ from .attachments import Attachment
 from .channel_config import ChannelConfig
 from .children import Child
 from .events import Event
+from .llm_analysis import LLMAnalysis
 from .llm_calls import LLMCall
 from .mcp_tool_calls import MCPToolCall
 from .kid_event import KidEvent
@@ -28,6 +29,7 @@ __all__ = [
     "Child",
     "Event",
     "KidEvent",
+    "LLMAnalysis",
     "LLMCall",
     "LibraryFile",
     "MCPToolCall",

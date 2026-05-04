@@ -2243,6 +2243,48 @@ async def api_practice_set_preferred(iteration_id: int) -> dict[str, Any]:
         raise HTTPException(404, str(e))
 
 
+@app.post("/api/analysis")
+async def api_analysis_run(payload: dict[str, Any]) -> dict[str, Any]:
+    """Run a free-form LLM analysis. Body:
+       {query: str, child_id?: int, scope_days?: int, use_llm?: bool}"""
+    from .services.llm_analysis import run_analysis
+    query = (payload or {}).get("query")
+    if not isinstance(query, str) or not query.strip():
+        raise HTTPException(400, "query is required")
+    try:
+        async with get_async_session() as session:
+            return await run_analysis(
+                session,
+                query=query,
+                child_id=payload.get("child_id"),
+                scope_days=int(payload.get("scope_days") or 30),
+                use_llm=bool(payload.get("use_llm", True)),
+            )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/analysis")
+async def api_analysis_list(
+    child_id: int | None = None, limit: int = 50,
+) -> list[dict[str, Any]]:
+    """List recent analyses, newest first. Light shape — no output_md/json
+    body. Hit GET /api/analysis/{id} for the full payload."""
+    from .services.llm_analysis import list_analyses
+    async with get_async_session() as session:
+        return await list_analyses(session, child_id=child_id, limit=limit)
+
+
+@app.get("/api/analysis/{analysis_id}")
+async def api_analysis_get(analysis_id: int) -> dict[str, Any]:
+    from .services.llm_analysis import get_analysis
+    try:
+        async with get_async_session() as session:
+            return await get_analysis(session, analysis_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
 @app.post("/api/practice/sessions/{session_id}/sources")
 async def api_practice_set_sources(
     session_id: int, payload: dict[str, Any],
