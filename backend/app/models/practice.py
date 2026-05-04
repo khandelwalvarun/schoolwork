@@ -34,6 +34,11 @@ class PracticeSession(Base):
         server_default="review_prep",
     )
     status: Mapped[str] = mapped_column(String, nullable=False, default="active")
+    # Phase 25.2 — JSON list of {type, ref, label} dicts. The parent
+    # pins library files / resource files / syllabus topics here; the
+    # pack pulls their content (or names) into the prompt on every
+    # iteration. NULL or empty list = no pinned context.
+    pinned_sources_json: Mapped[str | None] = mapped_column(String, nullable=True)
     preferred_iteration_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False,

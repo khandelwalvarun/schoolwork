@@ -27,6 +27,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   Assignment,
+  PinnedSource,
   PracticeClassworkScanOut,
   PracticeHelpSection,
   PracticeIterationOut,
@@ -38,6 +39,7 @@ import {
   ReviewWorkVerdict,
   ScanPurpose,
 } from "../api";
+import { SourcesPicker } from "./SourcesPicker";
 
 const QUICK_PROMPTS_REVIEW = [
   "Harder", "Easier", "More word problems", "Fewer questions (5 max)",
@@ -155,6 +157,7 @@ export function PracticePanel({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dragHover, setDragHover] = useState(false);
   const [pendingShots, setPendingShots] = useState<File[]>([]);
+  const [sourcesPickerOpen, setSourcesPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -215,6 +218,17 @@ export function PracticePanel({
     enabled: sessionId !== null,
     refetchOnWindowFocus: false,
   });
+
+  // Fetch the kid row so the SourcesPicker's syllabus tab knows which
+  // class_level to fetch the syllabus for. Cheap — children() is a
+  // small list and gets cached by react-query.
+  const { data: childList } = useQuery({
+    queryKey: ["children-for-picker"],
+    queryFn: () => api.children(),
+    staleTime: 5 * 60_000,
+  });
+  const childClassLevel =
+    childList?.find((c) => c.id === childId)?.class_level ?? null;
 
   useEffect(() => {
     if (!session) return;
@@ -314,6 +328,28 @@ export function PracticePanel({
       qc.setQueryData(["practice-session", sessionId], updated);
     } catch (e) {
       setErrorMsg(`Failed to star: ${e}`);
+    }
+  };
+
+  const saveSources = async (pinned: PinnedSource[]) => {
+    if (!sessionId) return;
+    try {
+      const updated = await api.practiceSetSources(sessionId, pinned);
+      qc.setQueryData(["practice-session", sessionId], updated);
+      setSourcesPickerOpen(false);
+    } catch (e) {
+      setErrorMsg(`Failed to save sources: ${e}`);
+    }
+  };
+
+  const removePinnedSource = async (idx: number) => {
+    if (!sessionId || !session?.pinned_sources) return;
+    const next = session.pinned_sources.filter((_, i) => i !== idx);
+    try {
+      const updated = await api.practiceSetSources(sessionId, next);
+      qc.setQueryData(["practice-session", sessionId], updated);
+    } catch (e) {
+      setErrorMsg(`Failed to unpin: ${e}`);
     }
   };
 
@@ -555,6 +591,13 @@ export function PracticePanel({
                 />
               )}
 
+              <SourcesSection
+                pinned={session.pinned_sources || []}
+                onOpen={() => setSourcesPickerOpen(true)}
+                onRemove={removePinnedSource}
+                meta={modeMeta}
+              />
+
               <ScansSection
                 scans={session.scans}
                 purpose={uploadPurpose}
@@ -637,12 +680,83 @@ export function PracticePanel({
           </footer>
         )}
       </aside>
+
+      {sourcesPickerOpen && session && (
+        <SourcesPicker
+          childId={childId}
+          classLevel={childClassLevel}
+          subject={subject}
+          initial={session.pinned_sources || []}
+          onSave={saveSources}
+          onClose={() => setSourcesPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
 
 // ───────────────────────── sub-components ─────────────────────────
+
+function SourcesSection({
+  pinned, onOpen, onRemove, meta,
+}: {
+  pinned: PinnedSource[];
+  onOpen: () => void;
+  onRemove: (idx: number) => void;
+  meta: ModeMeta;
+}) {
+  return (
+    <section className={`border ${meta.ringCls.replace("ring-", "border-").replace("-500", "-200")} rounded-lg ${meta.bgSoft} p-3`}>
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <h4 className={`text-xs font-semibold uppercase tracking-wider ${meta.textCls}`}>
+          📚 Pinned sources · {pinned.length}
+        </h4>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="text-sm px-3 py-1.5 border border-gray-400 bg-white rounded font-medium hover:bg-gray-50 inline-flex items-center gap-1"
+          title="Pin library files, portal resources, or syllabus topics as grounding context"
+        >
+          📚 <span className="hidden sm:inline">{pinned.length === 0 ? "Add sources" : "Manage"}</span>
+        </button>
+      </div>
+      {pinned.length === 0 ? (
+        <p className="text-xs text-gray-600 italic leading-relaxed">
+          Pin a textbook from the <strong>Library</strong>, a worksheet from
+          portal <strong>Resources</strong>, or specific <strong>Syllabus</strong>
+          topics — they ground every iteration's prompt as authoritative
+          context.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {pinned.map((p, i) => (
+            <span
+              key={`${p.type}-${p.ref}`}
+              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-gray-300 bg-white"
+              title={`${p.type} · ${p.ref}`}
+            >
+              <span className="opacity-60">
+                {p.type === "library" ? "📚" : p.type === "resource" ? "📁" : "🎯"}
+              </span>
+              <span className="max-w-[180px] truncate">{p.label}</span>
+              <button
+                onClick={() => onRemove(i)}
+                className="text-rose-600 hover:text-rose-800 ml-0.5"
+                aria-label={`Unpin ${p.label}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+
+
 
 function StartCard({
   meta, busy, onStart, isCheck,

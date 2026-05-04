@@ -2243,6 +2243,23 @@ async def api_practice_set_preferred(iteration_id: int) -> dict[str, Any]:
         raise HTTPException(404, str(e))
 
 
+@app.post("/api/practice/sessions/{session_id}/sources")
+async def api_practice_set_sources(
+    session_id: int, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Replace the pinned-source list for a session. Body:
+       {pinned_sources: [{type, ref, label}, ...]}"""
+    from .services.practice_session import set_pinned_sources
+    sources = (payload or {}).get("pinned_sources") or []
+    if not isinstance(sources, list):
+        raise HTTPException(400, "pinned_sources must be a list")
+    try:
+        async with get_async_session() as session:
+            return await set_pinned_sources(session, session_id, sources)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
 @app.get("/api/practice/sessions/{session_id}/iterations/{iteration_id}/markdown")
 async def api_practice_iteration_markdown(session_id: int, iteration_id: int) -> Any:
     """Plain-text markdown for one iteration — for "copy to clipboard"

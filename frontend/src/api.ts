@@ -286,6 +286,14 @@ export type FreshGradePellet = {
  *  with prompts; classwork scans ground the next iteration. */
 export type PracticeKind = "review_prep" | "assignment_help" | "review_work";
 
+export type PinnedSourceType = "library" | "resource" | "syllabus_topic";
+
+export type PinnedSource = {
+  type: PinnedSourceType;
+  ref: string | number;
+  label: string;
+};
+
 export type ScanPurpose = "classwork_reference" | "student_work";
 
 export type ReviewWorkVerdict = "correct" | "partially_correct" | "incorrect" | "unclear";
@@ -380,6 +388,7 @@ export type PracticeSessionOut = {
   kind: PracticeKind;
   status: string;
   preferred_iteration_id: number | null;
+  pinned_sources?: PinnedSource[];
   created_at: string;
   updated_at: string;
   archived_at: string | null;
@@ -1182,6 +1191,14 @@ export const api = {
     fetchJson<PracticeSessionOut>(
       `/api/practice/iterations/${iterationId}/preferred`,
       { method: "POST" },
+    ),
+  practiceSetSources: (sessionId: number, pinnedSources: PinnedSource[]) =>
+    fetchJson<PracticeSessionOut>(
+      `/api/practice/sessions/${sessionId}/sources`,
+      {
+        method: "POST",
+        body: JSON.stringify({ pinned_sources: pinnedSources }),
+      },
     ),
   practiceIterationMarkdown: async (sessionId: number, iterationId: number) => {
     const r = await fetch(

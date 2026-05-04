@@ -203,6 +203,14 @@ async def get_session(
             .order_by(PracticeClassworkScan.uploaded_at.desc())
         )
     ).scalars().all()
+    pinned_sources: list[dict[str, Any]] = []
+    if row.pinned_sources_json:
+        try:
+            decoded = json.loads(row.pinned_sources_json)
+            if isinstance(decoded, list):
+                pinned_sources = decoded
+        except Exception:
+            pinned_sources = []
     return {
         "id": row.id,
         "child_id": row.child_id,
@@ -213,6 +221,7 @@ async def get_session(
         "kind": row.kind,
         "status": row.status,
         "preferred_iteration_id": row.preferred_iteration_id,
+        "pinned_sources": pinned_sources,
         "created_at": row.created_at.isoformat(),
         "updated_at": row.updated_at.isoformat(),
         "archived_at": row.archived_at.isoformat() if row.archived_at else None,
@@ -279,6 +288,51 @@ async def archive_session(
         raise ValueError(f"practice session {session_id} not found")
     row.archived_at = datetime.now(tz=timezone.utc) if archive else None
     row.status = "archived" if archive else "active"
+    await session.commit()
+    return await get_session(session, session_id)
+
+
+_VALID_SOURCE_TYPES = {"library", "resource", "syllabus_topic"}
+
+
+async def set_pinned_sources(
+    session: AsyncSession,
+    session_id: int,
+    sources: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Replace the pinned-sources list on a session.
+
+    Each source is {type, ref, label}:
+      type=library         ref=<library_id> (int)
+      type=resource        ref="scope/category/filename" (e.g. "schoolwide/spellbee/list07.pdf")
+      type=syllabus_topic  ref=<topic name string>
+    Validates types but doesn't fetch content here — the pack-builder
+    pulls extracted text on each iteration so the prompt always sees
+    the latest version of the file.
+    """
+    row = (
+        await session.execute(
+            select(PracticeSession).where(PracticeSession.id == session_id)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ValueError(f"practice session {session_id} not found")
+    cleaned: list[dict[str, Any]] = []
+    for s in sources or []:
+        if not isinstance(s, dict):
+            continue
+        t = (s.get("type") or "").strip()
+        if t not in _VALID_SOURCE_TYPES:
+            continue
+        ref = s.get("ref")
+        if ref is None:
+            continue
+        label = (s.get("label") or "").strip() or str(ref)
+        cleaned.append({"type": t, "ref": ref, "label": label[:200]})
+    row.pinned_sources_json = (
+        json.dumps(cleaned, ensure_ascii=False) if cleaned else None
+    )
+    row.updated_at = datetime.now(tz=timezone.utc)
     await session.commit()
     return await get_session(session, session_id)
 
@@ -566,6 +620,24 @@ async def _build_pack(
             "output_md": prior.output_md[:4000],  # cap to keep prompt size sane
         }
 
+    # Pinned sources — pulls extracted text from library/resource files
+    # so the LLM sees real grounding content, plus a list of pinned
+    # syllabus topics it should weight extra.
+    pinned_sources: list[dict[str, Any]] = []
+    if sess.pinned_sources_json:
+        try:
+            decoded = json.loads(sess.pinned_sources_json)
+            if isinstance(decoded, list):
+                pinned_sources = decoded
+        except Exception:
+            pinned_sources = []
+    pinned_with_content = await _resolve_pinned_sources(pinned_sources)
+    pinned_syllabus_topics = [
+        s.get("label") or str(s.get("ref"))
+        for s in pinned_sources
+        if s.get("type") == "syllabus_topic"
+    ]
+
     return {
         "session": {
             "id": sess.id,
@@ -585,13 +657,135 @@ async def _build_pack(
             if cyc else None
         ),
         "cycle_topics_for_subject": cycle_topics,
+        "pinned_syllabus_topics": pinned_syllabus_topics,
         "recent_grades": recent_grades,
         "weak_topics": weak_topics,
         "linked_assignment": linked_dict,
         "classwork_scans": scan_summaries,
         "student_work_scans": student_work_summaries,
+        "pinned_sources": pinned_with_content,
         "prior_iteration": prior_dict,
     }
+
+
+# Per-source content cap so a single pinned PDF doesn't blow up the
+# prompt. 8 KB ≈ 1.5-2k tokens, enough for a chapter outline / list /
+# excerpt; the LLM gets the gist without paying for the whole textbook.
+_PINNED_CONTENT_CAP_CHARS = 8_000
+
+
+async def _resolve_pinned_sources(
+    sources: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """For each pinned source, fetch its content into the pack.
+    Library / resource files: extract text up to the cap. Syllabus
+    topic pins: just keep the label (handled in the caller). On any
+    failure (file missing, decode error, etc.) we still emit the
+    source row with content="" + a note so the LLM is aware of the
+    pin even if extraction failed."""
+    out: list[dict[str, Any]] = []
+    for src in sources:
+        if not isinstance(src, dict):
+            continue
+        t = src.get("type")
+        ref = src.get("ref")
+        label = src.get("label") or str(ref)
+        if t == "syllabus_topic":
+            # Topic pins are also surfaced via pinned_syllabus_topics
+            # — repeat them here so a parent reading the pack as one
+            # blob doesn't have to cross-reference.
+            out.append({
+                "type": t, "ref": ref, "label": label,
+                "content_excerpt": "", "note": "syllabus topic pin",
+            })
+            continue
+        if t == "library":
+            try:
+                content = await _read_library_text(int(ref))
+            except Exception as e:
+                content, note = "", f"library read failed: {e!r}"[:200]
+            else:
+                note = None
+            out.append({
+                "type": t, "ref": ref, "label": label,
+                "content_excerpt": content[:_PINNED_CONTENT_CAP_CHARS],
+                "note": note,
+                "truncated": len(content) > _PINNED_CONTENT_CAP_CHARS,
+            })
+            continue
+        if t == "resource":
+            try:
+                content = await _read_resource_text(str(ref))
+            except Exception as e:
+                content, note = "", f"resource read failed: {e!r}"[:200]
+            else:
+                note = None
+            out.append({
+                "type": t, "ref": ref, "label": label,
+                "content_excerpt": content[:_PINNED_CONTENT_CAP_CHARS],
+                "note": note,
+                "truncated": len(content) > _PINNED_CONTENT_CAP_CHARS,
+            })
+            continue
+    return out
+
+
+async def _read_library_text(library_id: int) -> str:
+    """Pull a textual snapshot of a library row. Reuses the existing
+    classify pipeline's text-extraction (handles PDF / EPUB / DOCX /
+    plain text) and falls through to plain bytes for unknown types.
+    extract_text_for is sync; we wrap in to_thread so we don't block
+    the asyncio loop on a big PDF parse."""
+    import asyncio
+    from ..config import REPO_ROOT
+    from ..db import get_async_session
+    from .library import get_library_row
+    from .library_classify import extract_text_for
+    async with get_async_session() as s:
+        row = await get_library_row(s, library_id)
+    if row is None or not row.local_path:
+        return ""
+    path = (REPO_ROOT / row.local_path).resolve()
+    if not path.exists():
+        return ""
+    try:
+        text = await asyncio.to_thread(extract_text_for, path, row.mime_type)
+        return text or ""
+    except Exception:
+        try:
+            return path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return ""
+
+
+async def _read_resource_text(ref: str) -> str:
+    """Resource refs are 'scope/category/filename' strings. We only
+    auto-extract for plain-text-ish files; PDFs and binaries return
+    empty (the file's existence is enough signal for the pack)."""
+    from ..config import REPO_ROOT
+    parts = ref.split("/", 2)
+    if len(parts) != 3:
+        return ""
+    scope, category, filename = parts
+    from .resources_index import resolve_schoolwide, resolve_kid
+    # Resource refs include the kid slug for kid scope. Split it off.
+    if scope == "schoolwide":
+        path = resolve_schoolwide(category, filename)
+    else:
+        # ref shape for kid scope: "kid/<slug>/<category>/<filename>"
+        # Parse defensively — if the caller used three parts treat it
+        # as schoolwide; the picker should always give us the right
+        # shape for kid resources via the dedicated picker.
+        return ""
+    if path is None or not path.exists():
+        return ""
+    suffix = path.suffix.lower()
+    if suffix in {".txt", ".md", ".csv", ".json", ".html", ".xml"}:
+        try:
+            return path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return ""
+    return ""
 
 
 # ───────────────────────── LLM prompt + call ─────────────────────────
@@ -602,6 +796,8 @@ You receive a JSON DATA PACK with:
   - child: name, class_level (CBSE 4 / 6 / etc.), section
   - subject + optional topic
   - cycle + cycle_topics_for_subject (the school's syllabus topics for the current learning cycle)
+  - pinned_syllabus_topics (the parent has pinned these — focus questions HERE; over-index vs the broader cycle list)
+  - pinned_sources (parent-curated grounding — library files / resource files with content_excerpt + label; these are AUTHORITATIVE source material the parent wants the practice to mirror)
   - recent_grades (last few graded items in this subject — calibrate difficulty around these)
   - weak_topics (topic-mastery rows where the kid is shaky — bias questions toward these)
   - linked_assignment (the actual review/test the parent is prepping for; may include the teacher's own brief)
@@ -651,6 +847,8 @@ You receive a JSON DATA PACK with:
   - subject + optional topic
   - linked_assignment: title, body, notes_en, due date — read this CAREFULLY; it's the actual ask
   - cycle + cycle_topics_for_subject (current syllabus)
+  - pinned_syllabus_topics (parent pinned these — focus help around them)
+  - pinned_sources (library / resource files the parent pinned, with content_excerpt — quote / summarise / build from these directly when relevant)
   - recent_grades (last few graded items in this subject — calibrate language level)
   - weak_topics (topic-mastery rows where the kid is shaky)
   - classwork_scans (Vision-extracted summaries from photos of recent classwork — what's been covered)
