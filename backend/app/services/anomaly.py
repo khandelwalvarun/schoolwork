@@ -50,13 +50,19 @@ log = logging.getLogger(__name__)
 
 
 # Minimum peers in subject before any anomaly can be called. With 1
-# peer the "mean" is just the other grade, which is fragile.
+# peer the central tendency is just the other grade, which is fragile.
 MIN_PEER_SAMPLE = 2
 # Pure-delta threshold (acts even at n=2 peers when the gap is huge).
+# Uses median, not mean — a single outlier (e.g. one 0% no-attempt
+# row in a stream of 90%s) won't shift the median, so non-outlier
+# grades aren't flagged as echoes of the real outlier.
 DELTA_THRESHOLD_PCT = 12.0
-# Stddev-based threshold (requires more peers to compute stably).
-STDDEV_THRESHOLD = 1.5
-STDDEV_MIN_SAMPLE = 3
+# Robust spread-based threshold using MAD (median absolute deviation).
+# 3 × MAD ≈ 2σ for normally-distributed data; we use 3 here as the
+# multiplier since it's more conservative than the old 1.5σ rule and
+# MAD is naturally smaller than stddev. Requires ≥3 peers.
+MAD_MULTIPLIER = 3.0
+MAD_MIN_SAMPLE = 3
 
 
 def _grade_pct(item: VeracrossItem) -> float | None:
@@ -69,7 +75,30 @@ def _grade_pct(item: VeracrossItem) -> float | None:
         return None
 
 
+def _median(values: list[float]) -> float:
+    """Median — robust central tendency. For sorted [a, b, c, d]
+    returns (b+c)/2; for [a, b, c, d, e] returns c."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2
+
+
+def _mad(values: list[float], median: float) -> float:
+    """Median Absolute Deviation — robust spread. Equals 0 when ≥half
+    of the values are at the median (e.g. five 90%s and one 0% gives
+    MAD=0 from the median 90% — exactly the right behaviour: the 0%
+    is the outlier, the 90%s aren't 'spread' from the 90% peak)."""
+    if not values:
+        return 0.0
+    return _median([abs(v - median) for v in values])
+
+
 def _stddev(values: list[float]) -> float:
+    """Kept for backward compatibility with callers that read it
+    elsewhere; no longer used by _is_anomalous."""
     n = len(values)
     if n < 2:
         return 0.0
@@ -106,25 +135,31 @@ def _is_anomalous(
 ) -> tuple[bool, str]:
     """Returns (anomalous?, reason).
 
+    Outlier-resistant detector — uses median + MAD (median absolute
+    deviation) instead of mean + stddev. Critical for bimodal grade
+    streams where a single 0% / no-attempt row would otherwise shift
+    the mean enough to flag legitimate scores as "high outliers."
+
     Two firing rules:
-      1. Pure delta — |Δ| ≥ 12 pts vs the peer mean (with ≥2 peers).
-      2. Stddev-based — |Δ|/σ ≥ 1.5 (only with ≥3 peers, σ stable enough)."""
+      1. Pure delta — |Δ| ≥ 12 pts from the peer MEDIAN (≥2 peers).
+      2. MAD-based — |Δ| ≥ 3 × MAD (only with ≥3 peers, MAD > 0).
+    """
     if len(peer_pcts) < MIN_PEER_SAMPLE:
         return (False, f"need ≥ {MIN_PEER_SAMPLE} peer grades, have {len(peer_pcts)}")
-    mean = sum(peer_pcts) / len(peer_pcts)
-    delta = pct - mean
+    median = _median(peer_pcts)
+    delta = pct - median
     direction = "below" if delta < 0 else "above"
 
     if abs(delta) >= DELTA_THRESHOLD_PCT:
-        return (True, f"Δ {delta:+.1f} pts {direction} subject mean {mean:.1f}%")
+        return (True, f"Δ {delta:+.1f} pts {direction} subject median {median:.1f}%")
 
-    if len(peer_pcts) >= STDDEV_MIN_SAMPLE:
-        sd = _stddev(peer_pcts)
-        if sd > 0 and abs(delta) / sd >= STDDEV_THRESHOLD:
+    if len(peer_pcts) >= MAD_MIN_SAMPLE:
+        mad = _mad(peer_pcts, median)
+        if mad > 0 and abs(delta) / mad >= MAD_MULTIPLIER:
             return (
                 True,
-                f"Δ {delta:+.1f} pts {direction} subject mean {mean:.1f}% "
-                f"(>{STDDEV_THRESHOLD:.1f}σ)",
+                f"Δ {delta:+.1f} pts {direction} subject median {median:.1f}% "
+                f"(>{MAD_MULTIPLIER:.0f} MAD)",
             )
 
     return (False, f"Δ {delta:+.1f} pts within tolerance")
