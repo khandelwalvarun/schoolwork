@@ -361,8 +361,10 @@ def _scan_to_dict(s: PracticeClassworkScan) -> dict[str, Any]:
         "child_id": s.child_id,
         "subject": s.subject,
         "attachment_id": s.attachment_id,
+        "purpose": s.purpose,
         "extracted_summary": s.extracted_summary,
         "extracted_topics": topics,
+        "extracted_text_present": bool(s.extracted_text),
         "extracted_at": s.extracted_at.isoformat() if s.extracted_at else None,
         "uploaded_at": s.uploaded_at.isoformat() if s.uploaded_at else None,
     }

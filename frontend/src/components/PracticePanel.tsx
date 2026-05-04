@@ -231,9 +231,19 @@ export function PracticePanel({
   );
 
   const startNew = async () => {
-    setBusy(`Generating first draft (Claude Opus, ~30-60s)…`);
     setErrorMsg(null);
+    const hasShots = pendingShots.length > 0;
+    // For check mode, generating without scans is wasteful — the LLM
+    // has nothing to look at. If shots are queued, upload them BEFORE
+    // creating the session (use_llm=False on start, then iterate after
+    // upload to get a real LLM-driven first review).
     try {
+      // 1. Create the session — skip the LLM if we'll iterate after upload.
+      setBusy(
+        hasShots
+          ? "Creating session…"
+          : `Generating first draft (Claude Opus, ~30-60s)…`,
+      );
       const newSession = await api.practiceStartSession({
         child_id: childId,
         subject,
@@ -244,11 +254,34 @@ export function PracticePanel({
           : `${subject} ${activeKind === "review_prep" ? "prep" : activeKind === "assignment_help" ? "help" : "check"}`,
         initial_prompt: initialPrompt ?? null,
         kind: activeKind,
-        use_llm: true,
+        // When we have queued uploads, the first iteration is a no-op
+        // skeleton; we'll iterate after upload so the LLM sees the scans.
+        use_llm: !hasShots,
       });
-      setMode({ kind: "active", sessionId: newSession.id });
+      const newSessionId = newSession.id;
+      setMode({ kind: "active", sessionId: newSessionId });
       setActiveIterIdx(null);
-      qc.setQueryData(["practice-session", newSession.id], newSession);
+      qc.setQueryData(["practice-session", newSessionId], newSession);
+
+      // 2. If shots are queued, upload them now bound to this session.
+      if (hasShots) {
+        setBusy(`Uploading ${pendingShots.length} file(s) + extracting…`);
+        await api.practiceUploadScans(
+          childId, subject, pendingShots, newSessionId, true, uploadPurpose,
+        );
+        setPendingShots([]);
+
+        // 3. Trigger the first real LLM iteration with mode-appropriate prompt.
+        setBusy(`Generating first draft with Claude Opus (~30-60s)…`);
+        const firstPrompt =
+          activeKind === "review_work"
+            ? "Review the uploaded student work — give per-question verdicts, feedback, and a score estimate."
+            : initialPrompt || "Use the uploaded scans as grounding context.";
+        const updated = await api.practiceIterateSession(newSessionId, firstPrompt);
+        qc.setQueryData(["practice-session", newSessionId], updated);
+        const newest = updated.iterations[updated.iterations.length - 1];
+        if (newest) setActiveIterIdx(newest.iteration_index);
+      }
     } catch (e) {
       setErrorMsg(`Failed to start session: ${e}`);
     } finally {
@@ -476,8 +509,32 @@ export function PracticePanel({
               busy={busy}
               onStart={startNew}
               isCheck={isCheck}
+              pendingShots={pendingShots}
+              onPickFiles={() => fileInputRef.current?.click()}
+              onTakePhoto={() => cameraInputRef.current?.click()}
+              onRemoveFromQueue={removeFromQueue}
+              onDiscardPending={() => setPendingShots([])}
             />
           )}
+
+          {/* The hidden file inputs need to live OUTSIDE the session-only
+              branch so they're available for the StartCard upload too. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={(e) => { queueFiles(e.target.files); e.target.value = ""; }}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => { queueFiles(e.target.files); e.target.value = ""; }}
+          />
 
           {session && (
             <>
@@ -509,22 +566,6 @@ export function PracticePanel({
                 onDiscardPending={() => setPendingShots([])}
                 meta={modeMeta}
                 isCheck={isCheck}
-              />
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*,application/pdf"
-                className="hidden"
-                onChange={(e) => { queueFiles(e.target.files); e.target.value = ""; }}
-              />
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => { queueFiles(e.target.files); e.target.value = ""; }}
               />
             </>
           )}
@@ -605,33 +646,100 @@ export function PracticePanel({
 
 function StartCard({
   meta, busy, onStart, isCheck,
+  pendingShots, onPickFiles, onTakePhoto, onRemoveFromQueue, onDiscardPending,
 }: {
   meta: ModeMeta;
   busy: string | null;
   onStart: () => void;
   isCheck: boolean;
+  pendingShots: File[];
+  onPickFiles: () => void;
+  onTakePhoto: () => void;
+  onRemoveFromQueue: (idx: number) => void;
+  onDiscardPending: () => void;
 }) {
+  const hasShots = pendingShots.length > 0;
+  // CTA label adapts to what's queued — for Check mode the empty state
+  // hints at the right flow ("upload work first, then review").
+  const ctaCopy = hasShots
+    ? `${isCheck ? "Review" : "Generate"} with ${pendingShots.length} uploaded ${pendingShots.length === 1 ? "file" : "files"}`
+    : isCheck
+    ? "Generate review (no uploads yet)"
+    : meta.ctaCopy;
+
   return (
-    <div className={`${meta.bgSoft} border border-gray-200 rounded-lg p-4 text-sm space-y-3`}>
+    <div className={`${meta.bgSoft} border border-gray-200 rounded-lg p-4 text-sm space-y-4`}>
       <div className={`text-base font-semibold ${meta.textCls} flex items-center gap-2`}>
         <span className="text-xl">{meta.emoji}</span> {meta.label}
       </div>
       <p className="text-gray-700 leading-relaxed">{meta.introHelp}</p>
-      {isCheck && (
-        <p className="text-xs text-gray-500 leading-relaxed">
-          Tip — start by uploading 1-2 photos of completed pages first, then
-          generate the review. Iteration over scan-less context produces
-          generic feedback.
+
+      {/* Big upload bar — visible BEFORE session creation so the
+          parent can queue scans and have them included in the first
+          generation. */}
+      <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-3">
+        <div className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">
+          {isCheck ? "📷 Upload the kid's completed work" : "📎 Optional — upload classwork scans"}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onTakePhoto}
+            className="text-sm px-3 py-2 border border-gray-400 bg-white rounded font-medium hover:bg-gray-50 inline-flex items-center gap-1.5"
+            title="Open camera (mobile) for a photo"
+          >
+            📷 Take photo
+          </button>
+          <button
+            type="button"
+            onClick={onPickFiles}
+            className="text-sm px-3 py-2 border border-gray-400 bg-white rounded font-medium hover:bg-gray-50 inline-flex items-center gap-1.5"
+            title="Pick files from device"
+          >
+            📁 Choose files
+          </button>
+          <span className="text-xs text-gray-500 self-center">
+            (or drag-drop anywhere in this panel · multiple files OK)
+          </span>
+        </div>
+
+        {hasShots && (
+          <div className="mt-3 space-y-2">
+            <div className="text-[11px] text-gray-700 font-medium flex items-center justify-between">
+              <span>Queued · {pendingShots.length} {pendingShots.length === 1 ? "file" : "files"}</span>
+              <button
+                type="button"
+                onClick={onDiscardPending}
+                className="text-[10px] text-rose-700 hover:underline"
+              >
+                clear queue
+              </button>
+            </div>
+            <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+              {pendingShots.map((f, i) => (
+                <PendingThumb key={i} file={f} onRemove={() => onRemoveFromQueue(i)} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {isCheck && !hasShots && (
+        <p className="text-xs text-gray-500 leading-relaxed bg-amber-50 border border-amber-200 rounded p-2">
+          💡 <strong>Tip</strong>: take photos of the completed pages first.
+          The review without uploads is just a placeholder — Claude needs
+          the kid's actual work to give per-question feedback.
         </p>
       )}
-      <div>
+
+      <div className="flex items-center gap-2 pt-1">
         <button
           type="button"
           onClick={onStart}
           disabled={busy !== null}
-          className={`px-3.5 py-2 rounded font-medium disabled:opacity-60 ${meta.buttonCls}`}
+          className={`flex-1 px-3.5 py-2.5 rounded font-medium text-sm disabled:opacity-60 ${meta.buttonCls}`}
         >
-          {busy ?? meta.ctaCopy}
+          {busy ?? ctaCopy}
         </button>
       </div>
     </div>
@@ -973,18 +1081,18 @@ function ScansSection({
           <button
             type="button"
             onClick={onTakePhoto}
-            className="text-xs px-2 py-1 border border-gray-300 bg-white rounded hover:bg-gray-50"
+            className="text-sm px-3 py-1.5 border border-gray-400 bg-white rounded font-medium hover:bg-gray-50 inline-flex items-center gap-1"
             title="Open camera (mobile) for a photo"
           >
-            📷 Take photo
+            📷 <span className="hidden sm:inline">Take photo</span>
           </button>
           <button
             type="button"
             onClick={onPickFiles}
-            className="text-xs px-2 py-1 border border-gray-300 bg-white rounded hover:bg-gray-50"
+            className="text-sm px-3 py-1.5 border border-gray-400 bg-white rounded font-medium hover:bg-gray-50 inline-flex items-center gap-1"
             title="Pick files from device"
           >
-            + Add files
+            📁 <span className="hidden sm:inline">Choose files</span>
           </button>
         </div>
       </div>
