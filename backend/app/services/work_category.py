@@ -58,10 +58,15 @@ _TYPE_TO_CATEGORY: dict[str, str] = {
     "techniques": REVIEW,
     "grammar and vocabulary": REVIEW,
     "research skills": REVIEW,
+    "problem solving": REVIEW,
     # Skill-graded creative-work categories (still done as homework)
     "writing skills": HOMEWORK,
     "speaking skills": HOMEWORK,
     "reading skills": HOMEWORK,
+    "listening skills": HOMEWORK,
+    "visual representation and presentation": HOMEWORK,
+    "diagrammatic skills": HOMEWORK,
+    "coordination": HOMEWORK,
     # Explicit test-shaped types (rare — usually folded into Review)
     "test": REVIEW,
     "quiz": REVIEW,
