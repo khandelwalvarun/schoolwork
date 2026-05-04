@@ -70,11 +70,10 @@ def upgrade() -> None:
         ["work_category"],
     )
 
-    # Backfill existing assignment rows from normalized_json.type ONLY.
-    # No title-keyword guessing — if the school's `type` field is
-    # missing or not in our mapping, leave work_category as NULL so
-    # the row surfaces as "uncategorized" rather than getting silently
-    # mis-bucketed.
+    # Backfill existing assignment rows from normalized_json.type.
+    # Every row gets tagged — unmapped/missing types default to
+    # `homework` (the most actionable bucket). Unmapped values are
+    # printed at the end so the mapping can be extended.
     bind = op.get_bind()
     rows = list(bind.execute(
         sa.text(
@@ -83,8 +82,8 @@ def upgrade() -> None:
         )
     ).fetchall())
     classified = 0
+    defaulted_no_type = 0
     unmapped: dict[str, int] = {}
-    skipped_no_type = 0
     for r in rows:
         try:
             normalized = json.loads(r.normalized_json or "{}")
@@ -92,23 +91,24 @@ def upgrade() -> None:
             normalized = {}
         raw_type = (normalized.get("type") or "").strip()
         if not raw_type:
-            skipped_no_type += 1
-            continue
-        category = _TYPE_TO_CATEGORY.get(raw_type.lower())
-        if category is None:
-            unmapped[raw_type] = unmapped.get(raw_type, 0) + 1
-            continue
+            defaulted_no_type += 1
+            category = "homework"
+        else:
+            category = _TYPE_TO_CATEGORY.get(raw_type.lower())
+            if category is None:
+                unmapped[raw_type] = unmapped.get(raw_type, 0) + 1
+                category = "homework"
         bind.execute(
             sa.text("UPDATE veracross_items SET work_category = :c WHERE id = :i"),
             {"c": category, "i": r.id},
         )
         classified += 1
     if classified:
-        print(f"  → classified {classified} assignment rows from Veracross `type`")
-    if skipped_no_type:
-        print(f"  → {skipped_no_type} rows had no type — left unclassified")
+        print(f"  → tagged {classified} assignment rows")
+    if defaulted_no_type:
+        print(f"  → {defaulted_no_type} had no `type` — defaulted to homework")
     if unmapped:
-        print(f"  → {sum(unmapped.values())} rows had unmapped types: {unmapped}")
+        print(f"  → {sum(unmapped.values())} unmapped types defaulted to homework: {unmapped}")
         print("    Extend _TYPE_TO_CATEGORY in services/work_category.py to cover them.")
 
 

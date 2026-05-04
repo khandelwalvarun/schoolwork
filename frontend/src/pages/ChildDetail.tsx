@@ -19,6 +19,7 @@ import { PTMBriefPanel } from "../components/PTMBriefPanel";
 import { SundayBriefPanel } from "../components/SundayBriefPanel";
 import { WorthAChatTray } from "../components/WorthAChatTray";
 import { FreshnessPelletStrip } from "../components/FreshnessPellet";
+import { RecentClassworkCard } from "../components/RecentClassworkCard";
 import { ExcellenceStatus } from "../api";
 
 export default function ChildDetail() {
@@ -152,6 +153,8 @@ export default function ChildDetail() {
       </details>
 
       <WorthAChatTray childId={childId} onOpenAudit={setAudit} />
+
+      <RecentClassworkCard childId={childId} days={30} />
 
       <section className="surface mb-6 overflow-hidden">
         {(["overdue", "due_today", "upcoming"] as const).map((bk) => {

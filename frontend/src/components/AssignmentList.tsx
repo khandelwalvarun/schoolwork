@@ -16,7 +16,9 @@ function PriorityStar({ n }: { n: number }) {
 
 /** Phase 26 — small category chip on each row, sourced from
  *  Veracross's own `type` field (mapped server-side). Hidden for
- *  homework (it's the default — no need for visual noise). */
+ *  homework — that's the default and most rows, no need for visual
+ *  noise. Every row is tagged at the data layer; the homework chip
+ *  is implicit. */
 function CategoryChip({ category }: { category: string | null | undefined }) {
   if (!category || category === "homework") return null;
   if (category === "review") {
@@ -39,15 +41,7 @@ function CategoryChip({ category }: { category: string | null | undefined }) {
       </span>
     );
   }
-  // Unknown category — surface as muted so we know to extend the mapping
-  return (
-    <span
-      className="shrink-0 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200"
-      title={`Unmapped Veracross type: ${category}`}
-    >
-      {category}
-    </span>
-  );
+  return null;  // shouldn't reach — backend always sets one of the three.
 }
 
 function SelectBox({

@@ -12,11 +12,10 @@ actionable buckets:
                workflow + gets visual emphasis on every surface.
 
 100% deterministic — pure dict lookup against Veracross's own `type`
-field. No title regex, no LLM. When the type is missing or unmapped,
-the row is left UNCLASSIFIED (None) so unknown values surface in
-logs and UI rather than being silently guessed at. Extending the
-mapping is a one-line change here when the school introduces a new
-type.
+field. No title regex, no LLM. Every row gets tagged: when the type
+is missing or unmapped we default to `homework` (the most actionable
+bucket and the safest fallback) and warn-once to the log so we know
+to extend the mapping. Rows never sit in a NULL/uncategorized state.
 """
 from __future__ import annotations
 
@@ -88,29 +87,33 @@ def classify(
     normalized_type: str | None = None,
     title: str | None = None,  # accepted but unused — kept in sig for caller compat
     body: str | None = None,   # accepted but unused
-) -> str | None:
+) -> str:
     """Map a Veracross row to one of {classwork, homework, review}.
 
-    Pure-dict lookup against Veracross's own `type` field. Returns
-    None when:
-      - `normalized_type` is missing (the parser couldn't read it)
+    Pure-dict lookup against Veracross's own `type` field. Defaults
+    to `homework` when:
+      - `normalized_type` is missing (rare; the parser failed)
       - `normalized_type` is set but not in our mapping (new label
         from the school we haven't seen)
 
-    Unknown types are warned-once to the log; extend the mapping in
-    this file to add coverage.
+    Unknown types are warned-once to the log so the mapping can be
+    extended; the row itself never sits unclassified. Always returns
+    one of the three valid categories.
     """
     if not normalized_type:
-        return None
+        return HOMEWORK
     key = normalized_type.strip().lower()
     cat = _TYPE_TO_CATEGORY.get(key)
-    if cat is None and key and key not in _warned_unknown:
-        _warned_unknown.add(key)
-        log.warning(
-            "work_category: unknown Veracross type %r — leaving row unclassified. "
-            "Extend services/work_category._TYPE_TO_CATEGORY to map it.",
-            normalized_type,
-        )
+    if cat is None:
+        if key not in _warned_unknown:
+            _warned_unknown.add(key)
+            log.warning(
+                "work_category: unknown Veracross type %r — defaulting to "
+                "homework. Extend services/work_category._TYPE_TO_CATEGORY "
+                "to map it explicitly.",
+                normalized_type,
+            )
+        return HOMEWORK
     return cat
 
 
@@ -118,9 +121,9 @@ def classify_from_normalized(
     normalized_json_str: str | None,
     title: str | None = None,
     body: str | None = None,
-) -> str | None:
+) -> str:
     """Convenience wrapper: takes the raw normalized_json string from
-    the DB, returns the category or None."""
+    the DB, returns the category. Always one of the three valid values."""
     import json as _json
     raw_type: str | None = None
     if normalized_json_str:
