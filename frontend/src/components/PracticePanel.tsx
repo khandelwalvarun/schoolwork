@@ -157,6 +157,11 @@ export function PracticePanel({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dragHover, setDragHover] = useState(false);
   const [pendingShots, setPendingShots] = useState<File[]>([]);
+  // Pinned sources are buffered locally too while the session doesn't
+  // exist yet — they get applied immediately after start_session in
+  // startNew(). Once a session exists, the canonical source-of-truth
+  // is session.pinned_sources from the API.
+  const [pendingPinnedSources, setPendingPinnedSources] = useState<PinnedSource[]>([]);
   const [sourcesPickerOpen, setSourcesPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -187,6 +192,7 @@ export function PracticePanel({
     setActiveIterIdx(null);
     setPrompt("");
     setPendingShots([]);
+    setPendingPinnedSources([]);
     (async () => {
       try {
         const sessions = await api.practiceListSessions(childId, subject);
@@ -247,14 +253,15 @@ export function PracticePanel({
   const startNew = async () => {
     setErrorMsg(null);
     const hasShots = pendingShots.length > 0;
-    // For check mode, generating without scans is wasteful — the LLM
-    // has nothing to look at. If shots are queued, upload them BEFORE
-    // creating the session (use_llm=False on start, then iterate after
-    // upload to get a real LLM-driven first review).
+    const hasPendingSources = pendingPinnedSources.length > 0;
+    // If we have queued uploads OR queued source pins, the first
+    // iteration on start_session would miss them. Skip the LLM on
+    // creation, apply queued state, then iterate so Opus sees
+    // everything in one go.
+    const deferLlm = hasShots || hasPendingSources;
     try {
-      // 1. Create the session — skip the LLM if we'll iterate after upload.
       setBusy(
-        hasShots
+        deferLlm
           ? "Creating session…"
           : `Generating first draft (Claude Opus, ~30-60s)…`,
       );
@@ -268,29 +275,48 @@ export function PracticePanel({
           : `${subject} ${activeKind === "review_prep" ? "prep" : activeKind === "assignment_help" ? "help" : "check"}`,
         initial_prompt: initialPrompt ?? null,
         kind: activeKind,
-        // When we have queued uploads, the first iteration is a no-op
-        // skeleton; we'll iterate after upload so the LLM sees the scans.
-        use_llm: !hasShots,
+        use_llm: !deferLlm,
       });
       const newSessionId = newSession.id;
       setMode({ kind: "active", sessionId: newSessionId });
       setActiveIterIdx(null);
       qc.setQueryData(["practice-session", newSessionId], newSession);
 
-      // 2. If shots are queued, upload them now bound to this session.
+      let sessionAfter = newSession;
+
+      // 1. Apply queued source pins (cheap — single API call).
+      if (hasPendingSources) {
+        setBusy(`Pinning ${pendingPinnedSources.length} source(s)…`);
+        sessionAfter = await api.practiceSetSources(
+          newSessionId, pendingPinnedSources,
+        );
+        qc.setQueryData(["practice-session", newSessionId], sessionAfter);
+        setPendingPinnedSources([]);
+      }
+
+      // 2. Upload queued scans (slower — Vision OCR per file).
       if (hasShots) {
         setBusy(`Uploading ${pendingShots.length} file(s) + extracting…`);
         await api.practiceUploadScans(
           childId, subject, pendingShots, newSessionId, true, uploadPurpose,
         );
         setPendingShots([]);
+      }
 
-        // 3. Trigger the first real LLM iteration with mode-appropriate prompt.
+      // 3. Trigger the first real LLM iteration so Opus sees pinned
+      //    sources + uploaded scans in the data pack from round 1.
+      if (deferLlm) {
         setBusy(`Generating first draft with Claude Opus (~30-60s)…`);
+        const groundingMentions: string[] = [];
+        if (hasShots) groundingMentions.push("uploaded scans");
+        if (hasPendingSources) groundingMentions.push("pinned sources");
+        const groundingClause = groundingMentions.length > 0
+          ? `Use the ${groundingMentions.join(" and ")} as grounding context.`
+          : "";
         const firstPrompt =
           activeKind === "review_work"
             ? "Review the uploaded student work — give per-question verdicts, feedback, and a score estimate."
-            : initialPrompt || "Use the uploaded scans as grounding context.";
+            : initialPrompt || groundingClause || "Generate the first draft.";
         const updated = await api.practiceIterateSession(newSessionId, firstPrompt);
         qc.setQueryData(["practice-session", newSessionId], updated);
         const newest = updated.iterations[updated.iterations.length - 1];
@@ -332,18 +358,26 @@ export function PracticePanel({
   };
 
   const saveSources = async (pinned: PinnedSource[]) => {
-    if (!sessionId) return;
+    setSourcesPickerOpen(false);
+    if (!sessionId) {
+      // Pre-session — buffer locally, applied after start_session.
+      setPendingPinnedSources(pinned);
+      return;
+    }
     try {
       const updated = await api.practiceSetSources(sessionId, pinned);
       qc.setQueryData(["practice-session", sessionId], updated);
-      setSourcesPickerOpen(false);
     } catch (e) {
       setErrorMsg(`Failed to save sources: ${e}`);
     }
   };
 
   const removePinnedSource = async (idx: number) => {
-    if (!sessionId || !session?.pinned_sources) return;
+    if (!sessionId) {
+      setPendingPinnedSources((prev) => prev.filter((_, i) => i !== idx));
+      return;
+    }
+    if (!session?.pinned_sources) return;
     const next = session.pinned_sources.filter((_, i) => i !== idx);
     try {
       const updated = await api.practiceSetSources(sessionId, next);
@@ -550,6 +584,11 @@ export function PracticePanel({
               onTakePhoto={() => cameraInputRef.current?.click()}
               onRemoveFromQueue={removeFromQueue}
               onDiscardPending={() => setPendingShots([])}
+              pendingPinnedSources={pendingPinnedSources}
+              onOpenSourcesPicker={() => setSourcesPickerOpen(true)}
+              onRemovePendingSource={(idx) =>
+                setPendingPinnedSources((prev) => prev.filter((_, i) => i !== idx))
+              }
             />
           )}
 
@@ -681,12 +720,12 @@ export function PracticePanel({
         )}
       </aside>
 
-      {sourcesPickerOpen && session && (
+      {sourcesPickerOpen && (
         <SourcesPicker
           childId={childId}
           classLevel={childClassLevel}
           subject={subject}
-          initial={session.pinned_sources || []}
+          initial={session?.pinned_sources || pendingPinnedSources}
           onSave={saveSources}
           onClose={() => setSourcesPickerOpen(false)}
         />
@@ -761,6 +800,7 @@ function SourcesSection({
 function StartCard({
   meta, busy, onStart, isCheck,
   pendingShots, onPickFiles, onTakePhoto, onRemoveFromQueue, onDiscardPending,
+  pendingPinnedSources, onOpenSourcesPicker, onRemovePendingSource,
 }: {
   meta: ModeMeta;
   busy: string | null;
@@ -771,12 +811,23 @@ function StartCard({
   onTakePhoto: () => void;
   onRemoveFromQueue: (idx: number) => void;
   onDiscardPending: () => void;
+  pendingPinnedSources: PinnedSource[];
+  onOpenSourcesPicker: () => void;
+  onRemovePendingSource: (idx: number) => void;
 }) {
   const hasShots = pendingShots.length > 0;
+  const hasSources = pendingPinnedSources.length > 0;
   // CTA label adapts to what's queued — for Check mode the empty state
   // hints at the right flow ("upload work first, then review").
-  const ctaCopy = hasShots
-    ? `${isCheck ? "Review" : "Generate"} with ${pendingShots.length} uploaded ${pendingShots.length === 1 ? "file" : "files"}`
+  const ctaParts: string[] = [];
+  if (hasShots) {
+    ctaParts.push(`${pendingShots.length} ${pendingShots.length === 1 ? "file" : "files"}`);
+  }
+  if (hasSources) {
+    ctaParts.push(`${pendingPinnedSources.length} source${pendingPinnedSources.length === 1 ? "" : "s"}`);
+  }
+  const ctaCopy = ctaParts.length > 0
+    ? `${isCheck ? "Review" : "Generate"} with ${ctaParts.join(" + ")}`
     : isCheck
     ? "Generate review (no uploads yet)"
     : meta.ctaCopy;
@@ -787,6 +838,54 @@ function StartCard({
         <span className="text-xl">{meta.emoji}</span> {meta.label}
       </div>
       <p className="text-gray-700 leading-relaxed">{meta.introHelp}</p>
+
+      {/* Pinned-sources block — usable in every mode, so the parent can
+          ground the FIRST iteration on textbooks / resources / specific
+          topics without first having to create+iterate empty. */}
+      <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-3">
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+          <div className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+            📚 Optional — pin grounding sources
+          </div>
+          <button
+            type="button"
+            onClick={onOpenSourcesPicker}
+            className="text-sm px-3 py-1.5 border border-gray-400 bg-white rounded font-medium hover:bg-gray-50 inline-flex items-center gap-1"
+            title="Pin library files, portal resources, or syllabus topics"
+          >
+            📚 <span className="hidden sm:inline">{hasSources ? "Manage" : "Add sources"}</span>
+          </button>
+        </div>
+        {hasSources ? (
+          <div className="flex flex-wrap gap-1.5">
+            {pendingPinnedSources.map((p, i) => (
+              <span
+                key={`${p.type}-${p.ref}-${i}`}
+                className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-gray-300 bg-white"
+                title={`${p.type} · ${p.ref}`}
+              >
+                <span className="opacity-60">
+                  {p.type === "library" ? "📚" : p.type === "resource" ? "📁" : "🎯"}
+                </span>
+                <span className="max-w-[180px] truncate">{p.label}</span>
+                <button
+                  onClick={() => onRemovePendingSource(i)}
+                  className="text-rose-600 hover:text-rose-800 ml-0.5"
+                  aria-label={`Remove ${p.label}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500 italic leading-relaxed">
+            Pin a textbook from <strong>Library</strong>, a worksheet from
+            portal <strong>Resources</strong>, or specific
+            <strong> Syllabus</strong> topics — they ground every iteration.
+          </p>
+        )}
+      </div>
 
       {/* Big upload bar — visible BEFORE session creation so the
           parent can queue scans and have them included in the first
