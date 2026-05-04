@@ -284,27 +284,46 @@ export type FreshGradePellet = {
 /** Phase 25 — practice-prep workspace types. A session is a stateful
  *  prep workspace; iterations accumulate as the parent steers the LLM
  *  with prompts; classwork scans ground the next iteration. */
+export type PracticeKind = "review_prep" | "assignment_help";
+
+export type PracticeQuestion = {
+  n: number;
+  stem: string;
+  type: string;
+  marks: number;
+  expected_answer?: string;
+  expected_solution_md?: string;
+  topic_ref?: string;
+};
+
+export type PracticeHelpSection = {
+  heading: string;
+  body_md: string;
+  kind?: "step" | "example" | "hint" | "warning" | "optional" | "reference" | string;
+};
+
+export type PracticeOutputJson = {
+  title?: string;
+  // review_prep:
+  instructions?: string;
+  questions?: PracticeQuestion[];
+  answer_key?: string;
+  // assignment_help:
+  summary?: string;
+  format?: string;
+  sections?: PracticeHelpSection[];
+  next_steps?: string[];
+  // both:
+  honest_caveat?: string;
+};
+
 export type PracticeIterationOut = {
   id: number;
   session_id: number;
   iteration_index: number;
   parent_prompt: string | null;
   output_md: string;
-  output_json: {
-    title?: string;
-    instructions?: string;
-    questions?: Array<{
-      n: number;
-      stem: string;
-      type: string;
-      marks: number;
-      expected_answer?: string;
-      expected_solution_md?: string;
-      topic_ref?: string;
-    }>;
-    answer_key?: string;
-    honest_caveat?: string;
-  } | null;
+  output_json: PracticeOutputJson | null;
   llm_used: boolean;
   llm_model: string | null;
   llm_input_tokens: number | null;
@@ -334,6 +353,7 @@ export type PracticeSessionOut = {
   topic: string | null;
   linked_assignment_id: number | null;
   title: string;
+  kind: PracticeKind;
   status: string;
   preferred_iteration_id: number | null;
   created_at: string;
@@ -349,6 +369,7 @@ export type PracticeSessionListItem = {
   subject: string;
   topic: string | null;
   title: string;
+  kind: PracticeKind;
   status: string;
   iteration_count: number;
   linked_assignment_id: number | null;
@@ -1096,6 +1117,7 @@ export const api = {
     linked_assignment_id?: number | null;
     title?: string | null;
     initial_prompt?: string | null;
+    kind?: PracticeKind;
     use_llm?: boolean;
   }) =>
     fetchJson<PracticeSessionOut>(`/api/practice/sessions`, {

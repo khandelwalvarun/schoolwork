@@ -3889,17 +3889,26 @@ async def start_practice_session(
     linked_assignment_id: int | None = None,
     title: str | None = None,
     initial_prompt: str | None = None,
+    kind: str = "review_prep",
     use_llm: bool = True,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Spin up a new practice-prep workspace and run the FIRST iteration.
 
+    Two flavours via `kind`:
+      review_prep     — generates a practice sheet of questions for an
+                        upcoming review/test (default)
+      assignment_help — generates support material (outline / hints /
+                        worked example / reading guide) for an
+                        existing assignment the kid has to do
+
+    Both share the same iteration + classwork-scan plumbing.
+
     Returns the full session payload (incl. `iterations[0]` = initial draft).
     Pass `linked_assignment_id` to ground the prep against a specific
-    upcoming review/test row. Pass `topic` for free-form study not tied
-    to an assignment. `initial_prompt` lets you steer the first round
-    explicitly (e.g. "focus on word problems"); leave blank for the
-    default LLM behaviour.
+    upcoming review/test row OR the assignment to be helped. Pass `topic`
+    for free-form study not tied to an assignment. `initial_prompt` lets
+    you steer the first round explicitly.
 
     `use_llm=False` skips the Opus call and produces a rule skeleton —
     handy when offline or when you want to seed the workspace cheaply
@@ -3915,7 +3924,7 @@ async def start_practice_session(
                 child_id=child_id, subject=subject, topic=topic,
                 linked_assignment_id=linked_assignment_id,
                 title=title, initial_prompt=initial_prompt,
-                use_llm=use_llm,
+                kind=kind, use_llm=use_llm,
             )
         return result
     except Exception as e:

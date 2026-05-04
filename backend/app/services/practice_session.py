@@ -56,6 +56,16 @@ log = logging.getLogger(__name__)
 PRACTICE_LLM_MODEL_DEFAULT = "claude-opus-4-5"
 MAX_ITERATIONS_PER_SESSION = 30
 
+# Two flavours of session, both flowing through the same iterate loop:
+#   review_prep      — generates a practice sheet of questions
+#   assignment_help  — generates support material for an existing
+#                      assignment (outline / hints / worked example /
+#                      reading guide / brainstorm starter, parent picks
+#                      via the iterative prompt)
+KIND_REVIEW_PREP = "review_prep"
+KIND_ASSIGNMENT_HELP = "assignment_help"
+ALLOWED_KINDS = {KIND_REVIEW_PREP, KIND_ASSIGNMENT_HELP}
+
 
 # ───────────────────────── public API ─────────────────────────
 
@@ -68,15 +78,23 @@ async def start_session(
     linked_assignment_id: int | None = None,
     title: str | None = None,
     initial_prompt: str | None = None,
+    kind: str = KIND_REVIEW_PREP,
     use_llm: bool = True,
 ) -> dict[str, Any]:
     """Create a new prep session and run the first iteration.
+
+    `kind` selects the LLM prompt: KIND_REVIEW_PREP (default) generates
+    a practice sheet of questions; KIND_ASSIGNMENT_HELP generates
+    support material for an existing assignment. Both share the same
+    iteration / scan / preferred-pointer plumbing.
 
     Returns the session dict with the first iteration filled in. If
     `use_llm=False` (or the LLM is unreachable), the first iteration
     falls through to a rule skeleton so the workspace is non-empty
     even when offline.
     """
+    if kind not in ALLOWED_KINDS:
+        raise ValueError(f"kind must be one of {sorted(ALLOWED_KINDS)}, got {kind!r}")
     child = (
         await session.execute(select(Child).where(Child.id == child_id))
     ).scalar_one_or_none()
@@ -84,13 +102,14 @@ async def start_session(
         raise ValueError(f"child {child_id} not found")
     subject_norm = normalize_subject(subject) or subject
 
-    auto_title = title or _auto_title(child, subject_norm, topic, linked_assignment_id)
+    auto_title = title or _auto_title(child, subject_norm, topic, linked_assignment_id, kind)
     row = PracticeSession(
         child_id=child_id,
         subject=subject_norm,
         topic=topic,
         linked_assignment_id=linked_assignment_id,
         title=auto_title,
+        kind=kind,
     )
     session.add(row)
     await session.flush()  # populate row.id
@@ -188,6 +207,7 @@ async def get_session(
         "topic": row.topic,
         "linked_assignment_id": row.linked_assignment_id,
         "title": row.title,
+        "kind": row.kind,
         "status": row.status,
         "preferred_iteration_id": row.preferred_iteration_id,
         "created_at": row.created_at.isoformat(),
@@ -232,6 +252,7 @@ async def list_sessions(
             "subject": r.subject,
             "topic": r.topic,
             "title": r.title,
+            "kind": r.kind,
             "status": r.status,
             "iteration_count": len(iter_count),
             "linked_assignment_id": r.linked_assignment_id,
@@ -284,12 +305,13 @@ async def set_preferred(
 # ───────────────────────── internals ─────────────────────────
 
 def _auto_title(
-    child: Child, subject: str, topic: str | None, linked_assignment_id: int | None,
+    child: Child, subject: str, topic: str | None,
+    linked_assignment_id: int | None, kind: str = KIND_REVIEW_PREP,
 ) -> str:
     parts = [subject]
     if topic:
         parts.append(topic)
-    parts.append("prep")
+    parts.append("help" if kind == KIND_ASSIGNMENT_HELP else "prep")
     parts.append(f"— {child.display_name}")
     return " ".join(parts)
 
@@ -372,15 +394,15 @@ async def _run_iteration(
     if use_llm:
         try:
             out_dict, llm_used, llm_model, in_t, out_t = await _claude_synthesize(
-                pack, parent_prompt=parent_prompt,
+                pack, parent_prompt=parent_prompt, kind=sess.kind,
             )
         except Exception as e:
             err = repr(e)[:500]
             log.warning("practice generator LLM call failed: %s", e)
     duration_ms = int((time.monotonic() - started) * 1000)
     if out_dict is None:
-        out_dict = _rule_skeleton(pack)
-    md = _render_markdown(out_dict, pack)
+        out_dict = _rule_skeleton(pack, kind=sess.kind)
+    md = _render_markdown(out_dict, pack, kind=sess.kind)
 
     iter_row = PracticeIteration(
         session_id=sess.id,
@@ -553,7 +575,7 @@ async def _build_pack(
 
 # ───────────────────────── LLM prompt + call ─────────────────────────
 
-SYSTEM_PROMPT = """You are an expert tutor preparing a practice sheet for a school student in India. The tutor is the student's parent — they will hand the printed sheet to the kid for revision.
+REVIEW_PREP_SYSTEM_PROMPT = """You are an expert tutor preparing a practice sheet for a school student in India. The tutor is the student's parent — they will hand the printed sheet to the kid for revision.
 
 You receive a JSON DATA PACK with:
   - child: name, class_level (CBSE 4 / 6 / etc.), section
@@ -599,9 +621,58 @@ RULES:
 - Return ONLY the JSON object. No prose outside the braces. No code fences."""
 
 
+ASSIGNMENT_HELP_SYSTEM_PROMPT = """You are an expert tutor helping a parent in India support their child on a SPECIFIC ASSIGNMENT that has already been given by the school. The parent will read your output, understand the assignment, and decide how to walk the kid through it.
+
+You are NOT generating a practice paper. You are generating SUPPORT MATERIAL — an outline, sample, hint sheet, vocabulary list, worked example, brainstorm starter — whatever fits this assignment best. The parent's iterative prompt steers the shape: "give me an outline", "show a worked example", "what should the intro paragraph look like?", "shorter", "in Hindi", "less hand-holding".
+
+You receive a JSON DATA PACK with:
+  - child: name, class_level (CBSE 4 / 6 / etc.), section
+  - subject + optional topic
+  - linked_assignment: title, body, notes_en, due date — read this CAREFULLY; it's the actual ask
+  - cycle + cycle_topics_for_subject (current syllabus)
+  - recent_grades (last few graded items in this subject — calibrate language level)
+  - weak_topics (topic-mastery rows where the kid is shaky)
+  - classwork_scans (Vision-extracted summaries from photos of recent classwork — what's been covered)
+  - prior_iteration (previous draft + parent's prompt for THIS round; refine, don't regenerate)
+  - parent_prompt_for_this_round (string; may be empty for the initial draft)
+
+OUTPUT — strict JSON only, matching this schema:
+
+{
+  "title": "<short title — usually echoes the assignment title>",
+  "summary": "<1-2 sentence plain-English restatement of what the kid is being asked to do>",
+  "format": "<one of: outline | worked_example | hints | starter | reading_guide | brainstorm | vocab | discussion>",
+  "sections": [
+    {
+      "heading": "<short heading>",
+      "body_md": "<markdown body — paragraphs, lists, code blocks, etc. as appropriate>",
+      "kind": "<step | example | hint | warning | optional | reference>"
+    },
+    ...
+  ],
+  "next_steps": [
+    "<concrete instruction the parent or kid does next>",
+    "..."
+  ],
+  "honest_caveat": "Generated by Claude Opus on <today>. This is a starting point — verify against the textbook and the teacher's brief."
+}
+
+RULES:
+- "format" reflects what the parent asked for. Default to "outline" for writing assignments, "worked_example" for math/science problem sets, "hints" for unclear-to-the-kid tasks, "reading_guide" for reading homework, "brainstorm" for project starters.
+- Stay GROUNDED in the linked_assignment — quote phrases from its body when they pin down the ask.
+- Weight classwork_scans heavily — they show the language and approach the teacher used.
+- For Hindi / Sanskrit / non-Latin subjects, write in the appropriate script. Provide an English transliteration in the section body when helpful.
+- Apply the parent's iterative prompt as a refinement over prior_iteration — preserve unchanged sections, modify only what was asked.
+- DO NOT do the kid's work for them. Outlines and worked examples should illustrate the method, not provide the final answer the kid is meant to discover.
+- next_steps is concrete and short (1-4 items). Always present even when empty list.
+- honest_caveat is REQUIRED — model name + date.
+- Return ONLY the JSON object. No prose outside the braces. No code fences."""
+
+
 async def _claude_synthesize(
     pack: dict[str, Any],
     parent_prompt: str | None,
+    kind: str = KIND_REVIEW_PREP,
 ) -> tuple[dict[str, Any] | None, bool, str | None, int | None, int | None]:
     """Call Claude Opus. Returns (parsed_dict, llm_used, model, in_tokens, out_tokens).
     On any failure (LLM unreachable, JSON parse, validation), returns
@@ -617,21 +688,25 @@ async def _claude_synthesize(
         or PRACTICE_LLM_MODEL_DEFAULT
     )
     pack_for_llm = {**pack, "parent_prompt_for_this_round": parent_prompt or ""}
+    is_help = (kind == KIND_ASSIGNMENT_HELP)
+    system_prompt = ASSIGNMENT_HELP_SYSTEM_PROMPT if is_help else REVIEW_PREP_SYSTEM_PROMPT
+    purpose = "assignment_help" if is_help else "practice_generator"
+    closing_line = "Generate the help material." if is_help else "Generate the practice sheet."
     prompt = (
         "DATA PACK:\n```json\n"
         + json.dumps(pack_for_llm, default=str, ensure_ascii=False, indent=2)
-        + "\n```\n\nGenerate the practice sheet."
+        + f"\n```\n\n{closing_line}"
     )
     try:
         resp = await client.complete(
-            purpose="practice_generator",
-            system=SYSTEM_PROMPT,
+            purpose=purpose,
+            system=system_prompt,
             prompt=prompt,
             model=model,
             max_tokens=4500,
         )
     except Exception as e:
-        log.warning("practice_generator: LLM call failed: %s", e)
+        log.warning("%s: LLM call failed: %s", purpose, e)
         return None, False, model, None, None
     text = (resp.text or "").strip()
     # Strip code fences if Opus added them despite the instruction.
@@ -644,42 +719,94 @@ async def _claude_synthesize(
     try:
         out = json.loads(text)
     except Exception as e:
-        log.warning("practice_generator: bad JSON: %s; raw=%r", e, text[:300])
+        log.warning("%s: bad JSON: %s; raw=%r", purpose, e, text[:300])
         return None, False, resp.model, resp.input_tokens, resp.output_tokens
-    err = _validate(out)
+    err = _validate(out, kind=kind)
     if err:
-        log.warning("practice_generator: validation failed: %s", err)
+        log.warning("%s: validation failed: %s", purpose, err)
         return None, False, resp.model, resp.input_tokens, resp.output_tokens
     return out, True, resp.model, resp.input_tokens, resp.output_tokens
 
 
-def _validate(out: dict[str, Any]) -> str | None:
+def _validate(out: dict[str, Any], *, kind: str = KIND_REVIEW_PREP) -> str | None:
     if not isinstance(out, dict):
         return "output is not an object"
     if not isinstance(out.get("title"), str) or not out["title"].strip():
         return "title missing"
-    if not isinstance(out.get("questions"), list) or not out["questions"]:
-        return "questions must be a non-empty list"
-    for i, q in enumerate(out["questions"]):
-        if not isinstance(q, dict):
-            return f"questions[{i}]: not an object"
-        if not isinstance(q.get("stem"), str) or not q["stem"].strip():
-            return f"questions[{i}]: stem missing"
-        try:
-            int(q.get("n", i + 1))
-            int(q.get("marks", 1))
-        except (TypeError, ValueError):
-            return f"questions[{i}]: n/marks must be int"
+    if kind == KIND_ASSIGNMENT_HELP:
+        if not isinstance(out.get("sections"), list) or not out["sections"]:
+            return "sections must be a non-empty list"
+        for i, s in enumerate(out["sections"]):
+            if not isinstance(s, dict):
+                return f"sections[{i}]: not an object"
+            if not isinstance(s.get("heading"), str) or not s["heading"].strip():
+                return f"sections[{i}]: heading missing"
+            if not isinstance(s.get("body_md"), str) or not s["body_md"].strip():
+                return f"sections[{i}]: body_md missing"
+        if not isinstance(out.get("next_steps"), list):
+            return "next_steps must be a list (may be empty)"
+    else:
+        if not isinstance(out.get("questions"), list) or not out["questions"]:
+            return "questions must be a non-empty list"
+        for i, q in enumerate(out["questions"]):
+            if not isinstance(q, dict):
+                return f"questions[{i}]: not an object"
+            if not isinstance(q.get("stem"), str) or not q["stem"].strip():
+                return f"questions[{i}]: stem missing"
+            try:
+                int(q.get("n", i + 1))
+                int(q.get("marks", 1))
+            except (TypeError, ValueError):
+                return f"questions[{i}]: n/marks must be int"
     if not isinstance(out.get("honest_caveat"), str) or not out["honest_caveat"].strip():
         return "honest_caveat is required"
     return None
 
 
-def _rule_skeleton(pack: dict[str, Any]) -> dict[str, Any]:
+def _rule_skeleton(
+    pack: dict[str, Any], *, kind: str = KIND_REVIEW_PREP,
+) -> dict[str, Any]:
     """Mechanical fallback — used when the LLM is unreachable or returns
     invalid JSON. Produces enough structure that the workspace UI is
     non-empty; the parent can iterate from there."""
     sess = pack.get("session", {})
+    if kind == KIND_ASSIGNMENT_HELP:
+        linked = pack.get("linked_assignment") or {}
+        title = sess.get("title") or "Assignment help"
+        sections = [
+            {
+                "heading": "What's being asked",
+                "body_md": (
+                    f"_(LLM unavailable — auto-extracted from assignment row.)_\n\n"
+                    f"**Title:** {linked.get('title') or '(none)'}\n\n"
+                    f"**Body:**\n\n{linked.get('body') or '(no body captured)'}"
+                ),
+                "kind": "reference",
+            },
+            {
+                "heading": "How to approach it",
+                "body_md": (
+                    "Read the body carefully with the kid. Identify the verbs "
+                    "(write, list, calculate, explain). Match each to a step. "
+                    "Iterate via the prompt box for a real outline."
+                ),
+                "kind": "step",
+            },
+        ]
+        return {
+            "title": title,
+            "summary": linked.get("title") or "(see assignment row)",
+            "format": "outline",
+            "sections": sections,
+            "next_steps": [
+                "Iterate with a prompt to get a real outline / worked example.",
+            ],
+            "honest_caveat": (
+                "Rule-based skeleton — LLM was unavailable. Use the prompt "
+                "box to ask Claude Opus for real help once it's reachable."
+            ),
+        }
+
     cyc_topics = pack.get("cycle_topics_for_subject", []) or []
     seed_topics = cyc_topics[:6] if cyc_topics else ["(topic not yet identified)"]
     questions = []
@@ -705,7 +832,9 @@ def _rule_skeleton(pack: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _render_markdown(out: dict[str, Any], pack: dict[str, Any]) -> str:
+def _render_markdown(
+    out: dict[str, Any], pack: dict[str, Any], *, kind: str = KIND_REVIEW_PREP,
+) -> str:
     """Render the structured output as a parent-printable markdown sheet."""
     lines: list[str] = []
     title = out.get("title", "Practice prep")
@@ -723,6 +852,38 @@ def _render_markdown(out: dict[str, Any], pack: dict[str, Any]) -> str:
             bits.append(sub)
         lines.append(" · ".join(bits))
     lines.append("")
+
+    if kind == KIND_ASSIGNMENT_HELP:
+        if out.get("summary"):
+            lines.append(f"_{out['summary']}_")
+            lines.append("")
+        fmt = out.get("format")
+        if fmt:
+            lines.append(f"**Format:** {fmt}")
+            lines.append("")
+        for s in out.get("sections", []):
+            heading = s.get("heading", "")
+            body = s.get("body_md", "")
+            kind_tag = s.get("kind") or ""
+            if heading:
+                tag_suffix = f"  ·  _{kind_tag}_" if kind_tag else ""
+                lines.append(f"## {heading}{tag_suffix}")
+                lines.append("")
+            if body:
+                lines.append(body)
+                lines.append("")
+        next_steps = out.get("next_steps") or []
+        if next_steps:
+            lines.append("## Next steps")
+            lines.append("")
+            for ns in next_steps:
+                lines.append(f"- {ns}")
+            lines.append("")
+        lines.append("---")
+        lines.append(f"_{out.get('honest_caveat', '')}_")
+        return "\n".join(lines)
+
+    # ── review_prep ────────────────────────────────────────────
     if out.get("instructions"):
         lines.append(f"_{out['instructions']}_")
         lines.append("")

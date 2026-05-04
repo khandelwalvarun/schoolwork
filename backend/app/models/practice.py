@@ -25,6 +25,14 @@ class PracticeSession(Base):
         ForeignKey("veracross_items.id", ondelete="SET NULL"), nullable=True,
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
+    # Phase 25 — discriminator for the LLM prompt. "review_prep"
+    # produces a practice sheet of questions; "assignment_help"
+    # produces support material (outline / hints / worked example) for
+    # an existing assignment. Same iteration + scan plumbing for both.
+    kind: Mapped[str] = mapped_column(
+        String, nullable=False, default="review_prep",
+        server_default="review_prep",
+    )
     status: Mapped[str] = mapped_column(String, nullable=False, default="active")
     preferred_iteration_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

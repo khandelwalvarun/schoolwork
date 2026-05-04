@@ -2163,6 +2163,7 @@ async def api_practice_session_start(payload: dict[str, Any]) -> dict[str, Any]:
                 linked_assignment_id=payload.get("linked_assignment_id"),
                 title=payload.get("title"),
                 initial_prompt=payload.get("initial_prompt"),
+                kind=payload.get("kind") or "review_prep",
                 use_llm=bool(payload.get("use_llm", True)),
             )
     except ValueError as e:
