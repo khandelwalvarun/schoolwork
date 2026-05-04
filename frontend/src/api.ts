@@ -284,7 +284,25 @@ export type FreshGradePellet = {
 /** Phase 25 — practice-prep workspace types. A session is a stateful
  *  prep workspace; iterations accumulate as the parent steers the LLM
  *  with prompts; classwork scans ground the next iteration. */
-export type PracticeKind = "review_prep" | "assignment_help";
+export type PracticeKind = "review_prep" | "assignment_help" | "review_work";
+
+export type ScanPurpose = "classwork_reference" | "student_work";
+
+export type ReviewWorkVerdict = "correct" | "partially_correct" | "incorrect" | "unclear";
+
+export type ReviewWorkItem = {
+  ref: string;
+  verdict: ReviewWorkVerdict;
+  what_kid_did: string;
+  feedback: string;
+  suggestion: string | null;
+};
+
+export type ReviewWorkScore = {
+  value: number;
+  max: number;
+  confidence: "high" | "medium" | "low";
+};
 
 export type PracticeQuestion = {
   n: number;
@@ -313,7 +331,12 @@ export type PracticeOutputJson = {
   format?: string;
   sections?: PracticeHelpSection[];
   next_steps?: string[];
-  // both:
+  // review_work:
+  overall_assessment?: string;
+  estimated_score?: ReviewWorkScore | null;
+  by_question?: ReviewWorkItem[];
+  general_suggestions?: string[];
+  // all:
   honest_caveat?: string;
 };
 
@@ -339,6 +362,7 @@ export type PracticeClassworkScanOut = {
   child_id: number;
   subject: string;
   attachment_id: number;
+  purpose: ScanPurpose;
   extracted_summary: string | null;
   extracted_topics: string[] | null;
   extracted_text_present: boolean;
@@ -1172,6 +1196,7 @@ export const api = {
     files: File[],
     sessionId?: number,
     extract = true,
+    purpose: ScanPurpose = "classwork_reference",
   ) => {
     const fd = new FormData();
     for (const f of files) fd.append("files", f, f.name);
@@ -1181,6 +1206,7 @@ export const api = {
     });
     if (sessionId) p.set("session_id", String(sessionId));
     p.set("extract", String(extract));
+    p.set("purpose", purpose);
     const r = await fetch(`/api/practice/scans/upload?${p.toString()}`, {
       method: "POST",
       body: fd,
@@ -1192,6 +1218,8 @@ export const api = {
       errors: Array<{ filename: string; error: string }>;
     };
   },
+  practiceScanThumbnailUrl: (scanId: number) =>
+    `/api/practice/scans/${scanId}/thumbnail`,
   practiceListScans: (
     childId?: number,
     subject?: string,

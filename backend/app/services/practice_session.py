@@ -56,15 +56,18 @@ log = logging.getLogger(__name__)
 PRACTICE_LLM_MODEL_DEFAULT = "claude-opus-4-5"
 MAX_ITERATIONS_PER_SESSION = 30
 
-# Two flavours of session, both flowing through the same iterate loop:
+# Three flavours of session, all flowing through the same iterate loop:
 #   review_prep      — generates a practice sheet of questions
 #   assignment_help  — generates support material for an existing
 #                      assignment (outline / hints / worked example /
-#                      reading guide / brainstorm starter, parent picks
-#                      via the iterative prompt)
+#                      reading guide / brainstorm starter)
+#   review_work      — reviews the kid's COMPLETED work (uploaded as
+#                      student_work scans) for correctness, gives
+#                      per-question feedback + suggestions
 KIND_REVIEW_PREP = "review_prep"
 KIND_ASSIGNMENT_HELP = "assignment_help"
-ALLOWED_KINDS = {KIND_REVIEW_PREP, KIND_ASSIGNMENT_HELP}
+KIND_REVIEW_WORK = "review_work"
+ALLOWED_KINDS = {KIND_REVIEW_PREP, KIND_ASSIGNMENT_HELP, KIND_REVIEW_WORK}
 
 
 # ───────────────────────── public API ─────────────────────────
@@ -311,7 +314,12 @@ def _auto_title(
     parts = [subject]
     if topic:
         parts.append(topic)
-    parts.append("help" if kind == KIND_ASSIGNMENT_HELP else "prep")
+    if kind == KIND_ASSIGNMENT_HELP:
+        parts.append("help")
+    elif kind == KIND_REVIEW_WORK:
+        parts.append("check")
+    else:
+        parts.append("prep")
     parts.append(f"— {child.display_name}")
     return " ".join(parts)
 
@@ -496,8 +504,9 @@ async def _build_pack(
                 "notes_en": linked.notes_en,
             }
 
-    # Classwork scans — extracted summary + topics. Skip raw image bytes
-    # (those would balloon the prompt; the summary is what we want).
+    # Scans — split by purpose. classwork_reference becomes grounding
+    # for the practice generator; student_work goes into a separate
+    # bucket the review_work prompt reads as the kid's actual answers.
     scans = (
         await session.execute(
             select(PracticeClassworkScan)
@@ -505,8 +514,8 @@ async def _build_pack(
             .order_by(desc(PracticeClassworkScan.uploaded_at))
         )
     ).scalars().all()
-    scan_summaries: list[dict[str, Any]] = []
-    for s in scans:
+
+    def _scan_to_summary(s: PracticeClassworkScan) -> dict[str, Any]:
         topics: list[str] | None = None
         if s.extracted_topics_json:
             try:
@@ -515,13 +524,22 @@ async def _build_pack(
                     topics = [str(t) for t in topics_obj][:8]
             except Exception:
                 topics = None
-        scan_summaries.append({
+        return {
             "scan_id": s.id,
             "uploaded_at": s.uploaded_at.isoformat() if s.uploaded_at else None,
             "summary": s.extracted_summary,
             "topics_seen": topics,
             "extracted_text_excerpt": (s.extracted_text or "")[:1500],
-        })
+        }
+
+    scan_summaries = [
+        _scan_to_summary(s) for s in scans
+        if s.purpose == "classwork_reference"
+    ]
+    student_work_summaries = [
+        _scan_to_summary(s) for s in scans
+        if s.purpose == "student_work"
+    ]
 
     # Prior iteration — pass the most-recent draft so the LLM refines
     # rather than regenerating cold.
@@ -569,6 +587,7 @@ async def _build_pack(
         "weak_topics": weak_topics,
         "linked_assignment": linked_dict,
         "classwork_scans": scan_summaries,
+        "student_work_scans": student_work_summaries,
         "prior_iteration": prior_dict,
     }
 
@@ -669,6 +688,59 @@ RULES:
 - Return ONLY the JSON object. No prose outside the braces. No code fences."""
 
 
+REVIEW_WORK_SYSTEM_PROMPT = """You are an expert tutor reviewing a school student's COMPLETED ASSIGNMENT in India. The parent has uploaded photos of the kid's actual work; Vision has transcribed it into the `student_work_scans` field. Your job: tell the parent what the kid got right, what they got wrong, and what to do next.
+
+You receive a JSON DATA PACK with:
+  - child: name, class_level, section
+  - subject + optional topic
+  - linked_assignment: title, body — the original ask
+  - cycle_topics_for_subject (curriculum context)
+  - recent_grades (calibrate severity of feedback)
+  - classwork_scans (what was covered in class — NOT what the kid did)
+  - student_work_scans (THE KID'S ACTUAL ANSWERS — read these CAREFULLY)
+  - prior_iteration (previous review draft + parent's prompt for THIS round)
+  - parent_prompt_for_this_round (string; e.g. "be gentler", "focus on Q3", "in Hindi")
+
+OUTPUT — strict JSON only, matching this schema:
+
+{
+  "title": "<short title — usually 'Review of <assignment title>'>",
+  "overall_assessment": "<2-3 sentences: what did the kid get? where did they struggle? overall direction.>",
+  "estimated_score": {
+    "value": <number, your estimate of marks awarded>,
+    "max": <number, total marks>,
+    "confidence": "<high | medium | low>"
+  } | null,
+  "by_question": [
+    {
+      "ref": "<short label, e.g. 'Q1' or 'Page 2 — math problem 3' or 'paragraph opener'>",
+      "verdict": "<correct | partially_correct | incorrect | unclear>",
+      "what_kid_did": "<1-2 sentences quoting the kid's answer>",
+      "feedback": "<plain-English explanation; if wrong, say WHY in a way an 8-year-old can follow>",
+      "suggestion": "<concrete next step the parent / kid can do; null if not applicable>" | null
+    },
+    ...
+  ],
+  "general_suggestions": [
+    "<across-the-board pointer for the parent — e.g. 'practise place value', 'review tense agreement'>",
+    "..."
+  ],
+  "honest_caveat": "Generated by Claude Opus on <today>. This is an AI review based on photo transcription — handwriting / unusual layouts can be mis-read. Re-check anything graded 'incorrect' before correcting the kid."
+}
+
+RULES:
+- BE KIND. The kid may be 8 years old. Frame mistakes as learning moments, not failures.
+- BE SPECIFIC. "Q3 is wrong because 0.5 + 0.7 ≠ 0.12 — you forgot to carry from the tenths to the ones place." Not just "wrong, try again."
+- For non-Latin subjects (Hindi, Sanskrit), respond in the appropriate script. Provide an English transliteration for parents who don't read it.
+- When the kid's answer is unreadable in the scan, mark verdict="unclear" and suggest the parent re-photograph that page.
+- estimated_score is OPTIONAL — set to null when there's no clean way to score (creative writing, open-ended assignments).
+- general_suggestions is small (1-3 items) and actionable.
+- Apply parent's iterative prompt to refine the prior_iteration; preserve unchanged feedback, modify only what was asked.
+- If `student_work_scans` is empty, output ONE by_question entry with verdict="unclear" explaining no scans were uploaded yet.
+- honest_caveat is REQUIRED — model name + date + AI-vision disclaimer.
+- Return ONLY the JSON object. No prose outside braces. No code fences."""
+
+
 async def _claude_synthesize(
     pack: dict[str, Any],
     parent_prompt: str | None,
@@ -688,10 +760,18 @@ async def _claude_synthesize(
         or PRACTICE_LLM_MODEL_DEFAULT
     )
     pack_for_llm = {**pack, "parent_prompt_for_this_round": parent_prompt or ""}
-    is_help = (kind == KIND_ASSIGNMENT_HELP)
-    system_prompt = ASSIGNMENT_HELP_SYSTEM_PROMPT if is_help else REVIEW_PREP_SYSTEM_PROMPT
-    purpose = "assignment_help" if is_help else "practice_generator"
-    closing_line = "Generate the help material." if is_help else "Generate the practice sheet."
+    if kind == KIND_ASSIGNMENT_HELP:
+        system_prompt = ASSIGNMENT_HELP_SYSTEM_PROMPT
+        purpose = "assignment_help"
+        closing_line = "Generate the help material."
+    elif kind == KIND_REVIEW_WORK:
+        system_prompt = REVIEW_WORK_SYSTEM_PROMPT
+        purpose = "review_work"
+        closing_line = "Generate the review."
+    else:
+        system_prompt = REVIEW_PREP_SYSTEM_PROMPT
+        purpose = "practice_generator"
+        closing_line = "Generate the practice sheet."
     prompt = (
         "DATA PACK:\n```json\n"
         + json.dumps(pack_for_llm, default=str, ensure_ascii=False, indent=2)
@@ -728,6 +808,9 @@ async def _claude_synthesize(
     return out, True, resp.model, resp.input_tokens, resp.output_tokens
 
 
+_VALID_VERDICTS = {"correct", "partially_correct", "incorrect", "unclear"}
+
+
 def _validate(out: dict[str, Any], *, kind: str = KIND_REVIEW_PREP) -> str | None:
     if not isinstance(out, dict):
         return "output is not an object"
@@ -745,6 +828,29 @@ def _validate(out: dict[str, Any], *, kind: str = KIND_REVIEW_PREP) -> str | Non
                 return f"sections[{i}]: body_md missing"
         if not isinstance(out.get("next_steps"), list):
             return "next_steps must be a list (may be empty)"
+    elif kind == KIND_REVIEW_WORK:
+        if not isinstance(out.get("overall_assessment"), str) or not out["overall_assessment"].strip():
+            return "overall_assessment missing"
+        items = out.get("by_question")
+        if not isinstance(items, list) or not items:
+            return "by_question must be a non-empty list"
+        for i, q in enumerate(items):
+            if not isinstance(q, dict):
+                return f"by_question[{i}]: not an object"
+            if not isinstance(q.get("ref"), str) or not q["ref"].strip():
+                return f"by_question[{i}]: ref missing"
+            if q.get("verdict") not in _VALID_VERDICTS:
+                return f"by_question[{i}]: verdict must be one of {sorted(_VALID_VERDICTS)}"
+            if not isinstance(q.get("what_kid_did"), str):
+                return f"by_question[{i}]: what_kid_did must be a string"
+            if not isinstance(q.get("feedback"), str):
+                return f"by_question[{i}]: feedback must be a string"
+        gs = out.get("general_suggestions")
+        if gs is not None and not isinstance(gs, list):
+            return "general_suggestions must be a list (or omitted)"
+        score = out.get("estimated_score")
+        if score is not None and not isinstance(score, dict):
+            return "estimated_score must be an object or null"
     else:
         if not isinstance(out.get("questions"), list) or not out["questions"]:
             return "questions must be a non-empty list"
@@ -770,6 +876,52 @@ def _rule_skeleton(
     invalid JSON. Produces enough structure that the workspace UI is
     non-empty; the parent can iterate from there."""
     sess = pack.get("session", {})
+    if kind == KIND_REVIEW_WORK:
+        linked = pack.get("linked_assignment") or {}
+        student_scans = pack.get("student_work_scans") or []
+        if not student_scans:
+            return {
+                "title": sess.get("title") or "Work review",
+                "overall_assessment": (
+                    "No completed work uploaded yet. Upload photos of the kid's "
+                    "answers via the 📷 button or drag-drop, then iterate."
+                ),
+                "estimated_score": None,
+                "by_question": [{
+                    "ref": "(no scans)",
+                    "verdict": "unclear",
+                    "what_kid_did": "",
+                    "feedback": "No student-work scans on this session yet.",
+                    "suggestion": "Upload photos of completed pages and iterate.",
+                }],
+                "general_suggestions": [],
+                "honest_caveat": (
+                    "Rule-based skeleton — no scans + LLM unavailable. "
+                    "Upload scans and iterate to get a real review."
+                ),
+            }
+        return {
+            "title": sess.get("title") or "Work review",
+            "overall_assessment": (
+                f"{len(student_scans)} page(s) of completed work uploaded. "
+                "LLM was unavailable so this is a placeholder — iterate via the "
+                "prompt box once Claude Opus is reachable."
+            ),
+            "estimated_score": None,
+            "by_question": [{
+                "ref": f"Scan #{s.get('scan_id')}",
+                "verdict": "unclear",
+                "what_kid_did": (s.get("summary") or "").strip()[:200],
+                "feedback": "Awaiting LLM review.",
+                "suggestion": None,
+            } for s in student_scans],
+            "general_suggestions": [],
+            "honest_caveat": (
+                "Rule-based skeleton — LLM was unavailable. Iterate via the "
+                "prompt box once it's reachable for real feedback."
+            ),
+        }
+
     if kind == KIND_ASSIGNMENT_HELP:
         linked = pack.get("linked_assignment") or {}
         title = sess.get("title") or "Assignment help"
@@ -852,6 +1004,48 @@ def _render_markdown(
             bits.append(sub)
         lines.append(" · ".join(bits))
     lines.append("")
+
+    if kind == KIND_REVIEW_WORK:
+        oa = out.get("overall_assessment")
+        if oa:
+            lines.append(f"_{oa}_")
+            lines.append("")
+        score = out.get("estimated_score") or {}
+        if isinstance(score, dict) and score.get("value") is not None:
+            conf = score.get("confidence", "medium")
+            lines.append(f"**Estimated score:** {score.get('value')} / {score.get('max', '?')} _(confidence: {conf})_")
+            lines.append("")
+        verdict_emoji = {
+            "correct": "✅", "partially_correct": "🟡",
+            "incorrect": "❌", "unclear": "❓",
+        }
+        for q in out.get("by_question", []):
+            v = q.get("verdict") or "unclear"
+            emoji = verdict_emoji.get(v, "•")
+            lines.append(f"## {emoji} {q.get('ref', '?')} _({v})_")
+            lines.append("")
+            kid = (q.get("what_kid_did") or "").strip()
+            if kid:
+                lines.append(f"**Kid wrote:** {kid}")
+                lines.append("")
+            fb = (q.get("feedback") or "").strip()
+            if fb:
+                lines.append(fb)
+                lines.append("")
+            sug = (q.get("suggestion") or "").strip()
+            if sug:
+                lines.append(f"_Try:_ {sug}")
+                lines.append("")
+        gs = out.get("general_suggestions") or []
+        if gs:
+            lines.append("## General suggestions")
+            lines.append("")
+            for s in gs:
+                lines.append(f"- {s}")
+            lines.append("")
+        lines.append("---")
+        lines.append(f"_{out.get('honest_caveat', '')}_")
+        return "\n".join(lines)
 
     if kind == KIND_ASSIGNMENT_HELP:
         if out.get("summary"):

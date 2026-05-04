@@ -109,6 +109,14 @@ class PracticeClassworkScan(Base):
     attachment_id: Mapped[int] = mapped_column(
         ForeignKey("attachments.id", ondelete="CASCADE"), nullable=False,
     )
+    # Phase 25.1 — what is this scan FOR? "classwork_reference" =
+    # photo of recent classwork, used as grounding context for the
+    # practice generator. "student_work" = photo of the kid's completed
+    # work, submitted for the LLM to check / mark / give feedback on.
+    purpose: Mapped[str] = mapped_column(
+        String, nullable=False, default="classwork_reference",
+        server_default="classwork_reference",
+    )
     extracted_text: Mapped[str | None] = mapped_column(String, nullable=True)
     extracted_summary: Mapped[str | None] = mapped_column(String, nullable=True)
     extracted_topics_json: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -2270,9 +2270,12 @@ async def api_practice_scan_upload(
     subject: str | None = None,
     session_id: int | None = None,
     extract: bool = True,
+    purpose: str = "classwork_reference",
 ) -> dict[str, Any]:
-    """Upload one or more classwork scans. The Vision pass runs inline
-    when extract=true (default); set extract=false to skip."""
+    """Upload one or more scans. `purpose` selects the Vision prompt:
+       classwork_reference (default) → summarise what was covered
+       student_work → transcribe what the kid wrote (for review_work mode)
+    extract=true (default) runs Vision inline; false skips."""
     from sqlalchemy import select
     from .models import Child
     from .services.classwork_scan import save_scan
@@ -2296,11 +2299,51 @@ async def api_practice_scan_upload(
                     data=data,
                     session_id=session_id,
                     extract=extract,
+                    purpose=purpose,
                 )
                 saved.append(scan)
             except ValueError as e:
                 errors.append({"filename": f.filename or "", "error": str(e)})
     return {"saved": saved, "errors": errors}
+
+
+@app.get("/api/practice/scans/{scan_id}/thumbnail")
+async def api_practice_scan_thumbnail(scan_id: int) -> Any:
+    """Stream the scan's underlying image (or PDF) bytes back. Used by
+    the React panel to render thumbnails in the scan grid. Path-traversal
+    guarded against the data root."""
+    from fastapi.responses import FileResponse
+    from sqlalchemy import select
+    from .config import REPO_ROOT
+    from .util import paths as P
+    from .models import Attachment, PracticeClassworkScan
+    async with get_async_session() as session:
+        scan = (
+            await session.execute(
+                select(PracticeClassworkScan).where(PracticeClassworkScan.id == scan_id)
+            )
+        ).scalar_one_or_none()
+        if scan is None:
+            raise HTTPException(404, "scan not found")
+        att = (
+            await session.execute(
+                select(Attachment).where(Attachment.id == scan.attachment_id)
+            )
+        ).scalar_one_or_none()
+        if att is None or not att.local_path:
+            raise HTTPException(404, "attachment not found")
+        path = (REPO_ROOT / att.local_path).resolve()
+        try:
+            path.relative_to(P.data_root().resolve())
+        except ValueError:
+            raise HTTPException(403, "path escapes storage root")
+        if not path.exists():
+            raise HTTPException(404, "file vanished from disk")
+    return FileResponse(
+        path,
+        media_type=att.mime_type or "application/octet-stream",
+        filename=att.filename,
+    )
 
 
 @app.get("/api/practice/scans")

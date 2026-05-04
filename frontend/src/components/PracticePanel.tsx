@@ -1,64 +1,127 @@
 /**
  * PracticePanel — slide-over workspace for iterative LLM cowork.
  *
- * Two flavours via the `kind` prop:
- *   review_prep      — "📝 prep": practice sheet of questions for an
- *                      upcoming review/test
- *   assignment_help  — "💡 help": outline / hints / worked example for
- *                      an existing assignment the kid has to do
+ * Three modes (tabs at the top):
+ *   📝 Prep    — practice sheet of questions for an upcoming review
+ *   💡 Help    — outline / hints / worked example for an assignment
+ *   ✓ Check   — review the kid's COMPLETED work for correctness
  *
- * Both share the same iteration / classwork-scan / preferred-pointer
- * plumbing — only the rendering of `output_json` and the chrome
- * (title / quick-prompt suggestions) change.
+ * Each mode is its own session backed by /api/practice/sessions with a
+ * different `kind`. Switching tabs swaps to that mode's session for the
+ * same (child × subject × linked-assignment) tuple, or offers to start
+ * a fresh one. Iterations live inside their own mode and don't bleed
+ * across.
  *
- * The parent can:
- *   - Read the active iteration as STRUCTURED CARDS (questions for
- *     review_prep, sections for assignment_help) — not raw markdown
- *   - Switch between iterations via chips
- *   - Star a different iteration as canonical
- *   - Print a clean printable version (opens in a new window)
- *   - Copy the markdown to clipboard
- *   - Drag-drop classwork scans into the panel — Vision OCR runs inline
- *   - Issue a refinement prompt at the bottom; quick-prompt buttons
- *     let you jump-start common asks ("harder", "in Hindi", etc.)
+ * Polish notes:
+ *   - Mode tabs at the top with mode-coloured accents
+ *   - Iteration switcher chips with prompt preview tooltips
+ *   - Pretty-rendered iteration body per mode (questions / sections /
+ *     verdicts), not raw markdown
+ *   - Scan tiles with image thumbnails, purpose toggle, drag-drop +
+ *     mobile camera capture queue
+ *   - Quick-prompt chips per mode + iterative refinement input
+ *   - Print + copy + star-iteration affordances in the header
  */
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   Assignment,
+  PracticeClassworkScanOut,
   PracticeHelpSection,
+  PracticeIterationOut,
   PracticeKind,
-  PracticeSessionOut,
+  PracticeOutputJson,
   PracticeQuestion,
+  PracticeSessionOut,
+  ReviewWorkItem,
+  ReviewWorkVerdict,
+  ScanPurpose,
 } from "../api";
+
+const QUICK_PROMPTS_REVIEW = [
+  "Harder", "Easier", "More word problems", "Fewer questions (5 max)",
+  "In Hindi", "Add worked solutions", "Mixed difficulty",
+];
+const QUICK_PROMPTS_HELP = [
+  "Give me an outline", "Show a worked example", "Just hints",
+  "Reading guide", "Brainstorm starter", "Vocab list",
+  "In Hindi", "Shorter", "More structure",
+];
+const QUICK_PROMPTS_CHECK = [
+  "Be gentler", "More specific feedback", "Estimate the score",
+  "What should they practice next?", "Focus on Q1-Q3",
+  "In Hindi", "Look for handwriting issues",
+];
+
+type ModeMeta = {
+  kind: PracticeKind;
+  label: string;
+  emoji: string;
+  shortLabel: string;
+  ctaCopy: string;
+  introHelp: React.ReactNode;
+  // Tailwind tone bundle for headers, buttons, accents
+  ringCls: string;     // ring colour for active tab
+  textCls: string;     // foreground accent
+  bgSoft: string;      // soft background for active tab
+  buttonCls: string;   // primary CTA button
+  pillCls: string;     // chip background for the entry-point button
+};
+
+const MODE_DEFS: Record<PracticeKind, ModeMeta> = {
+  review_prep: {
+    kind: "review_prep",
+    label: "Practice prep",
+    emoji: "📝",
+    shortLabel: "Prep",
+    ctaCopy: "Generate practice paper",
+    introHelp: (
+      <>Generate a practice paper for an upcoming review/test. Iterate with prompts (<em>"harder"</em>, <em>"in Hindi"</em>) and upload classwork scans to ground the next round in what's been covered.</>
+    ),
+    ringCls: "ring-purple-500",
+    textCls: "text-purple-700",
+    bgSoft: "bg-purple-50",
+    buttonCls: "bg-purple-700 hover:bg-purple-800 text-white",
+    pillCls: "bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-200",
+  },
+  assignment_help: {
+    kind: "assignment_help",
+    label: "Assignment help",
+    emoji: "💡",
+    shortLabel: "Help",
+    ctaCopy: "Generate help",
+    introHelp: (
+      <>Get an outline / worked example / hints / reading guide for this assignment. The LLM picks the format from your prompt — try <em>"give me an outline"</em> or <em>"just hints, don't solve it"</em>.</>
+    ),
+    ringCls: "ring-amber-500",
+    textCls: "text-amber-700",
+    bgSoft: "bg-amber-50",
+    buttonCls: "bg-amber-600 hover:bg-amber-700 text-white",
+    pillCls: "bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-200",
+  },
+  review_work: {
+    kind: "review_work",
+    label: "Check work",
+    emoji: "✓",
+    shortLabel: "Check",
+    ctaCopy: "Review uploaded work",
+    introHelp: (
+      <>Upload photos of the kid's COMPLETED assignment and Claude reviews it: per-question correctness, feedback, suggestions, and a score estimate. Use the 📷 button below for mobile camera capture, or drag-drop multiple files at once.</>
+    ),
+    ringCls: "ring-emerald-500",
+    textCls: "text-emerald-700",
+    bgSoft: "bg-emerald-50",
+    buttonCls: "bg-emerald-700 hover:bg-emerald-800 text-white",
+    pillCls: "bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200",
+  },
+};
 
 type Mode =
   | { kind: "loading-existing" }
   | { kind: "needs-start" }
   | { kind: "active"; sessionId: number };
 
-const QUICK_PROMPTS_REVIEW = [
-  "Harder",
-  "Easier",
-  "More word problems",
-  "Fewer questions (5 max)",
-  "In Hindi",
-  "Add worked solutions",
-  "Mixed difficulty",
-];
-
-const QUICK_PROMPTS_HELP = [
-  "Give me an outline",
-  "Show a worked example",
-  "Just hints, don't solve it",
-  "Reading guide",
-  "Brainstorm starter",
-  "Vocab list",
-  "In Hindi",
-  "Shorter",
-  "More structure",
-];
 
 export function PracticePanel({
   childId,
@@ -67,7 +130,7 @@ export function PracticePanel({
   topic,
   initialPrompt,
   existingSessionId,
-  kind = "review_prep",
+  kind: initialKind = "review_prep",
   onClose,
 }: {
   childId: number;
@@ -80,6 +143,7 @@ export function PracticePanel({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const [activeKind, setActiveKind] = useState<PracticeKind>(initialKind);
   const [mode, setMode] = useState<Mode>(
     existingSessionId
       ? { kind: "active", sessionId: existingSessionId }
@@ -90,13 +154,18 @@ export function PracticePanel({
   const [busy, setBusy] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dragHover, setDragHover] = useState(false);
+  const [pendingShots, setPendingShots] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const dropZoneRef = useRef<HTMLDivElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
-  const isHelp = kind === "assignment_help";
-  const accentColor = isHelp ? "amber" : "purple";
-  const accentLabel = isHelp ? "💡 Assignment help" : "📝 Practice prep";
-  const quickPrompts = isHelp ? QUICK_PROMPTS_HELP : QUICK_PROMPTS_REVIEW;
+  const modeMeta = MODE_DEFS[activeKind];
+  const isCheck = activeKind === "review_work";
+  // For check mode, scan uploads default to student_work; otherwise classwork_reference.
+  const uploadPurpose: ScanPurpose = isCheck ? "student_work" : "classwork_reference";
+  const quickPrompts =
+    activeKind === "review_prep" ? QUICK_PROMPTS_REVIEW :
+    activeKind === "assignment_help" ? QUICK_PROMPTS_HELP :
+    QUICK_PROMPTS_CHECK;
 
   // Esc to close
   useEffect(() => {
@@ -107,15 +176,19 @@ export function PracticePanel({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Look for an existing session for this (child × subject × linked-row × kind).
+  // When the active kind changes, look for an existing session of that kind
+  // for this (child × subject × linked_assignment).
   useEffect(() => {
-    if (mode.kind !== "loading-existing") return;
     let cancelled = false;
+    setMode({ kind: "loading-existing" });
+    setActiveIterIdx(null);
+    setPrompt("");
+    setPendingShots([]);
     (async () => {
       try {
         const sessions = await api.practiceListSessions(childId, subject);
         if (cancelled) return;
-        const matches = sessions.filter((s) => s.kind === kind);
+        const matches = sessions.filter((s) => s.kind === activeKind);
         const match =
           (linkedAssignment &&
             matches.find((s) => s.linked_assignment_id === linkedAssignment.id)) ||
@@ -132,10 +205,8 @@ export function PracticePanel({
         }
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [mode.kind, childId, subject, linkedAssignment, kind]);
+    return () => { cancelled = true; };
+  }, [activeKind, childId, subject, linkedAssignment]);
 
   const sessionId = mode.kind === "active" ? mode.sessionId : null;
   const { data: session } = useQuery<PracticeSessionOut>({
@@ -146,7 +217,8 @@ export function PracticePanel({
   });
 
   useEffect(() => {
-    if (!session || activeIterIdx !== null) return;
+    if (!session) return;
+    if (activeIterIdx !== null) return;
     const preferred = session.iterations.find(
       (i) => i.id === session.preferred_iteration_id,
     );
@@ -159,7 +231,7 @@ export function PracticePanel({
   );
 
   const startNew = async () => {
-    setBusy("Generating first draft (Claude Opus, ~30-60s)…");
+    setBusy(`Generating first draft (Claude Opus, ~30-60s)…`);
     setErrorMsg(null);
     try {
       const newSession = await api.practiceStartSession({
@@ -168,10 +240,10 @@ export function PracticePanel({
         topic: topic ?? null,
         linked_assignment_id: linkedAssignment?.id ?? null,
         title: linkedAssignment
-          ? `${subject} ${isHelp ? "help" : "prep"} — ${linkedAssignment.title || "review"}`
-          : `${subject} ${isHelp ? "help" : "prep"}`,
+          ? `${subject} ${activeKind === "review_prep" ? "prep" : activeKind === "assignment_help" ? "help" : "check"} — ${linkedAssignment.title || "review"}`
+          : `${subject} ${activeKind === "review_prep" ? "prep" : activeKind === "assignment_help" ? "help" : "check"}`,
         initial_prompt: initialPrompt ?? null,
-        kind,
+        kind: activeKind,
         use_llm: true,
       });
       setMode({ kind: "active", sessionId: newSession.id });
@@ -187,7 +259,7 @@ export function PracticePanel({
   const iterate = async (overridePrompt?: string) => {
     const promptText = (overridePrompt ?? prompt).trim();
     if (!sessionId || !promptText) return;
-    setBusy("Refining draft with Claude Opus…");
+    setBusy(`Refining draft with Claude Opus…`);
     setErrorMsg(null);
     try {
       const updated = await api.practiceIterateSession(sessionId, promptText);
@@ -212,20 +284,34 @@ export function PracticePanel({
     }
   };
 
-  const onUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0 || !sessionId) return;
-    setBusy(`Uploading ${files.length} scan(s) + extracting…`);
+  // Upload helpers — take an array of File and either queue them as
+  // pending shots (so the user can preview) or upload directly.
+  const queueFiles = (files: FileList | File[] | null) => {
+    if (!files) return;
+    const arr = Array.from(files);
+    if (arr.length === 0) return;
+    setPendingShots((prev) => [...prev, ...arr]);
+  };
+
+  const uploadPending = async () => {
+    if (!sessionId || pendingShots.length === 0) return;
+    setBusy(`Uploading ${pendingShots.length} file(s) + extracting…`);
     setErrorMsg(null);
     try {
       await api.practiceUploadScans(
-        childId, subject, Array.from(files), sessionId, true,
+        childId, subject, pendingShots, sessionId, true, uploadPurpose,
       );
+      setPendingShots([]);
       qc.invalidateQueries({ queryKey: ["practice-session", sessionId] });
     } catch (e) {
       setErrorMsg(`Upload failed: ${e}`);
     } finally {
       setBusy(null);
     }
+  };
+
+  const removeFromQueue = (idx: number) => {
+    setPendingShots((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const copyMarkdown = async () => {
@@ -242,159 +328,135 @@ export function PracticePanel({
 
   const printIteration = () => {
     if (!activeIter || !session) return;
-    const w = window.open("", "_blank", "width=900,height=1100");
-    if (!w) return;
-    const out = activeIter.output_json;
-    const safe = (s: string) => s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!));
-    let body = "";
-    if (session.kind === "assignment_help" && out?.sections) {
-      body = `
-        ${out.summary ? `<p class="lede">${safe(out.summary)}</p>` : ""}
-        ${out.sections.map((s) => `
-          <section>
-            <h2>${safe(s.heading)}${s.kind ? ` <span class="tag">${safe(s.kind)}</span>` : ""}</h2>
-            <pre>${safe(s.body_md)}</pre>
-          </section>
-        `).join("")}
-        ${out.next_steps && out.next_steps.length > 0 ? `
-          <section>
-            <h2>Next steps</h2>
-            <ul>${out.next_steps.map((n) => `<li>${safe(n)}</li>`).join("")}</ul>
-          </section>` : ""}
-      `;
-    } else if (out?.questions) {
-      body = `
-        ${out.instructions ? `<p class="lede"><em>${safe(out.instructions)}</em></p>` : ""}
-        <ol class="qs">
-          ${out.questions.map((q) => `
-            <li>
-              <div class="stem">${safe(q.stem)}${q.marks ? ` <span class="marks">(${q.marks} marks)</span>` : ""}</div>
-              ${q.topic_ref ? `<div class="topic">${safe(q.topic_ref)}</div>` : ""}
-            </li>`).join("")}
-        </ol>
-        ${out.answer_key ? `<section class="answers"><h2>Answer key</h2><pre>${safe(out.answer_key)}</pre></section>` : ""}
-      `;
-    }
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${safe(activeIter.output_json?.title || session.title)}</title>
-      <style>
-        body { font: 14px/1.55 -apple-system, "Segoe UI", system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 24px; color: #111; }
-        h1 { font-size: 22px; margin: 0 0 4px; }
-        .meta { color: #666; font-size: 13px; margin-bottom: 16px; border-bottom: 1px solid #ddd; padding-bottom: 12px; }
-        h2 { font-size: 15px; margin: 18px 0 6px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 3px; }
-        .tag { font-size: 11px; color: #888; font-weight: 400; text-transform: uppercase; letter-spacing: 0.04em; margin-left: 6px; }
-        pre { white-space: pre-wrap; font-family: inherit; margin: 0 0 8px; }
-        .lede { color: #333; font-size: 14px; }
-        ol.qs { list-style: decimal; padding-left: 20px; }
-        ol.qs li { margin: 0 0 18px; padding-left: 4px; }
-        ol.qs li .stem { font-weight: 500; }
-        ol.qs li .topic { font-size: 11px; color: #888; margin-top: 2px; }
-        .marks { font-weight: 400; color: #888; }
-        .answers { margin-top: 24px; border-top: 2px solid #ccc; padding-top: 12px; }
-        .caveat { color: #888; font-size: 11px; font-style: italic; margin-top: 32px; border-top: 1px solid #eee; padding-top: 12px; }
-        @media print { body { margin: 8mm 12mm; padding: 0; } button { display: none; } }
-      </style></head><body>
-      <button onclick="window.print()" style="float: right; padding: 6px 12px; background: #333; color: white; border: 0; border-radius: 4px; cursor: pointer;">Print</button>
-      <h1>${safe(out?.title || session.title)}</h1>
-      <div class="meta">${safe(session.subject)}${out?.format ? ` · ${safe(out.format)}` : ""} · iteration #${activeIter.iteration_index}</div>
-      ${body}
-      ${out?.honest_caveat ? `<div class="caveat">${safe(out.honest_caveat)}</div>` : ""}
-    </body></html>`);
-    w.document.close();
+    openPrintWindow(session, activeIter);
   };
 
-  const onDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragHover(true);
-  };
+  const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragHover(true); };
   const onDragLeave = () => setDragHover(false);
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragHover(false);
-    onUpload(e.dataTransfer.files);
+    queueFiles(e.dataTransfer.files);
   };
 
-  const headerAccentCls =
-    accentColor === "amber" ? "text-amber-700" : "text-purple-700";
-  const buttonAccentCls =
-    accentColor === "amber"
-      ? "bg-amber-700 hover:bg-amber-800"
-      : "bg-purple-700 hover:bg-purple-800";
+  const headerSubtitleParts: string[] = [];
+  if (session) {
+    headerSubtitleParts.push(
+      `${session.iterations.length} iteration${session.iterations.length === 1 ? "" : "s"}`,
+    );
+    headerSubtitleParts.push(
+      `${session.scans.length} scan${session.scans.length === 1 ? "" : "s"}`,
+    );
+  } else if (mode.kind === "loading-existing") {
+    headerSubtitleParts.push("Looking for existing session…");
+  } else {
+    headerSubtitleParts.push("No session yet");
+  }
 
   return (
     <div
       className="fixed inset-0 z-50"
       onClick={onClose}
-      style={{ background: "oklch(0% 0 0 / 0.18)" }}
+      style={{ background: "oklch(0% 0 0 / 0.22)" }}
     >
       <aside
-        className="slide-over flex flex-col"
+        className="slide-over flex flex-col bg-white"
         onClick={(e) => e.stopPropagation()}
-        style={{ width: "min(720px, 100vw)" }}
+        style={{ width: "min(760px, 100vw)" }}
         aria-label="Practice prep"
       >
-        <header className="px-5 py-4 border-b border-gray-200 sticky top-0 bg-white flex items-start justify-between gap-3 shrink-0">
-          <div className="flex-1 min-w-0">
-            <div className={"text-xs uppercase tracking-wider " + headerAccentCls}>
-              {accentLabel} · iterative cowork
+        {/* Header */}
+        <header className="px-5 pt-4 pb-2 border-b border-gray-200 sticky top-0 bg-white shrink-0">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-0.5">
+                AI workspace · {subject}
+                {linkedAssignment ? (
+                  <>
+                    {" "}· <span className="text-gray-700">{linkedAssignment.title}</span>
+                  </>
+                ) : null}
+              </div>
+              <h3 className="text-lg font-bold leading-tight truncate">
+                {session?.title || `${subject} — ${modeMeta.label}`}
+              </h3>
+              <div className="text-xs text-gray-500 mt-0.5">
+                {headerSubtitleParts.join(" · ")}
+              </div>
             </div>
-            <h3 className="text-lg font-bold leading-tight truncate">
-              {session?.title ||
-                (linkedAssignment
-                  ? `${subject} — ${linkedAssignment.title}`
-                  : `${subject} ${isHelp ? "help" : "prep"}`)}
-            </h3>
-            <div className="text-xs text-gray-500 mt-0.5">
-              {session
-                ? `${session.iterations.length} iteration${session.iterations.length === 1 ? "" : "s"} · ${session.scans.length} classwork scan${session.scans.length === 1 ? "" : "s"}`
-                : mode.kind === "loading-existing"
-                ? "Looking for existing prep…"
-                : "No session yet"}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {session && activeIter && (
+                <>
+                  <button
+                    type="button"
+                    onClick={printIteration}
+                    className="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                    title="Open print-friendly view"
+                  >
+                    🖨 print
+                  </button>
+                  <button
+                    type="button"
+                    onClick={copyMarkdown}
+                    className="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                    title="Copy this draft as markdown"
+                  >
+                    copy md
+                  </button>
+                </>
+              )}
+              <button
+                onClick={onClose}
+                className="text-2xl text-gray-400 hover:text-gray-700 leading-none"
+                aria-label="Close"
+              >
+                ×
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {session && activeIter && (
-              <>
+
+          {/* Mode tabs */}
+          <div role="tablist" className="flex items-center gap-1 -mb-px">
+            {(["review_prep", "assignment_help", "review_work"] as const).map((k) => {
+              const meta = MODE_DEFS[k];
+              const isActive = activeKind === k;
+              const onlyForReview = k === "review_prep" && linkedAssignment?.kind &&
+                linkedAssignment.kind !== "assignment";
+              if (onlyForReview) return null;
+              return (
                 <button
-                  type="button"
-                  onClick={printIteration}
-                  className="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
-                  title="Open print-friendly view"
+                  key={k}
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setActiveKind(k)}
+                  className={
+                    "px-3 py-2 text-sm font-medium border-b-2 transition-colors " +
+                    (isActive
+                      ? `border-current ${meta.textCls}`
+                      : "border-transparent text-gray-500 hover:text-gray-800")
+                  }
                 >
-                  print
+                  <span className="mr-1.5">{meta.emoji}</span>
+                  {meta.shortLabel}
                 </button>
-                <button
-                  type="button"
-                  onClick={copyMarkdown}
-                  className="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
-                  title="Copy this draft's markdown to clipboard"
-                >
-                  copy md
-                </button>
-              </>
-            )}
-            <button
-              onClick={onClose}
-              className="text-2xl text-gray-400 hover:text-gray-700 leading-none"
-              aria-label="Close"
-            >
-              ×
-            </button>
+              );
+            })}
           </div>
         </header>
 
+        {/* Body */}
         <div
-          ref={dropZoneRef}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
           className={
             "flex-1 overflow-auto px-5 py-4 space-y-4 relative " +
-            (dragHover ? "ring-4 ring-violet-400 ring-inset bg-violet-50/50" : "")
+            (dragHover ? "ring-4 ring-violet-400 ring-inset bg-violet-50/40" : "")
           }
         >
           {dragHover && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-violet-700 text-lg font-medium z-10">
-              Drop classwork scans here
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-violet-700 text-lg font-semibold z-10">
+              Drop {isCheck ? "the kid's completed work" : "classwork scans"} here
             </div>
           )}
 
@@ -405,19 +467,15 @@ export function PracticePanel({
           )}
 
           {mode.kind === "loading-existing" && (
-            <div className="text-sm text-gray-500 italic">
-              Looking for an existing session…
-            </div>
+            <div className="text-sm text-gray-500 italic">Looking for an existing session…</div>
           )}
 
           {mode.kind === "needs-start" && (
             <StartCard
-              isHelp={isHelp}
-              subject={subject}
-              linkedAssignment={linkedAssignment}
+              meta={modeMeta}
               busy={busy}
               onStart={startNew}
-              accentBtnCls={buttonAccentCls}
+              isCheck={isCheck}
             />
           )}
 
@@ -427,6 +485,7 @@ export function PracticePanel({
                 session={session}
                 activeIterIdx={activeIterIdx}
                 onSelect={setActiveIterIdx}
+                meta={modeMeta}
               />
 
               {activeIter && (
@@ -434,13 +493,22 @@ export function PracticePanel({
                   iteration={activeIter}
                   isPreferred={activeIter.id === session.preferred_iteration_id}
                   onStar={() => setPreferred(activeIter.id)}
-                  isHelp={session.kind === "assignment_help"}
+                  kind={session.kind}
+                  meta={modeMeta}
                 />
               )}
 
               <ScansSection
                 scans={session.scans}
-                onUploadClick={() => fileInputRef.current?.click()}
+                purpose={uploadPurpose}
+                pendingShots={pendingShots}
+                onPickFiles={() => fileInputRef.current?.click()}
+                onTakePhoto={() => cameraInputRef.current?.click()}
+                onRemoveFromQueue={removeFromQueue}
+                onUploadPending={uploadPending}
+                onDiscardPending={() => setPendingShots([])}
+                meta={modeMeta}
+                isCheck={isCheck}
               />
               <input
                 ref={fileInputRef}
@@ -448,7 +516,15 @@ export function PracticePanel({
                 multiple
                 accept="image/*,application/pdf"
                 className="hidden"
-                onChange={(e) => onUpload(e.target.files)}
+                onChange={(e) => { queueFiles(e.target.files); e.target.value = ""; }}
+              />
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => { queueFiles(e.target.files); e.target.value = ""; }}
               />
             </>
           )}
@@ -461,8 +537,9 @@ export function PracticePanel({
           )}
         </div>
 
+        {/* Footer: refinement input */}
         {session && (
-          <footer className="border-t border-gray-200 bg-white p-3 shrink-0">
+          <footer className="border-t border-gray-200 bg-white px-4 py-3 shrink-0">
             <div className="flex flex-wrap gap-1.5 mb-2">
               {quickPrompts.map((qp) => (
                 <button
@@ -478,7 +555,7 @@ export function PracticePanel({
               ))}
             </div>
             <label className="text-[10px] uppercase tracking-wider text-gray-500 block mb-1">
-              Refine with a prompt
+              {isCheck ? "Refine the review" : "Refine with a prompt"}
             </label>
             <div className="flex gap-2">
               <textarea
@@ -492,8 +569,10 @@ export function PracticePanel({
                   }
                 }}
                 placeholder={
-                  isHelp
-                    ? 'e.g. "show a worked example" · "shorter outline" · "in Hindi" · "match what scan #1 covered"'
+                  isCheck
+                    ? 'e.g. "be gentler" · "estimate the score" · "look at Q3 again" · "in Hindi"'
+                    : activeKind === "assignment_help"
+                    ? 'e.g. "show a worked example" · "shorter outline" · "in Hindi" · "match scan #1"'
                     : 'e.g. "harder, more word problems" · "in Hindi" · "remove Q3" · "match scan #1"'
                 }
                 className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm resize-none"
@@ -504,8 +583,7 @@ export function PracticePanel({
                 onClick={() => iterate()}
                 disabled={busy !== null || !prompt.trim()}
                 className={
-                  "px-3 py-1 rounded text-white disabled:opacity-50 self-stretch " +
-                  buttonAccentCls
+                  "px-3 py-1 rounded disabled:opacity-50 self-stretch " + modeMeta.buttonCls
                 }
                 title="⌘+Enter to send"
               >
@@ -513,7 +591,7 @@ export function PracticePanel({
               </button>
             </div>
             <div className="text-[10px] text-gray-400 mt-1">
-              ⌘+Enter to send · drop files anywhere in the panel to upload classwork scans · iterations cap at 30 per session
+              ⌘+Enter to send · drop files anywhere in this panel · iterations cap at 30
             </div>
           </footer>
         )}
@@ -526,75 +604,51 @@ export function PracticePanel({
 // ───────────────────────── sub-components ─────────────────────────
 
 function StartCard({
-  isHelp,
-  subject,
-  linkedAssignment,
-  busy,
-  onStart,
-  accentBtnCls,
+  meta, busy, onStart, isCheck,
 }: {
-  isHelp: boolean;
-  subject: string;
-  linkedAssignment?: Assignment | null;
+  meta: ModeMeta;
   busy: string | null;
   onStart: () => void;
-  accentBtnCls: string;
+  isCheck: boolean;
 }) {
   return (
-    <div className="text-sm space-y-3">
-      <p>
-        No session yet for <strong>{subject}</strong>
-        {linkedAssignment && (
-          <>
-            {" "}— <em>{linkedAssignment.title}</em>
-          </>
-        )}
-        .
-      </p>
-      <p className="text-gray-500">
-        {isHelp ? (
-          <>
-            Click below to ask Claude Opus for help on this assignment — an
-            outline, hints, a worked example, or whatever fits the format. You
-            can then iterate with prompts (<em>"give me an outline"</em>,
-            <em>"shorter"</em>, <em>"in Hindi"</em>) and upload classwork scans
-            so the next round matches what's been covered.
-          </>
-        ) : (
-          <>
-            Click below to ask Claude Opus for a first draft. You can then
-            iterate with prompts (<em>"harder"</em>, <em>"remove Q3"</em>,{" "}
-            <em>"more word problems"</em>) and upload classwork scans to
-            ground the next round in what was actually covered.
-          </>
-        )}
-      </p>
-      <button
-        type="button"
-        onClick={onStart}
-        disabled={busy !== null}
-        className={"px-3 py-1.5 rounded text-white disabled:opacity-60 " + accentBtnCls}
-      >
-        {busy ?? `Generate first ${isHelp ? "draft" : "draft"}`}
-      </button>
+    <div className={`${meta.bgSoft} border border-gray-200 rounded-lg p-4 text-sm space-y-3`}>
+      <div className={`text-base font-semibold ${meta.textCls} flex items-center gap-2`}>
+        <span className="text-xl">{meta.emoji}</span> {meta.label}
+      </div>
+      <p className="text-gray-700 leading-relaxed">{meta.introHelp}</p>
+      {isCheck && (
+        <p className="text-xs text-gray-500 leading-relaxed">
+          Tip — start by uploading 1-2 photos of completed pages first, then
+          generate the review. Iteration over scan-less context produces
+          generic feedback.
+        </p>
+      )}
+      <div>
+        <button
+          type="button"
+          onClick={onStart}
+          disabled={busy !== null}
+          className={`px-3.5 py-2 rounded font-medium disabled:opacity-60 ${meta.buttonCls}`}
+        >
+          {busy ?? meta.ctaCopy}
+        </button>
+      </div>
     </div>
   );
 }
 
 function IterationSwitcher({
-  session,
-  activeIterIdx,
-  onSelect,
+  session, activeIterIdx, onSelect, meta,
 }: {
   session: PracticeSessionOut;
   activeIterIdx: number | null;
   onSelect: (idx: number) => void;
+  meta: ModeMeta;
 }) {
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      <span className="text-[10px] uppercase tracking-wider text-gray-500">
-        Drafts:
-      </span>
+      <span className="text-[10px] uppercase tracking-wider text-gray-500">Drafts:</span>
       {session.iterations.map((it) => {
         const isActive = it.iteration_index === activeIterIdx;
         const isPreferred = it.id === session.preferred_iteration_id;
@@ -605,7 +659,7 @@ function IterationSwitcher({
             className={
               "text-xs px-2 py-1 rounded border " +
               (isActive
-                ? "border-purple-500 bg-purple-50 text-purple-900 font-medium"
+                ? `border-current ${meta.textCls} ${meta.bgSoft} font-medium`
                 : "border-gray-300 text-gray-600 hover:bg-gray-50")
             }
             title={
@@ -624,25 +678,20 @@ function IterationSwitcher({
 }
 
 function IterationCard({
-  iteration,
-  isPreferred,
-  onStar,
-  isHelp,
+  iteration, isPreferred, onStar, kind, meta,
 }: {
-  iteration: { id: number; iteration_index: number; parent_prompt: string | null;
-               output_json: ReturnType<typeof JSON.parse> | null; output_md: string;
-               llm_used: boolean; llm_model: string | null; duration_ms: number | null };
+  iteration: PracticeIterationOut;
   isPreferred: boolean;
   onStar: () => void;
-  isHelp: boolean;
+  kind: PracticeKind;
+  meta: ModeMeta;
 }) {
   const out = iteration.output_json;
-
   return (
-    <article className="border border-gray-200 rounded-lg bg-white shadow-sm">
+    <article className="border border-gray-200 rounded-lg bg-white shadow-sm overflow-hidden">
       {iteration.parent_prompt && (
-        <div className="px-3 py-2 border-b border-gray-100 text-xs text-gray-700 bg-amber-50">
-          <span className="text-[10px] uppercase tracking-wider text-amber-700 mr-1.5">
+        <div className={`px-3 py-2 border-b border-gray-100 text-xs text-gray-700 ${meta.bgSoft}`}>
+          <span className={`text-[10px] uppercase tracking-wider mr-1.5 ${meta.textCls}`}>
             Prompt
           </span>
           {iteration.parent_prompt}
@@ -654,11 +703,9 @@ function IterationCard({
           <h4 className="text-base font-semibold leading-tight">{out.title}</h4>
         )}
 
-        {isHelp ? (
-          <HelpBody out={out} />
-        ) : (
-          <ReviewBody out={out} fallback={iteration.output_md} />
-        )}
+        {kind === "review_prep" && <ReviewBody out={out} fallback={iteration.output_md} />}
+        {kind === "assignment_help" && <HelpBody out={out} />}
+        {kind === "review_work" && <ReviewWorkBody out={out} />}
 
         {out?.honest_caveat && (
           <div className="text-[11px] text-gray-500 italic border-t border-gray-100 pt-2">
@@ -667,7 +714,7 @@ function IterationCard({
         )}
       </div>
 
-      <div className="px-4 py-2 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-500">
+      <div className="px-4 py-2 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-500 bg-gray-50">
         <span>
           {iteration.llm_used ? iteration.llm_model : "rule fallback"}
           {iteration.duration_ms != null
@@ -688,11 +735,11 @@ function IterationCard({
   );
 }
 
-function ReviewBody({ out, fallback }: { out: any; fallback: string }) {
+function ReviewBody({ out, fallback }: { out: PracticeOutputJson | null; fallback: string }) {
   if (!out || !Array.isArray(out.questions)) {
     return <pre className="text-sm leading-relaxed whitespace-pre-wrap font-sans">{fallback}</pre>;
   }
-  const totalMarks = out.questions.reduce((s: number, q: PracticeQuestion) => s + (q.marks || 0), 0);
+  const totalMarks = out.questions.reduce((s, q) => s + (q.marks || 0), 0);
   return (
     <>
       {out.instructions && (
@@ -707,16 +754,10 @@ function ReviewBody({ out, fallback }: { out: any; fallback: string }) {
             <div className="font-medium leading-snug">
               {q.stem}
               {q.marks ? (
-                <span className="ml-2 text-xs text-gray-500 font-normal">
-                  ({q.marks} marks)
-                </span>
+                <span className="ml-2 text-xs text-gray-500 font-normal">({q.marks} marks)</span>
               ) : null}
             </div>
-            {q.topic_ref && (
-              <div className="text-[11px] text-gray-500 mt-0.5">
-                ↳ {q.topic_ref}
-              </div>
-            )}
+            {q.topic_ref && <div className="text-[11px] text-gray-500 mt-0.5">↳ {q.topic_ref}</div>}
             {q.expected_answer && (
               <details className="mt-1 text-xs text-gray-600">
                 <summary className="cursor-pointer text-gray-500 hover:text-gray-800">
@@ -725,9 +766,7 @@ function ReviewBody({ out, fallback }: { out: any; fallback: string }) {
                 <div className="mt-1 pl-2 border-l-2 border-gray-200">
                   {q.expected_answer}
                   {q.expected_solution_md && (
-                    <pre className="whitespace-pre-wrap font-sans mt-1">
-                      {q.expected_solution_md}
-                    </pre>
+                    <pre className="whitespace-pre-wrap font-sans mt-1">{q.expected_solution_md}</pre>
                   )}
                 </div>
               </details>
@@ -749,7 +788,7 @@ function ReviewBody({ out, fallback }: { out: any; fallback: string }) {
   );
 }
 
-function HelpBody({ out }: { out: any }) {
+function HelpBody({ out }: { out: PracticeOutputJson | null }) {
   if (!out || !Array.isArray(out.sections)) {
     return <div className="text-sm text-gray-500 italic">No structured output yet.</div>;
   }
@@ -766,9 +805,7 @@ function HelpBody({ out }: { out: any }) {
   };
   return (
     <>
-      {out.summary && (
-        <p className="text-sm text-gray-700 italic">{out.summary}</p>
-      )}
+      {out.summary && <p className="text-sm text-gray-700 italic">{out.summary}</p>}
       {out.format && (
         <div className="text-xs">
           <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
@@ -778,10 +815,7 @@ function HelpBody({ out }: { out: any }) {
       )}
       <div className="space-y-3">
         {out.sections.map((s: PracticeHelpSection, i: number) => (
-          <section
-            key={i}
-            className={"border rounded p-3 " + sectionToneCls(s.kind)}
-          >
+          <section key={i} className={"border rounded p-3 " + sectionToneCls(s.kind)}>
             <h5 className="text-sm font-semibold mb-1 flex items-center gap-2">
               {s.heading}
               {s.kind && (
@@ -810,71 +844,388 @@ function HelpBody({ out }: { out: any }) {
   );
 }
 
-function ScansSection({
-  scans,
-  onUploadClick,
-}: {
-  scans: PracticeSessionOut["scans"];
-  onUploadClick: () => void;
-}) {
+function ReviewWorkBody({ out }: { out: PracticeOutputJson | null }) {
+  if (!out) return <div className="text-sm text-gray-500 italic">No review yet.</div>;
+  const items = out.by_question || [];
   return (
-    <section className="border border-violet-200 rounded-lg bg-violet-50/30 p-3">
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-violet-800">
-          📎 Classwork scans · {scans.length}
-        </h4>
-        <button
-          type="button"
-          onClick={onUploadClick}
-          className="text-xs px-2 py-1 border border-violet-300 rounded hover:bg-violet-100"
-        >
-          Upload
-        </button>
+    <>
+      {out.overall_assessment && (
+        <p className="text-sm text-gray-800 leading-relaxed bg-gray-50 border-l-4 border-emerald-400 p-2 pl-3">
+          {out.overall_assessment}
+        </p>
+      )}
+      {out.estimated_score && (
+        <ScoreBadge score={out.estimated_score} />
+      )}
+      {items.length > 0 && (
+        <div className="space-y-2">
+          {items.map((q: ReviewWorkItem, i: number) => (
+            <ReviewWorkRow key={i} q={q} />
+          ))}
+        </div>
+      )}
+      {out.general_suggestions && out.general_suggestions.length > 0 && (
+        <section className="border border-blue-200 rounded p-3 bg-blue-50/40">
+          <h5 className="text-sm font-semibold mb-1 text-blue-900">General suggestions</h5>
+          <ul className="text-sm space-y-0.5 list-disc pl-5">
+            {out.general_suggestions.map((g, i) => <li key={i}>{g}</li>)}
+          </ul>
+        </section>
+      )}
+    </>
+  );
+}
+
+function ScoreBadge({ score }: { score: { value: number; max: number; confidence: string } }) {
+  const pct = score.max > 0 ? (score.value / score.max) * 100 : 0;
+  const tone =
+    pct >= 85 ? "emerald" : pct >= 70 ? "amber" : pct >= 50 ? "orange" : "rose";
+  const cls = {
+    emerald: "bg-emerald-50 border-emerald-300 text-emerald-900",
+    amber:   "bg-amber-50 border-amber-300 text-amber-900",
+    orange:  "bg-orange-50 border-orange-300 text-orange-900",
+    rose:    "bg-rose-50 border-rose-300 text-rose-900",
+  }[tone];
+  return (
+    <div className={`inline-flex items-center gap-3 border rounded-lg px-3 py-2 ${cls}`}>
+      <div className="text-2xl font-bold leading-none">
+        {score.value}<span className="text-sm font-medium opacity-60">/{score.max}</span>
       </div>
-      {scans.length === 0 ? (
-        <p className="text-xs text-gray-500 italic">
-          Drop photos / PDFs anywhere in this panel — notebook pages, blackboard
-          photos, worksheets — and the next iteration uses them as grounding for
-          what's been covered in class.
+      <div className="text-xs leading-tight">
+        <div className="font-semibold">Estimated score</div>
+        <div className="opacity-70">{pct.toFixed(0)}% · {score.confidence} confidence</div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewWorkRow({ q }: { q: ReviewWorkItem }) {
+  const tone = verdictTone(q.verdict);
+  return (
+    <div className={`border rounded-md p-2.5 ${tone.bg} ${tone.border}`}>
+      <div className="flex items-baseline gap-2 mb-1">
+        <span className={`text-xs font-bold ${tone.text}`}>{tone.icon}</span>
+        <span className="text-sm font-semibold">{q.ref}</span>
+        <span className={`text-[10px] uppercase tracking-wider ${tone.text} opacity-80`}>
+          {q.verdict.replace("_", " ")}
+        </span>
+      </div>
+      {q.what_kid_did && (
+        <div className="text-xs text-gray-600 italic mb-1">
+          <span className="opacity-60">Kid wrote: </span>"{q.what_kid_did}"
+        </div>
+      )}
+      <div className="text-sm text-gray-800 leading-snug">{q.feedback}</div>
+      {q.suggestion && (
+        <div className="text-xs text-gray-700 mt-1.5 pl-2 border-l-2 border-gray-300">
+          <span className="font-medium">Try:</span> {q.suggestion}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function verdictTone(v: ReviewWorkVerdict) {
+  switch (v) {
+    case "correct":
+      return { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", icon: "✅" };
+    case "partially_correct":
+      return { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", icon: "🟡" };
+    case "incorrect":
+      return { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-700", icon: "❌" };
+    default:
+      return { bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-700", icon: "❓" };
+  }
+}
+
+function ScansSection({
+  scans, purpose, pendingShots, onPickFiles, onTakePhoto,
+  onRemoveFromQueue, onUploadPending, onDiscardPending, meta, isCheck,
+}: {
+  scans: PracticeClassworkScanOut[];
+  purpose: ScanPurpose;
+  pendingShots: File[];
+  onPickFiles: () => void;
+  onTakePhoto: () => void;
+  onRemoveFromQueue: (idx: number) => void;
+  onUploadPending: () => void;
+  onDiscardPending: () => void;
+  meta: ModeMeta;
+  isCheck: boolean;
+}) {
+  // Filter scans to ones that match the active mode's purpose. Show
+  // both kinds if there's a mix (so the parent doesn't lose track of a
+  // scan they uploaded under a different mode).
+  const matching = scans.filter((s) => s.purpose === purpose);
+  const otherKind = scans.filter((s) => s.purpose !== purpose);
+
+  const headingLabel = isCheck
+    ? "📷 Kid's completed work"
+    : "📎 Classwork reference scans";
+
+  return (
+    <section className={`border ${meta.ringCls.replace("ring-", "border-").replace("-500", "-200")} rounded-lg ${meta.bgSoft} p-3`}>
+      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+        <h4 className={`text-xs font-semibold uppercase tracking-wider ${meta.textCls}`}>
+          {headingLabel} · {matching.length}
+        </h4>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onTakePhoto}
+            className="text-xs px-2 py-1 border border-gray-300 bg-white rounded hover:bg-gray-50"
+            title="Open camera (mobile) for a photo"
+          >
+            📷 Take photo
+          </button>
+          <button
+            type="button"
+            onClick={onPickFiles}
+            className="text-xs px-2 py-1 border border-gray-300 bg-white rounded hover:bg-gray-50"
+            title="Pick files from device"
+          >
+            + Add files
+          </button>
+        </div>
+      </div>
+
+      {/* Pending shot queue — preview before upload */}
+      {pendingShots.length > 0 && (
+        <div className="mb-3 p-2 bg-white border border-amber-300 rounded space-y-2">
+          <div className="text-[11px] text-amber-900 font-medium flex items-center justify-between">
+            <span>Queued · {pendingShots.length} file{pendingShots.length === 1 ? "" : "s"}</span>
+            <span className="text-[10px] text-gray-500">Tap a thumbnail to remove</span>
+          </div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {pendingShots.map((f, i) => (
+              <PendingThumb key={i} file={f} onRemove={() => onRemoveFromQueue(i)} />
+            ))}
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onUploadPending}
+              className={`text-xs px-2.5 py-1 rounded ${meta.buttonCls}`}
+            >
+              Upload {pendingShots.length} + extract
+            </button>
+            <button
+              type="button"
+              onClick={onDiscardPending}
+              className="text-xs px-2.5 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Discard queue
+            </button>
+            <button
+              type="button"
+              onClick={onTakePhoto}
+              className="text-xs px-2.5 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 ml-auto"
+            >
+              📷 Another
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Existing uploaded scans */}
+      {matching.length === 0 ? (
+        <p className="text-xs text-gray-600 italic leading-relaxed">
+          {isCheck ? (
+            <>Take photos of the kid's completed pages. Multiple shots OK — they all become grounding for the LLM review. <strong>📷 Take photo</strong> opens the camera on mobile; on desktop, drag-drop files anywhere in this panel.</>
+          ) : (
+            <>Drop or pick photos / PDFs of recent classwork — notebook pages, blackboard photos, worksheets — and the next iteration uses them as grounding for what's been covered.</>
+          )}
         </p>
       ) : (
-        <ul className="space-y-1.5">
-          {scans.map((s) => (
-            <li
-              key={s.id}
-              className="text-xs px-2 py-1 bg-white rounded border border-violet-100"
-            >
-              <div className="font-medium text-gray-700 mb-0.5">
-                Scan #{s.id}{" "}
-                <span className="text-gray-400 font-normal">
-                  · {new Date(s.uploaded_at || "").toLocaleString()}
-                </span>
-              </div>
-              {s.extracted_summary ? (
-                <div className="text-gray-600">{s.extracted_summary}</div>
-              ) : (
-                <div className="text-gray-400 italic">
-                  {s.extracted_at
-                    ? "extraction returned no summary"
-                    : "Vision extraction pending…"}
-                </div>
-              )}
-              {s.extracted_topics && s.extracted_topics.length > 0 && (
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {s.extracted_topics.map((t) => (
-                    <span
-                      key={t}
-                      className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-800"
-                    >
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </li>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {matching.map((s) => (
+            <ScanTile key={s.id} scan={s} />
           ))}
-        </ul>
+        </div>
+      )}
+
+      {otherKind.length > 0 && (
+        <div className="mt-3 text-[11px] text-gray-500 italic">
+          {otherKind.length} other scan{otherKind.length === 1 ? "" : "s"} bound to this session
+          (different purpose) — switch to the matching tab to view.
+        </div>
       )}
     </section>
   );
+}
+
+function PendingThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const url = useObjectUrl(file);
+  const isImage = file.type.startsWith("image/");
+  return (
+    <button
+      type="button"
+      onClick={onRemove}
+      className="relative aspect-square rounded border border-amber-200 bg-white overflow-hidden hover:opacity-70"
+      title={`${file.name} — click to remove`}
+    >
+      {isImage ? (
+        <img src={url} alt={file.name} className="w-full h-full object-cover" />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-2xl text-gray-400">📄</div>
+      )}
+      <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] px-1 py-0.5 truncate">
+        {file.name}
+      </div>
+      <div className="absolute top-0 right-0 bg-rose-600 text-white text-[10px] w-4 h-4 leading-4 text-center">
+        ×
+      </div>
+    </button>
+  );
+}
+
+function ScanTile({ scan }: { scan: PracticeClassworkScanOut }) {
+  const isPdf = !scan.extracted_summary && scan.extracted_at == null;
+  const url = api.practiceScanThumbnailUrl(scan.id);
+  return (
+    <div className="border border-gray-200 rounded bg-white overflow-hidden flex flex-col">
+      <div className="aspect-[4/3] bg-gray-100 flex items-center justify-center overflow-hidden">
+        {isPdf ? (
+          <span className="text-3xl text-gray-400">📄</span>
+        ) : (
+          <img
+            src={url}
+            alt={`Scan ${scan.id}`}
+            className="w-full h-full object-cover"
+            loading="lazy"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+        )}
+      </div>
+      <div className="px-2 py-1.5 text-[11px] flex-1">
+        <div className="font-semibold text-gray-700 mb-0.5 flex items-center gap-1">
+          <span>#{scan.id}</span>
+          <span className="text-gray-400 font-normal text-[10px]">
+            · {new Date(scan.uploaded_at || "").toLocaleDateString()}
+          </span>
+        </div>
+        {scan.extracted_summary ? (
+          <div className="text-gray-700 leading-snug" title={scan.extracted_summary}>
+            {scan.extracted_summary.length > 80
+              ? scan.extracted_summary.slice(0, 78) + "…"
+              : scan.extracted_summary}
+          </div>
+        ) : (
+          <div className="text-gray-400 italic">
+            {scan.extracted_at ? "no summary" : "extracting…"}
+          </div>
+        )}
+        {scan.extracted_topics && scan.extracted_topics.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-0.5">
+            {scan.extracted_topics.slice(0, 3).map((t) => (
+              <span
+                key={t}
+                className="text-[9px] px-1 rounded-full bg-violet-100 text-violet-800"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Lifecycle-tracked object URL for a File so the Pending preview shows
+// without leaking memory.
+function useObjectUrl(file: File): string {
+  const [url, setUrl] = useState<string>("");
+  useEffect(() => {
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+  return url;
+}
+
+
+// ───────────────────────── print window ─────────────────────────
+
+function openPrintWindow(session: PracticeSessionOut, iteration: PracticeIterationOut) {
+  const w = window.open("", "_blank", "width=900,height=1100");
+  if (!w) return;
+  const out = iteration.output_json;
+  const safe = (s: string) =>
+    s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!));
+
+  let body = "";
+  if (session.kind === "review_work" && out?.by_question) {
+    const score = out.estimated_score;
+    body = `
+      ${out.overall_assessment ? `<p class="lede">${safe(out.overall_assessment)}</p>` : ""}
+      ${score ? `<div class="score">Estimated: <strong>${score.value}/${score.max}</strong> (${score.confidence})</div>` : ""}
+      ${out.by_question.map((q) => `
+        <section>
+          <h2>${safe(q.ref)} <span class="tag">${safe(q.verdict)}</span></h2>
+          ${q.what_kid_did ? `<div class="kid">Kid wrote: "${safe(q.what_kid_did)}"</div>` : ""}
+          <div>${safe(q.feedback)}</div>
+          ${q.suggestion ? `<div class="sug">Try: ${safe(q.suggestion)}</div>` : ""}
+        </section>`).join("")}
+      ${out.general_suggestions && out.general_suggestions.length > 0 ? `
+        <section><h2>General suggestions</h2><ul>${out.general_suggestions.map((g) => `<li>${safe(g)}</li>`).join("")}</ul></section>` : ""}
+    `;
+  } else if (session.kind === "assignment_help" && out?.sections) {
+    body = `
+      ${out.summary ? `<p class="lede">${safe(out.summary)}</p>` : ""}
+      ${out.sections.map((s) => `
+        <section>
+          <h2>${safe(s.heading)}${s.kind ? ` <span class="tag">${safe(s.kind)}</span>` : ""}</h2>
+          <pre>${safe(s.body_md)}</pre>
+        </section>`).join("")}
+      ${out.next_steps && out.next_steps.length > 0
+        ? `<section><h2>Next steps</h2><ul>${out.next_steps.map((n) => `<li>${safe(n)}</li>`).join("")}</ul></section>`
+        : ""}
+    `;
+  } else if (out?.questions) {
+    body = `
+      ${out.instructions ? `<p class="lede"><em>${safe(out.instructions)}</em></p>` : ""}
+      <ol class="qs">
+        ${out.questions.map((q) => `
+          <li>
+            <div class="stem">${safe(q.stem)}${q.marks ? ` <span class="marks">(${q.marks} marks)</span>` : ""}</div>
+            ${q.topic_ref ? `<div class="topic">${safe(q.topic_ref)}</div>` : ""}
+          </li>`).join("")}
+      </ol>
+      ${out.answer_key
+        ? `<section class="answers"><h2>Answer key</h2><pre>${safe(out.answer_key)}</pre></section>`
+        : ""}
+    `;
+  }
+
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${safe(out?.title || session.title)}</title>
+    <style>
+      body { font: 14px/1.55 -apple-system, "Segoe UI", system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 24px; color: #111; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      .meta { color: #666; font-size: 13px; margin-bottom: 16px; border-bottom: 1px solid #ddd; padding-bottom: 12px; }
+      h2 { font-size: 15px; margin: 18px 0 6px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 3px; }
+      .tag { font-size: 11px; color: #888; font-weight: 400; text-transform: uppercase; letter-spacing: 0.04em; margin-left: 6px; }
+      pre { white-space: pre-wrap; font-family: inherit; margin: 0 0 8px; }
+      .lede { color: #333; font-size: 14px; }
+      .kid { color: #666; font-size: 12px; font-style: italic; margin-bottom: 4px; }
+      .sug { color: #555; font-size: 12px; margin-top: 6px; padding-left: 10px; border-left: 2px solid #aaa; }
+      .score { font-size: 14px; padding: 6px 10px; background: #f3f4f6; border-radius: 4px; margin-bottom: 12px; display: inline-block; }
+      ol.qs { list-style: decimal; padding-left: 20px; }
+      ol.qs li { margin: 0 0 18px; padding-left: 4px; }
+      ol.qs li .stem { font-weight: 500; }
+      ol.qs li .topic { font-size: 11px; color: #888; margin-top: 2px; }
+      .marks { font-weight: 400; color: #888; }
+      .answers { margin-top: 24px; border-top: 2px solid #ccc; padding-top: 12px; }
+      .caveat { color: #888; font-size: 11px; font-style: italic; margin-top: 32px; border-top: 1px solid #eee; padding-top: 12px; }
+      @media print { body { margin: 8mm 12mm; padding: 0; } button { display: none; } }
+    </style></head><body>
+    <button onclick="window.print()" style="float: right; padding: 6px 12px; background: #333; color: white; border: 0; border-radius: 4px; cursor: pointer;">Print</button>
+    <h1>${safe(out?.title || session.title)}</h1>
+    <div class="meta">${safe(session.subject)} · ${session.kind} · iteration #${iteration.iteration_index}</div>
+    ${body}
+    ${out?.honest_caveat ? `<div class="caveat">${safe(out.honest_caveat)}</div>` : ""}
+  </body></html>`);
+  w.document.close();
 }

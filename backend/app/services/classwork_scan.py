@@ -54,6 +54,13 @@ MIME_BY_EXT = {
     ".pdf": "application/pdf",
 }
 
+# Two purposes share the same scan table + storage layout:
+#   classwork_reference  — photo of what was covered in class
+#   student_work         — photo of the kid's COMPLETED assignment
+PURPOSE_CLASSWORK = "classwork_reference"
+PURPOSE_STUDENT_WORK = "student_work"
+ALLOWED_PURPOSES = {PURPOSE_CLASSWORK, PURPOSE_STUDENT_WORK}
+
 
 def _slug(s: str) -> str:
     s = (s or "").strip().lower()
@@ -82,13 +89,19 @@ async def save_scan(
     data: bytes,
     session_id: int | None = None,
     extract: bool = True,
+    purpose: str = PURPOSE_CLASSWORK,
 ) -> dict[str, Any]:
-    """Persist + (optionally) extract a classwork scan. Returns the
-    full scan dict — when `extract=True`, the Vision call runs inline
-    so the caller sees `extracted_summary` populated; when False, the
-    extraction is queued as a background task and the row's extracted_*
-    fields fill in seconds later.
+    """Persist + (optionally) extract a scan. Returns the full scan
+    dict — when `extract=True`, the Vision call runs inline so the
+    caller sees `extracted_summary` populated; when False, the row's
+    extracted_* fields stay null until called explicitly.
+
+    `purpose` switches the Vision prompt:
+      - classwork_reference (default) → "summarise what was covered"
+      - student_work → "transcribe what the kid actually wrote"
     """
+    if purpose not in ALLOWED_PURPOSES:
+        raise ValueError(f"purpose must be one of {sorted(ALLOWED_PURPOSES)}, got {purpose!r}")
     if len(data) > MAX_BYTES:
         raise ValueError(f"file > {MAX_BYTES // (1024 * 1024)} MB cap")
     mime = _mime_for(filename, None)
@@ -146,12 +159,21 @@ async def save_scan(
             child_id=child.id,
             subject=subject,
             attachment_id=att.id,
+            purpose=purpose,
         )
         session.add(scan)
     else:
-        # Re-bind to a (possibly new) session.
+        # Re-bind to a (possibly new) session and update purpose.
         if session_id is not None and scan.session_id != session_id:
             scan.session_id = session_id
+        if purpose != scan.purpose:
+            scan.purpose = purpose
+            # Purpose changed → invalidate the old extraction so the
+            # right Vision prompt runs.
+            scan.extracted_at = None
+            scan.extracted_text = None
+            scan.extracted_summary = None
+            scan.extracted_topics_json = None
 
     await session.commit()
     await session.refresh(scan)
@@ -173,8 +195,10 @@ async def _extract_inline(
 ) -> None:
     """Synchronous Vision extraction. Pulls Claude Opus over the image,
     asks for {text_excerpt, summary, topics} as strict JSON. Caches
-    the result on the scan row."""
-    text, summary, topics = await _run_vision(data, mime, subject=scan.subject)
+    the result on the scan row. The prompt branches on `scan.purpose`."""
+    text, summary, topics = await _run_vision(
+        data, mime, subject=scan.subject, purpose=scan.purpose,
+    )
     scan.extracted_text = text
     scan.extracted_summary = summary
     scan.extracted_topics_json = json.dumps(topics, ensure_ascii=False) if topics else None
@@ -182,7 +206,7 @@ async def _extract_inline(
     await session.commit()
 
 
-VISION_SYSTEM = """You are an OCR + topic-extraction assistant. The image is a photo of a school student's recent classwork — a notebook page, blackboard photo, or worksheet.
+VISION_SYSTEM_CLASSWORK = """You are an OCR + topic-extraction assistant. The image is a photo of a school student's recent classwork — a notebook page, blackboard photo, or worksheet that the TEACHER produced or the kid was being taught from.
 
 Output STRICT JSON only:
 
@@ -199,8 +223,25 @@ RULES:
 - Return ONLY the JSON object. No prose, no fences."""
 
 
+VISION_SYSTEM_STUDENT_WORK = """You are an OCR assistant. The image is a photo of a school student's COMPLETED ASSIGNMENT — homework the kid has actually done. Your job is to faithfully transcribe what the kid wrote, NOT to grade it or summarise the topic.
+
+Output STRICT JSON only:
+
+{
+  "text_excerpt": "<verbatim transcript of what the kid wrote, up to 3000 chars; preserve struck-out text, arrows, scribbles as best you can — note them as [crossed out: ...] or [arrow]>",
+  "summary": "<one sentence describing what the kid did on this page (e.g. 'solved 6 fraction-addition problems' / 'wrote a short paragraph about Diwali')>",
+  "topics": ["<noun phrase>", "..."]   // 1-6 lowercase topic tags, what subject content this work covers
+}
+
+RULES:
+- Transcribe FAITHFULLY — keep wrong spellings, arithmetic mistakes, half-erased writing exactly as they appear. Don't correct anything.
+- For non-Latin scripts (Devanagari, etc.), preserve the original script.
+- The summary names what the kid DID, not what they should have done.
+- Return ONLY the JSON object. No prose, no fences."""
+
+
 async def _run_vision(
-    data: bytes, mime: str, *, subject: str,
+    data: bytes, mime: str, *, subject: str, purpose: str = PURPOSE_CLASSWORK,
 ) -> tuple[str | None, str | None, list[str] | None]:
     """Best-effort Vision call. Falls back to (None, None, None) when
     the LLM is unreachable or returns invalid output — the practice
@@ -217,21 +258,25 @@ async def _run_vision(
     if not client.enabled():
         return (None, None, None)
 
+    is_student_work = (purpose == PURPOSE_STUDENT_WORK)
+    system_prompt = VISION_SYSTEM_STUDENT_WORK if is_student_work else VISION_SYSTEM_CLASSWORK
+    label = "student_work" if is_student_work else "classwork"
+    log_purpose = (
+        "practice_student_vision" if is_student_work else "practice_classwork_vision"
+    )
+
     b64 = base64.b64encode(data).decode("ascii")
-    # Embed the image as a data URI inside the prompt. The Claude CLI
-    # backend serializes whatever string we hand it; modern Opus
-    # accepts <image> tags or markdown image links via stdin pipes.
     prompt_parts = [
         f"Subject: {subject}",
         "",
-        f"![classwork](data:{mime};base64,{b64[:200000]})",  # cap base64 to ~150kb to keep stdin sane
+        f"![{label}](data:{mime};base64,{b64[:200000]})",
         "",
         "Extract the JSON described in the system prompt.",
     ]
     try:
         resp = await client.complete(
-            purpose="practice_classwork_vision",
-            system=VISION_SYSTEM,
+            purpose=log_purpose,
+            system=system_prompt,
             prompt="\n".join(prompt_parts),
             max_tokens=1500,
         )
@@ -264,6 +309,7 @@ async def list_scans(
     child_id: int | None = None,
     subject: str | None = None,
     session_id: int | None = None,
+    purpose: str | None = None,
     unbound_only: bool = False,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
@@ -276,6 +322,8 @@ async def list_scans(
         q = q.where(PracticeClassworkScan.session_id == session_id)
     elif unbound_only:
         q = q.where(PracticeClassworkScan.session_id.is_(None))
+    if purpose:
+        q = q.where(PracticeClassworkScan.purpose == purpose)
     q = q.limit(limit)
     rows = (await session.execute(q)).scalars().all()
     return [_to_dict(r) for r in rows]
@@ -347,6 +395,7 @@ def _to_dict(scan: PracticeClassworkScan) -> dict[str, Any]:
         "child_id": scan.child_id,
         "subject": scan.subject,
         "attachment_id": scan.attachment_id,
+        "purpose": scan.purpose,
         "extracted_summary": scan.extracted_summary,
         "extracted_topics": topics,
         "extracted_text_present": bool(scan.extracted_text),
