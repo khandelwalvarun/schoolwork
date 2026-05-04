@@ -162,6 +162,10 @@ export function PracticePanel({
   // startNew(). Once a session exists, the canonical source-of-truth
   // is session.pinned_sources from the API.
   const [pendingPinnedSources, setPendingPinnedSources] = useState<PinnedSource[]>([]);
+  // Parent's custom instructions for the FIRST iteration. Combined
+  // with the mode-specific auto-prompt so the user gets to steer
+  // round 1 without losing the grounding hints we already inject.
+  const [startPrompt, setStartPrompt] = useState("");
   const [sourcesPickerOpen, setSourcesPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -193,6 +197,7 @@ export function PracticePanel({
     setPrompt("");
     setPendingShots([]);
     setPendingPinnedSources([]);
+    setStartPrompt("");
     (async () => {
       try {
         const sessions = await api.practiceListSessions(childId, subject);
@@ -254,11 +259,11 @@ export function PracticePanel({
     setErrorMsg(null);
     const hasShots = pendingShots.length > 0;
     const hasPendingSources = pendingPinnedSources.length > 0;
-    // If we have queued uploads OR queued source pins, the first
-    // iteration on start_session would miss them. Skip the LLM on
-    // creation, apply queued state, then iterate so Opus sees
-    // everything in one go.
-    const deferLlm = hasShots || hasPendingSources;
+    const userPrompt = startPrompt.trim();
+    // Defer the LLM call when ANYTHING is queued — uploads, source
+    // pins, OR a user prompt. Otherwise the start_session call would
+    // run round 1 against an empty pack and miss the queued context.
+    const deferLlm = hasShots || hasPendingSources || !!userPrompt;
     try {
       setBusy(
         deferLlm
@@ -303,8 +308,14 @@ export function PracticePanel({
         setPendingShots([]);
       }
 
-      // 3. Trigger the first real LLM iteration so Opus sees pinned
-      //    sources + uploaded scans in the data pack from round 1.
+      // 3. Trigger the first real LLM iteration. The first prompt
+      //    combines:
+      //      - mode-specific auto-scaffolding (the default we'd send
+      //        without any user input)
+      //      - grounding clause naming what's queued so Opus knows
+      //        to look at scans / pins
+      //      - the parent's own instructions, marked clearly so the
+      //        LLM treats them as the LEAD steering for round one
       if (deferLlm) {
         setBusy(`Generating first draft with Claude Opus (~30-60s)…`);
         const groundingMentions: string[] = [];
@@ -313,14 +324,18 @@ export function PracticePanel({
         const groundingClause = groundingMentions.length > 0
           ? `Use the ${groundingMentions.join(" and ")} as grounding context.`
           : "";
-        const firstPrompt =
+        const baseAuto =
           activeKind === "review_work"
             ? "Review the uploaded student work — give per-question verdicts, feedback, and a score estimate."
             : initialPrompt || groundingClause || "Generate the first draft.";
+        const firstPrompt = userPrompt
+          ? `${baseAuto}\n\nParent's specific guidance for this round: ${userPrompt}`
+          : baseAuto;
         const updated = await api.practiceIterateSession(newSessionId, firstPrompt);
         qc.setQueryData(["practice-session", newSessionId], updated);
         const newest = updated.iterations[updated.iterations.length - 1];
         if (newest) setActiveIterIdx(newest.iteration_index);
+        setStartPrompt("");
       }
     } catch (e) {
       setErrorMsg(`Failed to start session: ${e}`);
@@ -589,6 +604,9 @@ export function PracticePanel({
               onRemovePendingSource={(idx) =>
                 setPendingPinnedSources((prev) => prev.filter((_, i) => i !== idx))
               }
+              startPrompt={startPrompt}
+              onStartPromptChange={setStartPrompt}
+              activeKind={activeKind}
             />
           )}
 
@@ -801,6 +819,7 @@ function StartCard({
   meta, busy, onStart, isCheck,
   pendingShots, onPickFiles, onTakePhoto, onRemoveFromQueue, onDiscardPending,
   pendingPinnedSources, onOpenSourcesPicker, onRemovePendingSource,
+  startPrompt, onStartPromptChange, activeKind,
 }: {
   meta: ModeMeta;
   busy: string | null;
@@ -814,11 +833,13 @@ function StartCard({
   pendingPinnedSources: PinnedSource[];
   onOpenSourcesPicker: () => void;
   onRemovePendingSource: (idx: number) => void;
+  startPrompt: string;
+  onStartPromptChange: (v: string) => void;
+  activeKind: PracticeKind;
 }) {
   const hasShots = pendingShots.length > 0;
   const hasSources = pendingPinnedSources.length > 0;
-  // CTA label adapts to what's queued — for Check mode the empty state
-  // hints at the right flow ("upload work first, then review").
+  const hasUserPrompt = startPrompt.trim().length > 0;
   const ctaParts: string[] = [];
   if (hasShots) {
     ctaParts.push(`${pendingShots.length} ${pendingShots.length === 1 ? "file" : "files"}`);
@@ -826,11 +847,21 @@ function StartCard({
   if (hasSources) {
     ctaParts.push(`${pendingPinnedSources.length} source${pendingPinnedSources.length === 1 ? "" : "s"}`);
   }
+  if (hasUserPrompt) {
+    ctaParts.push("your prompt");
+  }
   const ctaCopy = ctaParts.length > 0
     ? `${isCheck ? "Review" : "Generate"} with ${ctaParts.join(" + ")}`
     : isCheck
     ? "Generate review (no uploads yet)"
     : meta.ctaCopy;
+
+  const promptPlaceholder =
+    activeKind === "review_work"
+      ? "e.g. \"the kid struggles with carrying — flag carry errors specifically\" · \"be gentle, this was a tough topic\""
+      : activeKind === "assignment_help"
+      ? "e.g. \"give me a 4-paragraph outline\" · \"focus on the analogy method\" · \"in Hindi\""
+      : "e.g. \"focus on word problems\" · \"include 2 HOTS questions\" · \"mix Sanskrit + Hindi\"";
 
   return (
     <div className={`${meta.bgSoft} border border-gray-200 rounded-lg p-4 text-sm space-y-4`}>
@@ -944,6 +975,29 @@ function StartCard({
           the kid's actual work to give per-question feedback.
         </p>
       )}
+
+      {/* Optional initial prompt — combines with our auto-scaffolding
+          for the first round so the parent can steer round one without
+          losing the grounding hints we already inject. Available in
+          every mode. */}
+      <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-3">
+        <label className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5 block">
+          ✏️ Your instructions for round 1 (optional)
+        </label>
+        <textarea
+          rows={2}
+          value={startPrompt}
+          onChange={(e) => onStartPromptChange(e.target.value)}
+          placeholder={promptPlaceholder}
+          className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 resize-none"
+        />
+        <div className="text-[10px] text-gray-400 mt-1 leading-snug">
+          Combines with the default scaffolding (mode-specific instructions
+          + grounding hints) — your prompt steers round 1 without losing
+          context. You can always iterate again from the chat box at the
+          bottom.
+        </div>
+      </div>
 
       <div className="flex items-center gap-2 pt-1">
         <button
