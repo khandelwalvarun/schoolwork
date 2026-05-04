@@ -58,6 +58,28 @@ function PriorityStar({ n }: { n: number }) {
   return <span className="text-amber-500 text-xs">{"★".repeat(n)}</span>;
 }
 
+/** Small colour-coded category badge — mirrors the one in
+ *  AssignmentList so the row visual is consistent across views. */
+function CategoryBadge({ category }: { category: string | null | undefined }) {
+  const cat = category || "homework";
+  const meta =
+    cat === "review"   ? { letter: "R", bg: "bg-purple-600", label: "Review" }
+  : cat === "classwork"? { letter: "C", bg: "bg-gray-500",   label: "Classwork (in class)" }
+  :                       { letter: "H", bg: "bg-blue-600",  label: "Homework" };
+  return (
+    <span
+      className={
+        "shrink-0 inline-flex items-center justify-center w-4 h-4 rounded text-white text-[9px] font-bold mr-1.5 " +
+        meta.bg
+      }
+      title={meta.label}
+      aria-label={meta.label}
+    >
+      {meta.letter}
+    </span>
+  );
+}
+
 function Card({
   a,
   onOpenPopover,
@@ -81,7 +103,10 @@ function Card({
       className="bg-white border border-gray-200 rounded p-2 mb-2 shadow-sm hover:shadow-md cursor-grab active:cursor-grabbing"
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="text-xs text-gray-500 truncate">{a.subject}</div>
+        <div className="text-xs text-gray-500 truncate flex items-center min-w-0">
+          <CategoryBadge category={a.work_category ?? null} />
+          <span className="truncate">{a.subject}</span>
+        </div>
         <div className="flex items-center gap-1">
           {a.discuss_with_teacher_at && (
             <span

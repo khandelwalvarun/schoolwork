@@ -14,34 +14,31 @@ function PriorityStar({ n }: { n: number }) {
   return <span className="text-amber-500 text-xs mr-1">{"★".repeat(n)}</span>;
 }
 
-/** Phase 26 — small category chip on each row, sourced from
- *  Veracross's own `type` field (mapped server-side). Hidden for
- *  homework — that's the default and most rows, no need for visual
- *  noise. Every row is tagged at the data layer; the homework chip
- *  is implicit. */
-function CategoryChip({ category }: { category: string | null | undefined }) {
-  if (!category || category === "homework") return null;
-  if (category === "review") {
-    return (
-      <span
-        className="shrink-0 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200"
-        title="Review / test / assessment"
-      >
-        review
-      </span>
-    );
-  }
-  if (category === "classwork") {
-    return (
-      <span
-        className="shrink-0 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200"
-        title="Done in class — informational"
-      >
-        classwork
-      </span>
-    );
-  }
-  return null;  // shouldn't reach — backend always sets one of the three.
+/** Phase 26 — solid colour-coded leading badge in the subject
+ *  column on EVERY row, sourced from Veracross's own `type` field
+ *  (mapped server-side). The intent: scan the left edge of the list
+ *  and see at a glance which rows are homework / review / classwork
+ *  without reading any text. Three colours, each with a one-letter
+ *  monogram so the badge stays readable when squeezed.
+ */
+function CategoryBadge({ category }: { category: string | null | undefined }) {
+  const cat = category || "homework";
+  const meta =
+    cat === "review"   ? { letter: "R", bg: "bg-purple-600", label: "Review" }
+  : cat === "classwork"? { letter: "C", bg: "bg-gray-500",   label: "Classwork (in class)" }
+  :                       { letter: "H", bg: "bg-blue-600",  label: "Homework" };
+  return (
+    <span
+      className={
+        "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded text-white text-[10px] font-bold mr-2 " +
+        meta.bg
+      }
+      title={meta.label}
+      aria-label={meta.label}
+    >
+      {meta.letter}
+    </span>
+  );
 }
 
 function SelectBox({
@@ -132,9 +129,10 @@ export function AssignmentRow({
           ariaLabel={`Select ${a.title ?? "assignment"}`}
         />
       </div>
-      <div className={"truncate " + (zone === "archived" ? "text-gray-400" : "text-gray-600")}>
+      <div className={"truncate flex items-center " + (zone === "archived" ? "text-gray-400" : "text-gray-600")}>
+        <CategoryBadge category={a.work_category ?? null} />
         <PriorityStar n={a.priority} />
-        {a.subject}
+        <span className="truncate">{a.subject}</span>
       </div>
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -143,7 +141,6 @@ export function AssignmentRow({
             titleEn={a.title_en}
             className={"truncate " + (zone === "archived" ? "line-through decoration-gray-300" : "")}
           />
-          <CategoryChip category={a.work_category ?? null} />
           {zone === "fresh" && (
             <span
               className="shrink-0 text-[10px] font-medium text-amber-700 uppercase tracking-wider"
