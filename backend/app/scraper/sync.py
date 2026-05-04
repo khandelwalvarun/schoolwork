@@ -90,6 +90,22 @@ async def _upsert_item(
         if body_val and body_val == (title or "").strip():
             body_val = None
 
+    # Phase 26 — classify into {classwork, homework, review} for
+    # assignment rows so buckets and the prep workflow get the right
+    # routing. Only assignment-kind rows; grades / comments / messages
+    # don't carry a work category.
+    work_category: str | None = None
+    if kind == "assignment":
+        from .. import services
+        from ..services.work_category import classify as _classify_category
+        normalized_type = (
+            normalized.get("type") if isinstance(normalized, dict) else None
+        )
+        work_category = _classify_category(
+            normalized_type=normalized_type if isinstance(normalized_type, str) else None,
+            title=title, body=body_val,
+        )
+
     if existing is None:
         item = VeracrossItem(
             child_id=child_id,
@@ -104,6 +120,7 @@ async def _upsert_item(
             first_seen_at=now,
             last_seen_at=now,
             body=body_val,
+            work_category=work_category,
         )
         session.add(item)
         await session.flush()
@@ -141,6 +158,11 @@ async def _upsert_item(
     existing.raw_json = raw_s
     existing.normalized_json = norm_s
     existing.last_seen_at = now
+    # Update work_category if the new normalized type / title shifts
+    # the classification (e.g. school re-tagged a row from Homework
+    # to Review). Don't overwrite an existing value with None.
+    if kind == "assignment" and work_category and work_category != existing.work_category:
+        existing.work_category = work_category
     # Update body when a richer one arrives. Rules in priority order:
     #   1. existing is empty → take it
     #   2. new is longer → take it

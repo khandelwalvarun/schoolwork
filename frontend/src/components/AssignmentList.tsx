@@ -14,6 +14,42 @@ function PriorityStar({ n }: { n: number }) {
   return <span className="text-amber-500 text-xs mr-1">{"★".repeat(n)}</span>;
 }
 
+/** Phase 26 — small category chip on each row, sourced from
+ *  Veracross's own `type` field (mapped server-side). Hidden for
+ *  homework (it's the default — no need for visual noise). */
+function CategoryChip({ category }: { category: string | null | undefined }) {
+  if (!category || category === "homework") return null;
+  if (category === "review") {
+    return (
+      <span
+        className="shrink-0 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200"
+        title="Review / test / assessment"
+      >
+        review
+      </span>
+    );
+  }
+  if (category === "classwork") {
+    return (
+      <span
+        className="shrink-0 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200"
+        title="Done in class — informational"
+      >
+        classwork
+      </span>
+    );
+  }
+  // Unknown category — surface as muted so we know to extend the mapping
+  return (
+    <span
+      className="shrink-0 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200"
+      title={`Unmapped Veracross type: ${category}`}
+    >
+      {category}
+    </span>
+  );
+}
+
 function SelectBox({
   id,
   checked,
@@ -113,6 +149,7 @@ export function AssignmentRow({
             titleEn={a.title_en}
             className={"truncate " + (zone === "archived" ? "line-through decoration-gray-300" : "")}
           />
+          <CategoryChip category={a.work_category ?? null} />
           {zone === "fresh" && (
             <span
               className="shrink-0 text-[10px] font-medium text-amber-700 uppercase tracking-wider"

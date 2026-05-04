@@ -160,6 +160,7 @@ def _item_to_dict(
             if getattr(item, "discuss_with_teacher_at", None) else None
         ),
         "discuss_with_teacher_note": getattr(item, "discuss_with_teacher_note", None),
+        "work_category": getattr(item, "work_category", None),
     }
     if item.normalized_json:
         try:
@@ -198,11 +199,21 @@ async def _assignments_query(
     due_on: date | None = None,
     limit: int | None = None,
     exclude_parent_marked: bool = False,
+    exclude_classwork: bool = True,
     class_levels: dict[int, int] | None = None,
 ):
     q = select(VeracrossItem).where(VeracrossItem.kind == "assignment")
     if child_id is not None:
         q = q.where(VeracrossItem.child_id == child_id)
+    # Phase 26 — classwork is reported by the school as a record of
+    # what was done in class, not as something to action. Bucket
+    # queries skip it by default; pass exclude_classwork=False to
+    # include them (e.g. the dedicated /classwork view).
+    if exclude_classwork:
+        q = q.where(
+            (VeracrossItem.work_category.is_(None))
+            | (VeracrossItem.work_category != "classwork")
+        )
     if status_in:
         q = q.where(VeracrossItem.status.in_(status_in))
     if status_not_in:
@@ -236,6 +247,36 @@ async def _assignments_query(
         d["attachments"] = att_map.get(r.id, [])
         dicts.append(d)
     return dicts
+
+
+async def get_recent_classwork(
+    session: AsyncSession,
+    child_id: int | None = None,
+    days: int = 30,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Recent classwork rows (work the school reported as done in class).
+    Read-only / informational — these don't have a parent_status to track.
+    Newest first, capped at `limit`."""
+    today = _today_ist()
+    since = today - timedelta(days=days)
+    q = (
+        select(VeracrossItem)
+        .where(VeracrossItem.kind == "assignment")
+        .where(VeracrossItem.work_category == "classwork")
+    )
+    if child_id is not None:
+        q = q.where(VeracrossItem.child_id == child_id)
+    q = q.where(VeracrossItem.due_or_date >= since.isoformat())
+    q = q.order_by(VeracrossItem.due_or_date.desc()).limit(limit)
+    items = (await session.execute(q)).scalars().all()
+    class_levels = await _child_class_levels(session)
+    att_map = await _attachments_for_items(session, [i.id for i in items])
+    return [
+        {**_item_to_dict(r, class_level=class_levels.get(r.child_id)),
+         "attachments": att_map.get(r.id, [])}
+        for r in items
+    ]
 
 
 async def get_overdue(session: AsyncSession, child_id: int | None = None) -> list[dict[str, Any]]:

@@ -90,5 +90,11 @@ class VeracrossItem(Base):
     discuss_with_teacher_note: Mapped[str | None] = mapped_column(
         String, nullable=True,
     )
+    # Phase 26 — three-bucket schoolwork category collapsed from
+    # Veracross's verbose `type` field. {classwork, homework, review}.
+    # Classwork hides from overdue/due_today/upcoming buckets;
+    # review drives the prep workflow without title-regex guessing.
+    # Classified at sync-time by services/work_category.py.
+    work_category: Mapped[str | None] = mapped_column(String, nullable=True)
 
     child = relationship("Child", back_populates="items")

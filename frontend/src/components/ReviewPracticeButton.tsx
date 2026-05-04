@@ -2,27 +2,17 @@ import { useState } from "react";
 import { Assignment, PracticeKind } from "../api";
 import { PracticePanel } from "./PracticePanel";
 
-/** Heuristic: is this row a review / test / revision? Pure pattern
- *  match on title + body + tags — no LLM call. Used to pre-select the
- *  Prep tab inside the AI workspace. */
-const REVIEW_PATTERNS = [
-  /\breview\b/i, /\brevision\b/i, /\btest\b/i, /\bexam\b/i,
-  /\bassessment\b/i, /\bquiz\b/i, /\bmock\b/i,
-  /\bmid[- ]?term\b/i, /\bunit\s*\d+\b/i,
-  /पुनरावृत्ति|परीक्षा|प्रश्नोत्तरी/,
-];
-
+/** Phase 26 — read Veracross's own `type` (mapped server-side to
+ *  work_category) instead of regex-guessing from the title. The
+ *  school is the authoritative source. Manual `revision` / `re-do`
+ *  tags still override (parent override). */
 export function isReviewLike(
-  a: Pick<Assignment, "title" | "title_en" | "body" | "notes_en" | "tags">,
+  a: Pick<Assignment, "work_category" | "tags">,
 ): boolean {
   if (a.tags && (a.tags.includes("revision") || a.tags.includes("re-do"))) {
     return true;
   }
-  const blob = [a.title, a.title_en, a.body, a.notes_en]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return REVIEW_PATTERNS.some((re) => re.test(blob));
+  return a.work_category === "review";
 }
 
 /** Tiny "🤖 AI" pill on every assignment row. Click → opens the
@@ -40,6 +30,8 @@ export function ReviewPracticeButton({
   const [open, setOpen] = useState<PracticeKind | null>(null);
   const onlyForAssignments = a.kind === "assignment" || a.kind === undefined;
   if (!onlyForAssignments) return null;
+  // Classwork is done in class — no parent prep needed; skip the button.
+  if (a.work_category === "classwork") return null;
   const initialKind: PracticeKind = isReviewLike(a) ? "review_prep" : "assignment_help";
 
   return (

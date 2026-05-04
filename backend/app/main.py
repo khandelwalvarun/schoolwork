@@ -193,6 +193,19 @@ async def api_due_today(child_id: int | None = None) -> list[dict[str, Any]]:
         return await Q.get_due_today(session, child_id=child_id)
 
 
+@app.get("/api/classwork")
+async def api_classwork(
+    child_id: int | None = None, days: int = 30, limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Recent classwork rows (work the school reported as done in
+    class). Read-only — parent doesn't track status on these. Used by
+    the kid-detail page's 'Recent classwork' section."""
+    async with get_async_session() as session:
+        return await Q.get_recent_classwork(
+            session, child_id=child_id, days=days, limit=limit,
+        )
+
+
 @app.get("/api/upcoming")
 async def api_upcoming(child_id: int | None = None, days: int = 14) -> list[dict[str, Any]]:
     async with get_async_session() as session:

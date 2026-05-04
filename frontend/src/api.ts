@@ -198,6 +198,11 @@ export type Assignment = {
   /** Phase 24 — attention-lifecycle zone, computed server-side. Drives
    *  the FRESH / STEADY / ARCHIVED partitioning of every assignment list. */
   attention_zone?: "fresh" | "steady" | "archived";
+  /** Phase 26 — three-bucket schoolwork category from Veracross's
+   *  own `type` field. Classwork hides from action buckets; review
+   *  drives the prep workflow. NULL = uncategorized (the school
+   *  introduced a type we haven't mapped yet). */
+  work_category?: "classwork" | "homework" | "review" | null;
   parent_marked_submitted_at: string | null;
   /** Phase 23: parent flagged this item as "worth a chat" at the next
    *  PTM. Timestamp = on; null = off. The optional note carries the
