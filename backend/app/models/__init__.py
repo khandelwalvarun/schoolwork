@@ -4,6 +4,7 @@ from .attachments import Attachment
 from .channel_config import ChannelConfig
 from .children import Child
 from .events import Event
+from .item_comments import ItemComment
 from .llm_analysis import LLMAnalysis
 from .llm_calls import LLMCall
 from .mcp_tool_calls import MCPToolCall
@@ -20,6 +21,7 @@ from .summaries import Summary
 from .syllabus_overrides import SyllabusCycleOverride, SyllabusTopicStatus
 from .sync_runs import SyncRun
 from .topic_state import TopicState
+from .translation_cache import TranslationCache
 from .veracross_items import VeracrossItem
 
 __all__ = [
@@ -28,6 +30,7 @@ __all__ = [
     "ChannelConfig",
     "Child",
     "Event",
+    "ItemComment",
     "KidEvent",
     "LLMAnalysis",
     "LLMCall",
@@ -47,5 +50,6 @@ __all__ = [
     "SyllabusTopicStatus",
     "SyncRun",
     "TopicState",
+    "TranslationCache",
     "VeracrossItem",
 ]

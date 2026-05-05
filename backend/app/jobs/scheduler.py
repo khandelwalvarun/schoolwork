@@ -11,6 +11,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from ..config import get_settings
 from ..services.ui_prefs import load_prefs
+from .anomaly_explain_job import run_anomaly_explainer
 from .brief_warmup_job import run_brief_warmup
 from .digest_job import run_daily_digest, run_weekly_digest
 from .mindspark_job import run_mindspark_daily
@@ -148,6 +149,20 @@ def start_scheduler() -> AsyncIOScheduler:
         run_mindspark_daily,
         CronTrigger(hour=17, minute=0, jitter=3600),
         id="mindspark_daily",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    # Nightly anomaly auto-explainer at 02:30 IST. Walks every kid,
+    # detects off-trend grades, pre-warms a Claude hypothesis for each
+    # one that doesn't already have one cached. Marks brand-new
+    # anomalies as 'open' so the UI distinguishes "never seen" from
+    # "acknowledged".
+    s.add_job(
+        run_anomaly_explainer,
+        CronTrigger(hour=2, minute=30),
+        id="anomaly_explainer",
         replace_existing=True,
         coalesce=True,
         max_instances=1,

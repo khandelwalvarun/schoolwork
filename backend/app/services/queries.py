@@ -161,6 +161,11 @@ def _item_to_dict(
         ),
         "discuss_with_teacher_note": getattr(item, "discuss_with_teacher_note", None),
         "work_category": getattr(item, "work_category", None),
+        "anomaly_status": getattr(item, "anomaly_status", None),
+        "anomaly_status_at": (
+            getattr(item, "anomaly_status_at", None).isoformat()
+            if getattr(item, "anomaly_status_at", None) else None
+        ),
     }
     if item.normalized_json:
         try:

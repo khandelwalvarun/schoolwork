@@ -106,6 +106,55 @@ def _stddev(values: list[float]) -> float:
     return (sum((v - mean) ** 2 for v in values) / (n - 1)) ** 0.5
 
 
+async def _comments_for_item(
+    session: AsyncSession, item_id: int,
+) -> list[dict[str, Any]]:
+    """Helper: pull parent comments for a single item, lightweight
+    shape for LLM packs (no internal IDs, just the human-readable
+    parts)."""
+    from . import item_comments as IC
+    rows = await IC.list_for_item(session, item_id)
+    return [
+        {
+            "body": r["body"],
+            "sentiment": r.get("sentiment"),
+            "topic": r.get("topic"),
+            "tags": r.get("tags") or [],
+            "created_at": r.get("created_at"),
+        }
+        for r in rows
+    ]
+
+
+async def _comments_for_subject_window(
+    session: AsyncSession,
+    child_id: int,
+    subject: str,
+    *,
+    days: int,
+    exclude_item_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Helper: parent comments for the kid in a subject over the
+    last `days`, excluding any comment on `exclude_item_id`."""
+    from . import item_comments as IC
+    rows = await IC.list_for_child(
+        session, child_id=child_id, subject=subject, days=days,
+    )
+    out = []
+    for r in rows:
+        if exclude_item_id is not None and r.get("item_id") == exclude_item_id:
+            continue
+        out.append({
+            "item_id": r.get("item_id"),
+            "body": r["body"],
+            "sentiment": r.get("sentiment"),
+            "topic": r.get("topic"),
+            "tags": r.get("tags") or [],
+            "created_at": r.get("created_at"),
+        })
+    return out
+
+
 async def _grades_in_subject(
     session: AsyncSession,
     child_id: int,
@@ -169,8 +218,12 @@ SYSTEM_PROMPT = """You are a thoughtful, careful explainer for a parent-cockpit 
 
 You will receive ONE grade that landed off the kid's recent trend in a
 specific subject, plus context: the kid's prior grades in that subject
-(with assignment bodies when linked), and any teacher-comment text
-from a ±7-day window.
+(with assignment bodies when linked), any teacher-comment text from a
+±7-day window, and PARENT COMMENTS — observations the parent has
+recorded on this grade and on related items in the same subject over
+the last 60 days. Parent comments are often the most diagnostic
+signal (e.g. "didn't read directions" on the prior test). When a
+parent comment supports your hypothesis, cite it directly.
 
 Your job: write a 2-3 sentence HYPOTHESIS for why this grade is off
 trend. Pick ONE most-likely cause. Use the available data to ground
@@ -191,19 +244,35 @@ Forbidden:
   - Cheerleading ("don't worry!")
   - More than 3 sentences
   - Invented data
+  - Statistical jargon — NEVER use the words "median", "mean",
+    "MAD", "z-score", "stddev", "standard deviation", "outlier",
+    "delta", "Δ", or percentage-points abbreviation. Even if those
+    appear in the DATA pack's `anomaly_reason` field, do not echo
+    them. Translate them in your head:
+        median peer score → "usually around X%"
+        Δ +N pts above median → "well above the usual"
+        Δ -N pts below median → "well below the usual"
+        outlier → (just describe the gap in words)
 
-Format: 2-3 sentences, plain English, no headers, no bullets.
+Format: 2-3 sentences, plain English a parent can read once, no
+headers, no bullets, no stats. Lead with the kid's score and the
+contrast to "usually" — that's the parent's mental model. Then the
+hypothesis, then optionally one observation that supports it.
 
 Examples of good output:
 
-  "The 65 % follows a teacher note from Apr 12 that mentioned 'rushed
-  the last 3 questions' — most likely time pressure, not a concept gap.
-  Prior 3 math grades clustered 92-98 % so the trend is intact for now."
+  "Tejas scored 65% on Wednesday's Math test — usually around 92% in
+  Math. Follows a teacher note from Apr 12 about 'rushing the last 3
+  questions', so this looks like time pressure, not a concept gap."
 
-  "First long-form essay after weeks of MCQ-style assessments — a 75
-  on the open-ended format suggests the writing-organization step,
-  not the underlying knowledge. Worth checking the rubric to see
-  which sub-skill scored lowest."
+  "Samarth's first long-form essay after weeks of multiple-choice —
+  the 75% suggests the writing-organisation step, not the underlying
+  knowledge. Worth checking the rubric to see which sub-skill scored
+  lowest."
+
+Bad (do not produce):
+  "MAD-z = -2.3 over rolling 90d window; outlier on the median trend."
+  "Δ +12 pts above subject median 87.0% — likely a different test format."
 
 Output the paragraph and nothing else. No prefix, no JSON, no quotes."""
 
@@ -340,6 +409,17 @@ async def explain_grade_anomaly(
             for d, p, r in prior[-5:]  # last 5 prior
         ],
         "teacher_comments_in_window": teacher_comments,
+        # Parent observations on THIS grade row + on prior items in
+        # the same subject. Often the most diagnostic data — a
+        # parent's note "didn't read directions, ran out of time" on
+        # the prior test echoes through three grades. The LLM is
+        # explicitly asked to weigh these.
+        "parent_comments_on_this_grade": await _comments_for_item(
+            session, item.id,
+        ),
+        "parent_comments_on_prior_subject_items": await _comments_for_subject_window(
+            session, item.child_id, subject, days=60, exclude_item_id=item.id,
+        ),
     }
 
     client = LLMClient()

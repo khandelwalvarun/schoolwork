@@ -321,6 +321,139 @@ async def api_notes_add(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
 
+@app.get("/api/items/comment-counts")
+async def api_item_comment_counts(ids: str = "") -> dict[str, int]:
+    """Bulk count of parent comments per item.
+
+    Pass `?ids=1,2,3` and you get back {"1": 0, "2": 3, "3": 1}. Used
+    by the assignment list to render a 💭N indicator next to rows that
+    have observations attached, without doing N round-trips.
+    """
+    from .services import item_comments as IC
+    if not ids:
+        return {}
+    try:
+        item_ids = [int(x) for x in ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "ids must be a comma-separated list of ints")
+    async with get_async_session() as session:
+        counts = await IC.comment_counts_for_items(session, item_ids)
+    # Always return a string-keyed dict — JSON-friendly + the frontend
+    # uses it as a Record<string, number>.
+    return {str(iid): counts.get(iid, 0) for iid in item_ids}
+
+
+@app.get("/api/items/{item_id}/comments")
+async def api_item_comments_list(item_id: int) -> list[dict[str, Any]]:
+    """All parent comments attached to a single item (assignment, review,
+    grade, school message). Sorted oldest-first so the audit drawer
+    reads as a chronological log."""
+    from .services import item_comments as IC
+    async with get_async_session() as session:
+        return await IC.list_for_item(session, item_id)
+
+
+@app.post("/api/items/{item_id}/comments")
+async def api_item_comments_create(
+    item_id: int, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Add a new parent comment to an item.
+
+    Body: {body: str, sentiment?: 'positive'|'neutral'|'concern',
+           topic?: str, tags?: list[str]}
+    `body` is required. Everything else is optional and feeds future
+    LLM aggregation.
+    """
+    from .services import item_comments as IC
+    async with get_async_session() as session:
+        try:
+            return await IC.create(
+                session,
+                item_id=item_id,
+                body=(payload or {}).get("body", ""),
+                sentiment=(payload or {}).get("sentiment"),
+                topic=(payload or {}).get("topic"),
+                tags=(payload or {}).get("tags"),
+            )
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+@app.patch("/api/comments/{comment_id}")
+async def api_item_comment_update(
+    comment_id: int, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Edit one comment. Pass only the fields you want to change.
+    `sentiment`, `topic`, `tags` accept null to clear; omit the key
+    entirely to leave them untouched."""
+    from .services import item_comments as IC
+    p = payload or {}
+    kwargs: dict[str, Any] = {}
+    if "body" in p:
+        kwargs["body"] = p["body"]
+    if "sentiment" in p:
+        kwargs["sentiment"] = p["sentiment"]
+    if "topic" in p:
+        kwargs["topic"] = p["topic"]
+    if "tags" in p:
+        kwargs["tags"] = p["tags"]
+    async with get_async_session() as session:
+        try:
+            return await IC.update(session, comment_id=comment_id, **kwargs)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+@app.delete("/api/comments/{comment_id}")
+async def api_item_comment_delete(comment_id: int) -> dict[str, Any]:
+    from .services import item_comments as IC
+    async with get_async_session() as session:
+        try:
+            await IC.delete(session, comment_id)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+    return {"ok": True}
+
+
+@app.get("/api/item-comments")
+async def api_item_comments_aggregate(
+    child_id: int,
+    days: int = 60,
+    subject: str | None = None,
+    sentiment: str | None = None,
+) -> dict[str, Any]:
+    """LLM-friendly aggregation pack for a kid's comments.
+
+    Returns the full set of comments in the window plus pre-computed
+    facets (by_subject, by_sentiment, by_topic) so the LLM (or the UI)
+    can see the contour before reading raw text. Used by:
+      - the future nightly pattern-mining job
+      - the on-demand "Ask Claude" analysis page
+      - the AnomalyTray when correlating dips with parent observations
+    """
+    from .services import item_comments as IC
+    async with get_async_session() as session:
+        if sentiment:
+            comments = await IC.list_for_child(
+                session,
+                child_id=child_id,
+                subject=subject,
+                days=days,
+                sentiment=sentiment,
+            )
+            return {
+                "child_id": child_id,
+                "window_days": days,
+                "subject_filter": subject,
+                "sentiment_filter": sentiment,
+                "comment_count": len(comments),
+                "comments": comments,
+            }
+        return await IC.build_aggregation_pack(
+            session, child_id=child_id, days=days, subject=subject,
+        )
+
+
 @app.get("/api/summaries")
 async def api_summaries(kind: str | None = None, limit: int = 60) -> list[dict[str, Any]]:
     async with get_async_session() as session:
@@ -334,6 +467,80 @@ async def api_child_detail(child_id: int) -> dict[str, Any]:
     if r is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
     return r
+
+
+@app.get("/api/child/{child_id}/full")
+async def api_child_full(child_id: int) -> dict[str, Any]:
+    """Bundled child-detail payload — collapses several small queries
+    that the ChildDetail page used to fan out for individually
+    (childDetail, excellence, classwork-count, anomalies, worth-a-chat).
+
+    Heavy analytics (submission heatmap, homework load, patterns,
+    sentiment) stay on their own endpoints since they sit behind the
+    collapsed Analytics drawer and don't need to block the first paint.
+
+    Returns:
+      {
+        detail: <api_child_detail payload>,
+        excellence: <api_excellence payload>,
+        classwork_count: int  (last 14 days, informational classwork),
+        anomalies_open: int   (off-trend grades not yet acknowledged),
+        worth_a_chat_count: int,
+      }
+    """
+    from sqlalchemy import select
+    from .models import Child
+    from .services.excellence import status_for_child
+    from .services.anomaly import detect_anomalies_for_child
+
+    async with get_async_session() as session:
+        child = (
+            await session.execute(select(Child).where(Child.id == child_id))
+        ).scalar_one_or_none()
+        if child is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+
+        # SQLAlchemy AsyncSession isn't safe under asyncio.gather, so
+        # we run sequentially. The win is collapsing the network
+        # waterfall (5 round-trips → 1) — server-side latency is
+        # already dominated by SQLite, which is sub-ms anyway.
+        detail = await Q.get_child_detail(session, child_id)
+        if detail is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"child {child_id} not found")
+        excellence = await status_for_child(session, child)
+        classwork = await Q.get_recent_classwork(
+            session, child_id=child_id, days=14, limit=100,
+        )
+        anomalies = await detect_anomalies_for_child(session, child_id)
+        worth_a_chat = await Q.get_worth_a_chat(
+            session, child_id=child_id, limit=200,
+        )
+
+        # anomalies endpoint already filters dismissed by default, but
+        # detect_anomalies_for_child returns everything — count only
+        # those whose status isn't dismissed.
+        from .models import VeracrossItem
+        if anomalies:
+            ids = [a["grade_id"] for a in anomalies]
+            items = (
+                await session.execute(
+                    select(VeracrossItem).where(VeracrossItem.id.in_(ids))
+                )
+            ).scalars().all()
+            dismissed_ids = {
+                i.id for i in items if i.anomaly_status == "dismissed"
+            }
+            anomalies_open = len([a for a in anomalies if a["grade_id"] not in dismissed_ids])
+        else:
+            anomalies_open = 0
+
+        return {
+            "detail": detail,
+            "excellence": excellence.to_dict(),
+            "classwork_count": len(classwork or []),
+            "anomalies_open": anomalies_open,
+            "worth_a_chat_count": len(worth_a_chat or []),
+        }
 
 
 @app.get("/api/overdue-trend")
@@ -1117,16 +1324,55 @@ async def api_ptm_brief(
 
 
 @app.get("/api/anomalies")
-async def api_grade_anomalies(child_id: int | None = None) -> list[dict[str, Any]]:
-    """List of off-trend grade rows (deterministic detection only —
-    doesn't call Claude). Used by the Today page banner to know which
-    grades warrant a hypothesis card."""
+async def api_grade_anomalies(
+    child_id: int | None = None,
+    include_dismissed: bool = False,
+) -> list[dict[str, Any]]:
+    """List off-trend grade rows.
+
+    Detection is deterministic (services/anomaly.py). Each row includes
+    the cached Claude hypothesis (`explanation`) when one exists — the
+    nightly anomaly_explainer job pre-warms these so the Today page
+    doesn't have to wait on Claude.
+
+    By default skips rows where `anomaly_status='dismissed'` (parent
+    already cleared the flag). Pass `include_dismissed=true` to see
+    everything for audit / history views.
+    """
     from sqlalchemy import select
-    from .models import Child
+    from .models import Child, VeracrossItem
     from .services.anomaly import detect_anomalies_for_child
     async with get_async_session() as session:
+        async def _enrich(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            if not rows:
+                return rows
+            ids = [r["grade_id"] for r in rows]
+            items = (
+                await session.execute(
+                    select(VeracrossItem).where(VeracrossItem.id.in_(ids))
+                )
+            ).scalars().all()
+            by_id = {i.id: i for i in items}
+            out: list[dict[str, Any]] = []
+            for r in rows:
+                it = by_id.get(r["grade_id"])
+                if it is None:
+                    continue
+                r["explanation"] = it.llm_summary
+                r["status"] = it.anomaly_status
+                r["status_at"] = (
+                    it.anomaly_status_at.isoformat()
+                    if it.anomaly_status_at else None
+                )
+                r["title"] = it.title
+                if not include_dismissed and it.anomaly_status == "dismissed":
+                    continue
+                out.append(r)
+            return out
+
         if child_id is not None:
-            return await detect_anomalies_for_child(session, child_id)
+            rows = await detect_anomalies_for_child(session, child_id)
+            return await _enrich(rows)
         children = (await session.execute(select(Child))).scalars().all()
         out: list[dict[str, Any]] = []
         for c in children:
@@ -1134,8 +1380,57 @@ async def api_grade_anomalies(child_id: int | None = None) -> list[dict[str, Any
             for r in rows:
                 r["child_id"] = c.id
                 r["child_name"] = c.display_name
-                out.append(r)
+            out.extend(await _enrich(rows))
         return out
+
+
+@app.post("/api/anomalies/{grade_id}/status")
+async def api_set_anomaly_status(
+    grade_id: int, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Set the parent-acknowledgement status on an anomaly flag.
+
+    Body: {"status": "open" | "dismissed" | "escalated" | "reviewed" | null}
+    Setting null clears the flag entirely.
+    """
+    from datetime import datetime as _dt
+    from sqlalchemy import select
+    from .models import VeracrossItem
+
+    raw = (payload or {}).get("status")
+    valid = {None, "open", "dismissed", "escalated", "reviewed"}
+    if raw not in valid:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"status must be one of {sorted(s for s in valid if s)} or null",
+        )
+
+    async with get_async_session() as session:
+        row = (
+            await session.execute(
+                select(VeracrossItem).where(VeracrossItem.id == grade_id)
+            )
+        ).scalar_one_or_none()
+        if row is None or row.kind != "grade":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"grade {grade_id} not found")
+        row.anomaly_status = raw
+        row.anomaly_status_at = _dt.utcnow() if raw is not None else None
+        await session.commit()
+        return {
+            "grade_id": grade_id,
+            "status": row.anomaly_status,
+            "status_at": (
+                row.anomaly_status_at.isoformat()
+                if row.anomaly_status_at else None
+            ),
+        }
+
+
+@app.post("/api/anomalies/explain-all")
+async def api_explain_all_anomalies(force: bool = False) -> dict[str, Any]:
+    """Run the auto-explainer over every kid right now (manual trigger)."""
+    from .jobs.anomaly_explain_job import run_anomaly_explainer
+    return await run_anomaly_explainer(force=force)
 
 
 @app.post("/api/assignments/{item_id}/summarize")

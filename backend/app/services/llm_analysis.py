@@ -249,6 +249,7 @@ async def _build_pack(
 
     shaky_per_kid: dict[int, list[dict[str, Any]]] = {}
     anomalies_per_kid: dict[int, list[dict[str, Any]]] = {}
+    parent_comments_per_kid: dict[int, dict[str, Any]] = {}
     for c in children:
         try:
             shaky_per_kid[c.id] = await shaky_for_child(session, c, limit=10)
@@ -258,6 +259,18 @@ async def _build_pack(
             anomalies_per_kid[c.id] = await detect_anomalies_for_child(session, c.id)
         except Exception:
             anomalies_per_kid[c.id] = []
+        # Parent comments: pre-faceted aggregation pack so the LLM
+        # can see "I left 4 'concern' comments on Math reviews this
+        # term" before reading individual entries.
+        try:
+            from . import item_comments as IC
+            parent_comments_per_kid[c.id] = await IC.build_aggregation_pack(
+                session, child_id=c.id, days=scope_days,
+            )
+        except Exception:
+            parent_comments_per_kid[c.id] = {
+                "comment_count": 0, "comments": [],
+            }
 
     # Mindspark — light slice.
     mindspark_per_kid: dict[int, dict[str, Any]] = {}
@@ -332,6 +345,13 @@ async def _build_pack(
                 "shaky_topics": shaky_per_kid.get(c.id, []),
                 "off_trend_grades": anomalies_per_kid.get(c.id, []),
                 "mindspark": mindspark_per_kid.get(c.id, {}),
+                # Parent observations on specific assignments and
+                # reviews. The LLM is told (via the system prompt) to
+                # weigh these heavily — they're often more diagnostic
+                # than the grade itself.
+                "parent_comments": parent_comments_per_kid.get(c.id, {
+                    "comment_count": 0, "comments": [],
+                }),
             }
             for c in children
         ],
@@ -348,8 +368,14 @@ async def _build_pack(
 SYSTEM_PROMPT = """You are an analyst over a parent's child-tracking dashboard data. The parent asks an open question; you answer with structured findings backed by the data they pasted.
 
 You receive:
-  - DATA PACK (JSON) — children, recent grades / assignments / comments / messages, pattern flags, shaky topics, off-trend grade anomalies, mindspark progress, sync_runs (data freshness)
+  - DATA PACK (JSON) — children, recent grades / assignments / comments / messages, pattern flags, shaky topics, off-trend grade anomalies, mindspark progress, sync_runs (data freshness), and PARENT_COMMENTS (the parent's own observations on specific assignments and reviews, with sentiment / topic / tags).
   - QUERY — the parent's free-form question
+
+PARENT_COMMENTS are first-class evidence — when a recurring topic
+appears across multiple comments (e.g. "didn't read directions",
+"test anxiety on multiple-choice", "ran out of time"), surface it as
+a finding, citing the comment dates and item titles. Concern-tagged
+comments deserve more weight than positive ones.
 
 OUTPUT — strict JSON only, matching:
 

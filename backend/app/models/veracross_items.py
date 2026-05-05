@@ -97,4 +97,17 @@ class VeracrossItem(Base):
     # Classified at sync-time by services/work_category.py.
     work_category: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Phase 28 — anomaly auto-explainer. Detection (services/anomaly.py)
+    # is purely deterministic; this column lets the parent acknowledge
+    # the flag once they've seen it so the Today banner doesn't keep
+    # re-surfacing historic anomalies forever.
+    # Values: None (never flagged), 'open' (flagged, awaiting review),
+    # 'dismissed' (parent saw it and is fine), 'escalated' (parent
+    # marked it Worth-a-Chat or noted concern), 'reviewed' (looked at,
+    # no action needed but keep in record).
+    anomaly_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    anomaly_status_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+
     child = relationship("Child", back_populates="items")
