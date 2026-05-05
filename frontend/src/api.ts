@@ -2,6 +2,37 @@
  *  hatch (`%85`). Anything else is rejected by the API. */
 export type SelfPredictionBand = "high" | "mid" | "low" | string;
 
+/** Parent's quick-tag on a per-item comment. Used to stratify
+ *  LLM-aggregation findings ("4 concern-tagged Math comments in 6
+ *  weeks"). null = unrated. */
+export type CommentSentiment = "positive" | "neutral" | "concern";
+
+/** A single parent observation attached to one veracross_items row.
+ *  Designed for LLM aggregation — denormalised subject and a
+ *  pre-faceted sentiment / topic / tags shape so packs can slice
+ *  cheaply. */
+export type ItemComment = {
+  id: number;
+  item_id: number;
+  child_id: number;
+  subject: string | null;
+  body: string;
+  sentiment: CommentSentiment | null;
+  topic: string | null;
+  tags: string[];
+  author: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+/** Parent-acknowledgement state on an off-trend grade flag.
+ *   - null     never flagged
+ *   - 'open'   flagged, parent hasn't reviewed yet
+ *   - 'reviewed' parent looked, no action taken
+ *   - 'dismissed' parent cleared the flag (no concern)
+ *   - 'escalated' parent flagged for follow-up (worth-a-chat etc.) */
+export type AnomalyStatus = "open" | "reviewed" | "dismissed" | "escalated";
+
 /** Computed once a grade has been linked. */
 export type SelfPredictionOutcome = "matched" | "better" | "worse";
 
@@ -203,6 +234,11 @@ export type Assignment = {
    *  drives the prep workflow. NULL = uncategorized (the school
    *  introduced a type we haven't mapped yet). */
   work_category?: "classwork" | "homework" | "review" | null;
+  /** Phase 28 — parent-acknowledgement on an off-trend grade flag.
+   *  null = never flagged; 'open' = flagged + unreviewed; 'reviewed' /
+   *  'dismissed' / 'escalated' once the parent has acted. */
+  anomaly_status?: AnomalyStatus | null;
+  anomaly_status_at?: string | null;
   parent_marked_submitted_at: string | null;
   /** Phase 23: parent flagged this item as "worth a chat" at the next
    *  PTM. Timestamp = on; null = off. The optional note carries the
@@ -842,6 +878,14 @@ export const api = {
   today: () => fetchJson<TodayData>("/api/today"),
   children: () => fetchJson<Child[]>("/api/children"),
   childDetail: (id: number) => fetchJson<ChildDetail>(`/api/child/${id}`),
+  childFull: (id: number) =>
+    fetchJson<{
+      detail: ChildDetail;
+      excellence: ExcellenceStatus;
+      classwork_count: number;
+      anomalies_open: number;
+      worth_a_chat_count: number;
+    }>(`/api/child/${id}/full`),
   overdue: (childId?: number) =>
     fetchJson<Assignment[]>(`/api/overdue${childId ? `?child_id=${childId}` : ""}`),
   assignments: (p: { child_id?: number; subject?: string; status?: string; limit?: number } = {}) =>
@@ -881,8 +925,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ since_days: sinceDays, child_id: childId }),
     }),
-  gradeAnomalies: (childId?: number) =>
-    fetchJson<Array<{
+  gradeAnomalies: (childId?: number, includeDismissed = false) => {
+    const params = new URLSearchParams();
+    if (childId) params.set("child_id", String(childId));
+    if (includeDismissed) params.set("include_dismissed", "true");
+    const qs = params.toString();
+    return fetchJson<Array<{
       grade_id: number;
       subject: string;
       graded_date: string;
@@ -890,7 +938,12 @@ export const api = {
       reason: string;
       child_id?: number;
       child_name?: string;
-    }>>(`/api/anomalies${childId ? `?child_id=${childId}` : ""}`),
+      title?: string | null;
+      explanation?: string | null;
+      status?: AnomalyStatus | null;
+      status_at?: string | null;
+    }>>(`/api/anomalies${qs ? `?${qs}` : ""}`);
+  },
   explainGradeAnomaly: (gradeId: number, force = false) =>
     fetchJson<{
       grade_id: number;
@@ -902,6 +955,74 @@ export const api = {
     }>(`/api/grades/${gradeId}/explain-anomaly${force ? "?force=true" : ""}`, {
       method: "POST",
     }),
+  setAnomalyStatus: (gradeId: number, status: AnomalyStatus | null) =>
+    fetchJson<{
+      grade_id: number;
+      status: AnomalyStatus | null;
+      status_at: string | null;
+    }>(`/api/anomalies/${gradeId}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    }),
+  // ───────────── per-item parent comments ─────────────
+  itemComments: (itemId: number) =>
+    fetchJson<ItemComment[]>(`/api/items/${itemId}/comments`),
+  createItemComment: (
+    itemId: number,
+    body: {
+      body: string;
+      sentiment?: CommentSentiment | null;
+      topic?: string | null;
+      tags?: string[];
+    },
+  ) =>
+    fetchJson<ItemComment>(`/api/items/${itemId}/comments`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateItemComment: (
+    commentId: number,
+    body: {
+      body?: string;
+      sentiment?: CommentSentiment | null;
+      topic?: string | null;
+      tags?: string[];
+    },
+  ) =>
+    fetchJson<ItemComment>(`/api/comments/${commentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteItemComment: (commentId: number) =>
+    fetchJson<{ ok: true }>(`/api/comments/${commentId}`, {
+      method: "DELETE",
+    }),
+  itemCommentCounts: (ids: number[]) => {
+    if (ids.length === 0) return Promise.resolve({} as Record<string, number>);
+    return fetchJson<Record<string, number>>(
+      `/api/items/comment-counts?ids=${ids.join(",")}`,
+    );
+  },
+  itemCommentsAggregate: (
+    childId: number,
+    opts: { days?: number; subject?: string; sentiment?: CommentSentiment } = {},
+  ) => {
+    const params = new URLSearchParams({ child_id: String(childId) });
+    if (opts.days) params.set("days", String(opts.days));
+    if (opts.subject) params.set("subject", opts.subject);
+    if (opts.sentiment) params.set("sentiment", opts.sentiment);
+    return fetchJson<{
+      child_id: number;
+      window_days: number;
+      subject_filter: string | null;
+      sentiment_filter?: string | null;
+      comment_count: number;
+      by_subject?: Record<string, number>;
+      by_sentiment?: Record<string, number>;
+      by_topic?: Record<string, number>;
+      comments: ItemComment[];
+    }>(`/api/item-comments?${params.toString()}`);
+  },
   summarizeAssignment: (itemId: number, force = false) =>
     fetchJson<{
       item_id: number;

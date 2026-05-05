@@ -3,15 +3,26 @@ import { Assignment, ParentStatus } from "../api";
 import { useOptimisticPatch } from "./useOptimisticPatch";
 import { useFloatingPosition } from "./useFloatingPosition";
 import { daysFromTodayIST, todayISOInIST } from "../util/ist";
+import { EFFECTIVE_STATUS_LABEL, PARENT_STATUS_LABEL } from "../util/strings";
 
-const PARENT_STATUS_LABELS: Record<ParentStatus, { label: string; dot: string; chip: string }> = {
-  in_progress:  { label: "In progress",     dot: "bg-amber-500",   chip: "chip-amber" },
-  done_at_home: { label: "Done at home",    dot: "bg-emerald-500", chip: "chip-green" },
-  submitted:    { label: "Handed in",       dot: "bg-blue-500",    chip: "chip-blue"  },
-  needs_help:   { label: "Needs help",      dot: "bg-orange-500",  chip: "chip-amber" },
-  blocked:      { label: "Blocked",         dot: "bg-rose-500",    chip: "chip-red"   },
-  skipped:      { label: "Skipped",         dot: "bg-gray-400",    chip: "chip-amber" },
+// Visual metadata only — text labels read from `PARENT_STATUS_LABEL`
+// in util/strings.ts so the parent-facing vocabulary lives in one
+// place.
+const PARENT_STATUS_DOT: Record<ParentStatus, string> = {
+  in_progress:  "bg-amber-500",
+  done_at_home: "bg-emerald-500",
+  submitted:    "bg-blue-500",
+  needs_help:   "bg-orange-500",
+  blocked:      "bg-rose-500",
+  skipped:      "bg-gray-400",
 };
+
+// Three primary statuses cover ~90 % of parent use. The other three
+// (handed-in / blocked / skipped) hide behind "More options" so the
+// popover's first impression is a single decision: in progress / done
+// / needs help.
+const PRIMARY_STATUSES: ParentStatus[] = ["in_progress", "done_at_home", "needs_help"];
+const SECONDARY_STATUSES: ParentStatus[] = ["submitted", "blocked", "skipped"];
 
 const EFFECTIVE_CHIP: Record<string, string> = {
   graded: "chip-green",
@@ -25,22 +36,11 @@ const EFFECTIVE_CHIP: Record<string, string> = {
   pending: "chip-amber",
 };
 
-const EFFECTIVE_LABEL: Record<string, string> = {
-  graded: "graded",
-  submitted: "submitted",
-  done_at_home: "done",
-  in_progress: "in progress",
-  needs_help: "needs help",
-  blocked: "blocked",
-  skipped: "skipped",
-  overdue: "overdue",
-  pending: "pending",
-};
-
+// Visual mapping only; labels live in util/strings.ts.
 export function EffectiveStatusChip({ a }: { a: Assignment }) {
   const eff = a.effective_status || "pending";
   const cls = EFFECTIVE_CHIP[eff] || "chip-amber";
-  const label = EFFECTIVE_LABEL[eff] || eff;
+  const label = EFFECTIVE_STATUS_LABEL[eff] || eff;
   return <span className={cls}>{label}</span>;
 }
 
@@ -81,6 +81,16 @@ export default function StatusPopover({
     a.discuss_with_teacher_note || ""
   );
   const [saving, setSaving] = useState(false);
+  // "More options" — opens secondary statuses, priority, tags, notes.
+  // Auto-open if the row already has any of those set, so editing
+  // existing data doesn't hide it.
+  const [showMore, setShowMore] = useState(
+    !!a.priority ||
+      !!a.snooze_until ||
+      (a.tags?.length ?? 0) > 0 ||
+      !!a.status_notes ||
+      (a.parent_status != null && SECONDARY_STATUSES.includes(a.parent_status as ParentStatus)),
+  );
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -129,7 +139,9 @@ export default function StatusPopover({
       ref={ref}
       style={{
         position: "absolute",
-        zIndex: 1000,
+        // Popover sits above drawers but below modals — it's a
+        // contextual editor, not a focused dialog.
+        zIndex: "var(--z-modal)" as unknown as number,
         top: floatingPos?.top ?? fallbackPos?.top,
         left: floatingPos?.left ?? fallbackPos?.left,
         // Hide first paint until clamping resolves so we never flash off-screen.
@@ -142,13 +154,15 @@ export default function StatusPopover({
         <button onClick={onClose} className="text-gray-400 hover:text-gray-700">✕</button>
       </div>
 
+      {/* Primary: a single decision — what's the kid's status?
+          Three big buttons. "Not tracked" stays as a clear option to
+          undo a previous mark. */}
       <div className="mb-3">
-        <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Parent status</div>
         <div className="grid grid-cols-2 gap-1">
           <button
             onClick={() => setParentStatus(null)}
             className={
-              "px-2 py-1 rounded border text-left " +
+              "px-2 py-1.5 rounded border text-left " +
               (parentStatus === null
                 ? "border-blue-500 bg-blue-50 text-blue-800"
                 : "border-gray-200 hover:bg-gray-50")
@@ -156,93 +170,55 @@ export default function StatusPopover({
           >
             <span className="inline-block w-2 h-2 rounded-full mr-2 bg-gray-300" /> Not tracked
           </button>
-          {Object.entries(PARENT_STATUS_LABELS).map(([k, v]) => (
+          {PRIMARY_STATUSES.map((k) => (
             <button
               key={k}
-              onClick={() => setParentStatus(k as ParentStatus)}
+              onClick={() => setParentStatus(k)}
               className={
-                "px-2 py-1 rounded border text-left " +
+                "px-2 py-1.5 rounded border text-left " +
                 (parentStatus === k
                   ? "border-blue-500 bg-blue-50 text-blue-800"
                   : "border-gray-200 hover:bg-gray-50")
               }
             >
-              <span className={`inline-block w-2 h-2 rounded-full mr-2 ${v.dot}`} />
-              {v.label}
+              <span className={`inline-block w-2 h-2 rounded-full mr-2 ${PARENT_STATUS_DOT[k]}`} />
+              {PARENT_STATUS_LABEL[k]}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="flex items-center gap-4 mb-3">
-        <div>
-          <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Priority</div>
-          <div className="flex gap-1">
-            {[0, 1, 2, 3].map((n) => (
-              <button
-                key={n}
-                onClick={() => setPriority(n)}
-                className={
-                  "text-lg " + (priority >= n && n > 0 ? "text-amber-500" : "text-gray-300")
-                }
-                title={`Priority ${n}`}
-              >
-                {n === 0 ? "∅" : "★"}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex-1">
-          <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Snooze until</div>
-          <div className="flex gap-1 flex-wrap">
-            <button onClick={() => setSnooze(daysFromNow(1))}
-              className={"px-2 py-0.5 rounded border text-xs " + (snooze === daysFromNow(1) ? "border-blue-500 bg-blue-50" : "border-gray-200")}>
-              Tomorrow
-            </button>
-            <button onClick={() => {
-              // Next Saturday in IST — see util/ist.ts
-              const [yy, mm, dd] = todayISOInIST().split("-").map(Number);
-              const anchor = new Date(Date.UTC(yy, mm - 1, dd));
-              const dow = anchor.getUTCDay();
-              const delta = (6 - dow + 7) % 7 || 7;
-              setSnooze(daysFromNow(delta));
-            }}
-              className={"px-2 py-0.5 rounded border text-xs border-gray-200 hover:bg-gray-50"}>
-              Weekend
-            </button>
-            <input type="date"
-              value={snooze || ""}
-              onChange={(e) => setSnooze(e.target.value || null)}
-              className="px-1 py-0.5 rounded border border-gray-200 text-xs" />
-            {snooze && (
-              <button onClick={() => setSnooze(null)} className="text-xs text-red-700">clear</button>
-            )}
-          </div>
-        </div>
-      </div>
-
+      {/* Snooze — every parent uses this. Kept primary. */}
       <div className="mb-3">
-        <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Tags</div>
-        <div className="flex flex-wrap gap-1">
-          {FIXED_TAGS.map((t) => (
-            <button
-              key={t}
-              onClick={() => toggleTag(t)}
-              className={
-                "px-2 py-0.5 rounded-full border text-xs " +
-                (tags.includes(t)
-                  ? "border-blue-500 bg-blue-50 text-blue-800"
-                  : "border-gray-200 text-gray-600 hover:bg-gray-50")
-              }
-            >
-              {t}
-            </button>
-          ))}
+        <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Snooze until</div>
+        <div className="flex gap-1 flex-wrap items-center">
+          <button onClick={() => setSnooze(daysFromNow(1))}
+            className={"px-2 py-0.5 rounded border text-xs " + (snooze === daysFromNow(1) ? "border-blue-500 bg-blue-50" : "border-gray-200")}>
+            Tomorrow
+          </button>
+          <button onClick={() => {
+            const [yy, mm, dd] = todayISOInIST().split("-").map(Number);
+            const anchor = new Date(Date.UTC(yy, mm - 1, dd));
+            const dow = anchor.getUTCDay();
+            const delta = (6 - dow + 7) % 7 || 7;
+            setSnooze(daysFromNow(delta));
+          }}
+            className={"px-2 py-0.5 rounded border text-xs border-gray-200 hover:bg-gray-50"}>
+            Weekend
+          </button>
+          <input type="date"
+            value={snooze || ""}
+            onChange={(e) => setSnooze(e.target.value || null)}
+            className="px-1 py-0.5 rounded border border-gray-200 text-xs" />
+          {snooze && (
+            <button onClick={() => setSnooze(null)} className="text-xs text-red-700">clear</button>
+          )}
         </div>
       </div>
 
+      {/* Worth a chat — a one-line, parent-friendly nudge. Kept primary. */}
       <div className="mb-3 p-2 rounded border border-violet-200 bg-violet-50/40">
-        <label className="flex items-center gap-2 text-xs font-semibold text-violet-900 mb-1 cursor-pointer">
+        <label className="flex items-center gap-2 text-xs font-semibold text-violet-900 cursor-pointer">
           <input
             type="checkbox"
             checked={worthAChat}
@@ -254,7 +230,7 @@ export default function StatusPopover({
         {worthAChat && (
           <input
             type="text"
-            placeholder="Optional reason — e.g. ask why score dropped"
+            placeholder="Optional reason"
             value={worthAChatNote}
             onChange={(e) => setWorthAChatNote(e.target.value)}
             className="w-full border border-violet-200 rounded px-2 py-1 text-xs mt-1"
@@ -262,16 +238,91 @@ export default function StatusPopover({
         )}
       </div>
 
-      <div className="mb-3">
-        <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Note</div>
-        <textarea
-          rows={2}
-          className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-          placeholder="e.g. emailed teacher 2026-04-24"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-      </div>
+      {/* More options — opens secondary statuses, priority, tags, notes.
+          Auto-expanded if any of those fields already have data so
+          editing existing entries doesn't hide them. */}
+      <button
+        type="button"
+        onClick={() => setShowMore((x) => !x)}
+        className="text-xs text-gray-500 hover:text-gray-800 mb-2 flex items-center gap-1"
+      >
+        <span className={"inline-block transition-transform " + (showMore ? "rotate-90" : "")}>▶</span>
+        <span>{showMore ? "Hide" : "More"} options</span>
+      </button>
+
+      {showMore && (
+        <>
+          <div className="mb-3">
+            <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Other statuses</div>
+            <div className="grid grid-cols-3 gap-1">
+              {SECONDARY_STATUSES.map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setParentStatus(k)}
+                  className={
+                    "px-2 py-1 rounded border text-left text-xs " +
+                    (parentStatus === k
+                      ? "border-blue-500 bg-blue-50 text-blue-800"
+                      : "border-gray-200 hover:bg-gray-50")
+                  }
+                >
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${PARENT_STATUS_DOT[k]}`} />
+                  {PARENT_STATUS_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Priority</div>
+            <div className="flex gap-1">
+              {[0, 1, 2, 3].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setPriority(n)}
+                  className={
+                    "text-lg " + (priority >= n && n > 0 ? "text-amber-500" : "text-gray-300")
+                  }
+                  title={`Priority ${n}`}
+                >
+                  {n === 0 ? "∅" : "★"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Tags</div>
+            <div className="flex flex-wrap gap-1">
+              {FIXED_TAGS.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => toggleTag(t)}
+                  className={
+                    "px-2 py-0.5 rounded-full border text-xs " +
+                    (tags.includes(t)
+                      ? "border-blue-500 bg-blue-50 text-blue-800"
+                      : "border-gray-200 text-gray-600 hover:bg-gray-50")
+                  }
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Note</div>
+            <textarea
+              rows={2}
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+              placeholder="e.g. emailed teacher today"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </div>
+        </>
+      )}
 
       <div className="flex gap-2 justify-end">
         <button onClick={onClose} className="px-3 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>

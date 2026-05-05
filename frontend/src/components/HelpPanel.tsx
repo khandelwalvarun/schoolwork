@@ -46,7 +46,7 @@ export default function HelpPanel() {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-start justify-center pt-[10vh] fade-in"
+      className="fixed inset-0 z-fullscreen flex items-start justify-center pt-[10vh] fade-in"
       style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={() => setOpen(false)}
     >

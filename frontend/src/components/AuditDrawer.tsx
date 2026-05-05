@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { api, Assignment, SpellBeeList, StatusHistoryEntry } from "../api";
 import Attachments from "./Attachments";
 import { AssignmentAskSummary } from "./AssignmentAskSummary";
 import { GradeAnomalyCard } from "./GradeAnomalyCard";
+import { ItemCommentsThread } from "./ItemCommentsThread";
 import { SelfPredictionControl } from "./SelfPredictionControl";
-import StatusPopover, { EffectiveStatusChip } from "./StatusPopover";
-import { formatDate, formatDateTime, formatDDMMMYYTime } from "../util/dates";
+import { WorthAChatToggle } from "./WorthAChatToggle";
+import { EffectiveStatusChip } from "./StatusPopover";
+import { formatDate, formatDateTime } from "../util/dates";
 
 const SPELLBEE_RE = /spell(?:ing)?\s*bee/i;
 const LIST_NUM_RE = /\blist\s*[-#]?\s*(\d{1,3})\b/i;
@@ -57,8 +59,6 @@ export default function AuditDrawer({
     queryKey: ["history", a.id],
     queryFn: () => api.assignmentHistory(a.id),
   });
-  const editBtnRef = useRef<HTMLButtonElement | null>(null);
-  const [popover, setPopover] = useState<DOMRect | null>(null);
 
   const isSpellBee = useMemo(
     () => SPELLBEE_RE.test(`${a.title ?? ""} ${a.title_en ?? ""} ${a.notes_en ?? ""} ${a.normalized?.body ?? ""}`),
@@ -87,52 +87,38 @@ export default function AuditDrawer({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex" style={{ background: "rgba(0,0,0,0.3)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-drawer flex" style={{ background: "rgba(0,0,0,0.3)" }} onClick={onClose}>
       <div
         className="ml-auto w-[540px] h-full bg-white shadow-2xl overflow-y-auto slide-in-right"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-gray-200 sticky top-0 bg-white flex items-baseline justify-between">
-          <div>
-            <div className="text-xs text-gray-500">{a.subject}</div>
-            <h3 className="text-lg font-bold">{a.title}</h3>
+        {/* Compact header: subject + title + a single inline meta
+            row with chip · date · snooze · priority. The "due" word
+            is dropped (the date alone is enough — for grades it's
+            the graded date, for assignments it's the due date) and
+            the body text uses text-meta to harmonise with the
+            tray-strip vocabulary on Today. */}
+        <div className="px-5 py-3 border-b border-gray-200 sticky top-0 bg-white flex items-baseline justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-meta text-gray-500">{a.subject}</div>
+            <h3 className="text-lede font-bold leading-tight">{a.title}</h3>
             {a.title_en && a.title_en !== a.title && (
-              <div className="text-sm text-gray-600 italic">→ {a.title_en}</div>
+              <div className="text-body text-gray-600 italic">→ {a.title_en}</div>
             )}
-            <div className="text-xs text-gray-500 mt-1">
-              due {formatDate(a.due_or_date)} · portal: <b>{a.portal_status || "pending"}</b>
-              {a.parent_status && <> · parent: <b>{a.parent_status}</b></>}
-              {a.priority > 0 && <> · priority: {"★".repeat(a.priority)}</>}
-              {a.snooze_until && <> · snoozed until {a.snooze_until}</>}
-            </div>
-            {a.first_seen_at && (() => {
-              const isGrade = (a as unknown as { graded_date?: string | null }).graded_date != null;
-              const label = isGrade ? "First detected by scraper" : "Assigned";
-              return (
-                <div className="text-xs text-gray-500 mt-1" title={a.first_seen_at}>
-                  {label}: <b className="font-mono">{formatDDMMMYYTime(a.first_seen_at)}</b>
-                  {a.last_seen_at && a.last_seen_at !== a.first_seen_at && (
-                    <> · last seen <span className="font-mono">{formatDDMMMYYTime(a.last_seen_at)}</span></>
-                  )}
-                </div>
-              );
-            })()}
-            <div className="flex items-center gap-2 mt-2">
+            <div className="mt-1.5 flex items-center gap-2 text-meta text-gray-600 flex-wrap">
               <EffectiveStatusChip a={a} />
-              <button
-                ref={editBtnRef}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const r = (editBtnRef.current as HTMLButtonElement).getBoundingClientRect();
-                  setPopover(r);
-                }}
-                className="text-xs px-2 py-0.5 border border-blue-300 rounded text-blue-700 hover:bg-blue-50"
-              >
-                Edit status
-              </button>
+              {a.due_or_date && <span>· {formatDate(a.due_or_date)}</span>}
+              {a.snooze_until && <span>· 💤 {a.snooze_until}</span>}
+              {a.priority > 0 && <span className="text-amber-600">· {"★".repeat(a.priority)}</span>}
             </div>
           </div>
-          <button onClick={onClose} className="text-2xl text-gray-400 hover:text-gray-700 leading-none">×</button>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="text-xl text-gray-400 hover:text-gray-700 leading-none shrink-0"
+          >
+            ×
+          </button>
         </div>
 
         <div className="px-5 py-4 space-y-5">
@@ -190,47 +176,79 @@ export default function AuditDrawer({
 
           <SelfPredictionControl a={a} />
 
-          {a.tags.length > 0 && (
-            <section>
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Tags</div>
-              <div className="flex flex-wrap gap-1">
-                {a.tags.map((t) => (
-                  <span key={t} className="px-2 py-0.5 rounded-full border border-blue-200 bg-blue-50 text-blue-800 text-xs">
-                    {t}
-                  </span>
-                ))}
+          {/* Worth-a-chat (PTM flag) — inline toggle + editable reason.
+              Lives next to comments because both are "annotate this
+              item for future use" actions. */}
+          <WorthAChatToggle a={a} />
+
+          {/* Per-item parent comments — observation log keyed on this
+              row. Comments here are first-class signal for the LLM
+              pattern-mining job + the Analysis "Ask Claude" page. */}
+          <ItemCommentsThread itemId={a.id} />
+
+          {/* Advanced — tags / status notes / attachments. Collapsed
+              by default per progressive disclosure: most opens of the
+              drawer don't need to look at these. Auto-expanded only
+              when there are >2 attachments (the user probably opened
+              the drawer to see them). */}
+          {(a.tags.length > 0 ||
+            a.status_notes ||
+            (a.attachments && a.attachments.length > 0)) && (
+            <details
+              className="group"
+              open={(a.attachments?.length ?? 0) > 2}
+            >
+              <summary className="text-xs font-semibold text-gray-500 uppercase cursor-pointer flex items-center gap-2 select-none">
+                <span className="text-gray-400 transition-transform group-open:rotate-90 inline-block w-3" aria-hidden>▶</span>
+                <span>More</span>
+                <span className="text-[10px] normal-case font-normal text-gray-400">
+                  {[
+                    a.tags.length > 0 ? `${a.tags.length} tag${a.tags.length === 1 ? "" : "s"}` : null,
+                    a.status_notes ? "notes" : null,
+                    (a.attachments?.length ?? 0) > 0
+                      ? `${a.attachments?.length} file${a.attachments?.length === 1 ? "" : "s"}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </summary>
+              <div className="mt-2 space-y-3">
+                {a.tags.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Tags</div>
+                    <div className="flex flex-wrap gap-1">
+                      {a.tags.map((t) => (
+                        <span key={t} className="chip-blue">{t}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {a.status_notes && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Notes</div>
+                    <div className="text-sm whitespace-pre-wrap">{a.status_notes}</div>
+                  </div>
+                )}
+                {a.attachments && a.attachments.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Attachments</div>
+                    <Attachments items={a.attachments} />
+                  </div>
+                )}
               </div>
-            </section>
+            </details>
           )}
 
-          {a.status_notes && (
-            <section>
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Notes</div>
-              <div className="text-sm whitespace-pre-wrap">{a.status_notes}</div>
-            </section>
-          )}
-
-          {a.attachments && a.attachments.length > 0 && (
-            <section>
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Attachments</div>
-              <Attachments items={a.attachments} />
-            </section>
-          )}
-
-          <section>
-            <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Status timeline</div>
-            {!history && (
-              <div className="space-y-2" aria-hidden="true">
-                <div className="skeleton h-3 w-2/3" />
-                <div className="skeleton h-3 w-1/2" />
-                <div className="skeleton h-3 w-3/5" />
-              </div>
-            )}
-            {history && history.length === 0 && (
-              <div className="text-gray-500 text-sm">No state changes recorded yet.</div>
-            )}
-            {history && history.length > 0 && (
-              <ol className="space-y-2">
+          {/* History — hidden by default. Most parents don't need to
+              see every status flip. Open if you want to audit. */}
+          {history && history.length > 0 && (
+            <details className="group">
+              <summary className="text-xs font-semibold text-gray-500 uppercase cursor-pointer flex items-center gap-2 select-none">
+                <span className="text-gray-400 transition-transform group-open:rotate-90 inline-block w-3" aria-hidden>▶</span>
+                <span>Activity ({history.length})</span>
+              </summary>
+              <ol className="mt-2 space-y-2">
                 {history.map((h: StatusHistoryEntry) => (
                   <li key={h.id} className="border-l-2 border-gray-200 pl-3 pb-2">
                     <div className="text-xs text-gray-500">
@@ -247,17 +265,10 @@ export default function AuditDrawer({
                   </li>
                 ))}
               </ol>
-            )}
-          </section>
+            </details>
+          )}
         </div>
       </div>
-      {popover && (
-        <StatusPopover
-          a={a}
-          anchorRect={popover}
-          onClose={() => setPopover(null)}
-        />
-      )}
     </div>
   );
 }

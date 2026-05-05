@@ -16,6 +16,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, Child, KidEvent } from "../api";
+import { Button } from "../components/Button";
 
 const TYPE_TONE: Record<string, string> = {
   audition:       "border-pink-300 text-pink-800 bg-pink-50",
@@ -268,25 +269,26 @@ export default function Events() {
       <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
         <h2 className="text-2xl font-bold">Events</h2>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
+          <Button
+            size="sm"
+            variant="secondary"
             onClick={() => extract.mutate()}
             disabled={extract.isPending}
-            className="text-xs px-2 py-1 border border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100 rounded disabled:opacity-50"
+            loading={extract.isPending}
             title="Ask Claude to read recent school messages and extract any dated events"
           >
-            {extract.isPending ? "Scanning…" : "📨 Scan messages"}
-          </button>
-          <button
-            type="button"
+            {extract.isPending ? "Scanning…" : "Scan messages"}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
             onClick={() => {
               setEditing(defaultEvent());
               setShowForm(true);
             }}
-            className="text-xs px-2 py-1 border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100 rounded"
           >
             + Add event
-          </button>
+          </Button>
         </div>
       </div>
       <p className="text-sm text-gray-600 mb-4">

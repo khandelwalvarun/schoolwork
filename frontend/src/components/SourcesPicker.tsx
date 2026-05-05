@@ -73,7 +73,7 @@ export function SourcesPicker({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      className="fixed inset-0 z-modal flex items-center justify-center p-4"
       onClick={onClose}
       style={{ background: "oklch(0% 0 0 / 0.45)" }}
     >

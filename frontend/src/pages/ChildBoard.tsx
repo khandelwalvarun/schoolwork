@@ -21,6 +21,7 @@ import { SkeletonBoardColumn } from "../components/Skeleton";
 import { useOptimisticPatch } from "../components/useOptimisticPatch";
 import { ReviewPracticeButton } from "../components/ReviewPracticeButton";
 import { WorthAChatTray } from "../components/WorthAChatTray";
+import { CategoryChip, WorthAChatChip } from "../components/StatusChips";
 import { formatDate } from "../util/dates";
 
 type ColumnKey = "not_started" | "in_progress" | "done_at_home" | "submitted" | "graded";
@@ -58,24 +59,13 @@ function PriorityStar({ n }: { n: number }) {
   return <span className="text-amber-500 text-xs">{"★".repeat(n)}</span>;
 }
 
-/** Small colour-coded category badge — mirrors the one in
- *  AssignmentList so the row visual is consistent across views. */
+/** Card-edge category badge wraps the canonical CategoryChip with the
+ *  card's `mr-1.5` spacing. Single source of truth lives in
+ *  StatusChips.tsx. */
 function CategoryBadge({ category }: { category: string | null | undefined }) {
-  const cat = category || "homework";
-  const meta =
-    cat === "review"   ? { letter: "R", bg: "bg-purple-600", label: "Review" }
-  : cat === "classwork"? { letter: "C", bg: "bg-gray-500",   label: "Classwork (in class)" }
-  :                       { letter: "H", bg: "bg-blue-600",  label: "Homework" };
   return (
-    <span
-      className={
-        "shrink-0 inline-flex items-center justify-center w-4 h-4 rounded text-white text-[9px] font-bold mr-1.5 " +
-        meta.bg
-      }
-      title={meta.label}
-      aria-label={meta.label}
-    >
-      {meta.letter}
+    <span className="mr-1.5 inline-flex">
+      <CategoryChip category={category as "homework" | "review" | "classwork" | null | undefined} />
     </span>
   );
 }
@@ -109,16 +99,7 @@ function Card({
         </div>
         <div className="flex items-center gap-1">
           {a.discuss_with_teacher_at && (
-            <span
-              className="text-[10px] px-1 py-0 rounded bg-violet-100 text-violet-800 border border-violet-200"
-              title={
-                a.discuss_with_teacher_note
-                  ? `Worth a chat at PTM — ${a.discuss_with_teacher_note}`
-                  : "Worth a chat at PTM"
-              }
-            >
-              💬
-            </span>
+            <WorthAChatChip note={a.discuss_with_teacher_note} compact />
           )}
           <ReviewPracticeButton a={a} />
           <PriorityStar n={a.priority} />

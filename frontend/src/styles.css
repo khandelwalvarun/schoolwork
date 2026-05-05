@@ -12,8 +12,34 @@
  * follows automatically.
  *
  * Grayscale-first philosophy stays: neutrals carry hierarchy, color is
- * semantic-only (red = overdue, green = done, amber = action-needed,
- * blue = submitted, purple = syllabus).
+ * semantic-only.
+ *
+ * ─────────── Semantic colour precedence (the rule) ────────────
+ *   red     blocker / overdue / error
+ *   amber   attention / due-soon / dip
+ *   emerald success / on-track / submitted-on-time
+ *   blue    link / primary action / submitted
+ *   violet  parent-flagged ("I marked this")
+ *   purple  system-classified (school / syllabus)
+ *   gray    neutral / dormant / muted
+ *
+ * If you reach for a hue, check this list first. If a new use case
+ * doesn't fit, extend this block — don't add a new ad-hoc colour.
+ *
+ * ─────────── Z-index named scale ────────────
+ *   --z-base       static/sticky non-overlay content
+ *   --z-dropdown   inline expanders, sortable handles
+ *   --z-sticky     sticky page headers
+ *   --z-tray       BulkActionBar, sticky toasts
+ *   --z-drawer     AuditDrawer, TopicDetailPanel, brief panels
+ *   --z-modal      CommandPalette, SourcesPicker, SyncLogModal
+ *   --z-fullscreen RemoteLoginModal, full-screen overlays
+ *   --z-toast      transient toasts that must beat everything
+ *
+ * Use the CSS vars (e.g. style={{ zIndex: 'var(--z-drawer)' }}) or
+ * the helper classes z-base / z-dropdown / etc. defined under
+ * @layer utilities below. Do NOT use raw z-[1000] — that's how we
+ * got into trouble.
  */
 
 :root {
@@ -56,6 +82,16 @@
   --blue-bg:   oklch(97% 0.02 255);
   --purple:    oklch(40% 0.22 290);
   --purple-bg: oklch(96% 0.02 290);
+
+  /* ── Z-index named scale (see comment block at top) ───────────────── */
+  --z-base: 10;
+  --z-dropdown: 20;
+  --z-sticky: 30;
+  --z-tray: 40;
+  --z-drawer: 50;
+  --z-modal: 60;
+  --z-fullscreen: 70;
+  --z-toast: 80;
 }
 
 /* Type the accent so :root → :root[data-theme=dark] transitions interpolate
@@ -124,6 +160,18 @@
 }
 
 @layer utilities {
+  /* Z-index helpers — read from CSS vars defined in :root above so
+     the named scale is the single source of truth. Use these
+     instead of z-[NNN]. */
+  .z-base       { z-index: var(--z-base); }
+  .z-dropdown   { z-index: var(--z-dropdown); }
+  .z-sticky     { z-index: var(--z-sticky); }
+  .z-tray       { z-index: var(--z-tray); }
+  .z-drawer     { z-index: var(--z-drawer); }
+  .z-modal      { z-index: var(--z-modal); }
+  .z-fullscreen { z-index: var(--z-fullscreen); }
+  .z-toast      { z-index: var(--z-toast); }
+
   .fade-in   { animation: fadeIn 140ms ease-out; }
   .slide-in-right { animation: slideInRight 160ms cubic-bezier(0.16,1,0.3,1); }
   /* Skeleton-loader: same surface tint + a subtle shimmer pulse. Honors
@@ -166,13 +214,25 @@
   .chip-green  { @apply chip; background: var(--green-bg);  color: var(--green);  }
   .chip-purple { @apply chip; background: var(--purple-bg); color: var(--purple); }
   .chip-gray   { @apply chip; background: var(--bg-muted);  color: var(--ink-secondary); }
+  /* Violet — reserved for parent-flagged "worth a chat" / escalated state.
+     Visually distinct from purple (system-categorised reviews) so the user
+     can tell "I flagged this" from "school marked this". */
+  .chip-violet { @apply chip; background: oklch(94% 0.04 295); color: oklch(36% 0.18 295); }
+  /* Emerald — reserved for success / completed / on-track signals. */
+  .chip-emerald { @apply chip; background: oklch(94% 0.05 152); color: oklch(36% 0.13 152); }
 
-  /* Section heading — used above each bucket / block */
-  .h-section { @apply text-[11px] font-semibold uppercase tracking-wider text-gray-500; }
+  /* Section heading — used above each bucket / block.
+     Sentence case (NOT uppercase tracked-out) so it harmonises with
+     the Tray strip headers (which use sentence-case font-medium).
+     Earlier this was uppercase + tracking-wider, which made every
+     section label compete for attention with primary content. */
+  .h-section { @apply text-meta font-semibold text-gray-600; }
 
-  /* A single assignment row: compact, scannable, hover-reveal actions */
+  /* A single assignment row: compact, scannable. Tighter py-1.5
+     density (Tufte: data-ink ratio — chrome around the data cost
+     vertical real estate). Target ~36px row height. */
   .row {
-    @apply grid items-center gap-3 px-3 py-2 border-t border-[color:var(--line-soft)] text-sm;
+    @apply grid items-center gap-3 px-3 py-1.5 border-t border-[color:var(--line-soft)] text-body;
     grid-template-columns: 20px 7rem 1fr 7rem 8rem;
   }
   .row:hover { background: var(--bg-muted); }

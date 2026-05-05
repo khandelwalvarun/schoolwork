@@ -1,17 +1,18 @@
 /**
  * DailyBriefCard — one-paragraph synthesis per kid for the Today page.
  *
- * Backed by services/daily_brief.py (Claude-driven via the existing
- * claude_cli backend, cached for the day server-side). Shows a quiet
- * "nothing pressing today" state when the kid has no items in the
- * 48-hour window.
+ * Built on the shared Tray primitive — same chevron/count/summary
+ * pattern as the other Today strips. Default-expanded when there's
+ * actionable signal; default-collapsed on a quiet day so the page
+ * stays calm.
  *
- * A small "↻" link lets the parent force a refresh — useful if a sync
- * just landed and they want the latest synthesis without waiting for
- * the cache to invalidate.
+ * Backed by services/daily_brief.py (Claude-driven via the existing
+ * claude_cli backend, cached for the day server-side). The "↻"
+ * action lives in the Tray's right slot.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, DailyBrief } from "../api";
+import { Tray, trayLineClass } from "./Tray";
 
 export function DailyBriefCard() {
   const qc = useQueryClient();
@@ -32,36 +33,49 @@ export function DailyBriefCard() {
 
   if (isLoading) {
     return (
-      <section className="surface mb-4 p-4">
-        <div className="skeleton h-3 w-1/2 rounded mb-2" />
-        <div className="skeleton h-3 w-3/4 rounded" />
-      </section>
+      <div className="mb-4 px-3 py-1.5 rounded border border-gray-200 bg-gray-50/40">
+        <div className="skeleton h-3 w-1/3 rounded" />
+      </div>
     );
   }
   if (!data || data.length === 0) return null;
 
   const anySignal = data.some((b) => b.has_signal);
+  const kidCount = data.length;
 
   return (
-    <section className="surface mb-4 p-4">
-      <div className="flex items-baseline justify-between mb-1">
-        <span className="h-section text-purple-700">
-          Today's read
-          {!anySignal && <span className="ml-2 text-gray-400 normal-case font-normal">· quiet day</span>}
-        </span>
+    <Tray
+      title="📝 Today's read"
+      summary={
+        anySignal
+          ? `${kidCount} kid${kidCount === 1 ? "" : "s"} · click to expand`
+          : "quiet day"
+      }
+      tone="purple"
+      // Auto-expand when there's signal; collapse on a quiet day so
+      // the page is shorter when nothing's pressing.
+      defaultCollapsed={!anySignal}
+      rightSlot={
         <button
           type="button"
-          onClick={() => refreshAll.mutate()}
+          onClick={(e) => {
+            e.stopPropagation();
+            refreshAll.mutate();
+          }}
           disabled={refreshAll.isPending}
-          className="text-xs text-gray-500 hover:text-gray-800 disabled:opacity-50"
+          className="text-meta text-purple-700 hover:underline disabled:opacity-50"
           title="Force a fresh synthesis (calls Claude)"
         >
           {refreshAll.isPending ? "refreshing…" : "↻ refresh"}
         </button>
-      </div>
-      <ul className="space-y-1.5">
+      }
+    >
+      <ul className="space-y-1">
         {data.map((b) => (
-          <li key={b.child_id} className="text-sm leading-snug">
+          <li
+            key={b.child_id}
+            className={trayLineClass("purple") + " leading-snug"}
+          >
             <span className="font-semibold text-gray-700 mr-1">
               {b.child_name}:
             </span>
@@ -75,6 +89,6 @@ export function DailyBriefCard() {
           </li>
         ))}
       </ul>
-    </section>
+    </Tray>
   );
 }

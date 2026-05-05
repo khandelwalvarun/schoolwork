@@ -18,6 +18,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import { Button } from "../components/Button";
+import { Tray, trayLineClass } from "../components/Tray";
 
 type Topic = {
   id: number;
@@ -93,15 +95,16 @@ export default function Mindspark() {
     <div className="pb-12">
       <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
         <h2 className="text-2xl font-bold">Mindspark</h2>
-        <button
-          type="button"
+        <Button
+          size="sm"
+          variant="primary"
           onClick={() => sync.mutate(undefined)}
           disabled={busyKid !== null}
-          className="text-xs px-2 py-1 border border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100 rounded disabled:opacity-50"
+          loading={busyKid === -1}
           title="Trigger a metrics scrape now (slow — ~2 minutes per kid)"
         >
-          {busyKid === -1 ? "Syncing all…" : "↻ Sync all kids"}
-        </button>
+          {busyKid === -1 ? "Syncing all…" : "Sync all kids"}
+        </Button>
       </div>
       <p className="text-sm text-gray-600 mb-6">
         Performance metrics only — score, regularity, weak topics. The full
@@ -172,65 +175,86 @@ function KidSection({
     };
   }, [kid.sessions]);
 
+  // Show top 3 weakest topics by default; the rest hide behind the
+  // tray's collapse. Keeps the page scannable when a kid has 30+
+  // tracked topics. Bottom-up sort means concerns surface first.
+  const weakestThree = topicsByAccuracy.slice(0, 3);
+  const recentSessions = kid.sessions.slice(0, 5);
+
   return (
-    <section className="surface p-5">
-      <div className="flex items-baseline justify-between mb-3">
-        <h3 className="text-lg font-semibold">{kid.child_name}</h3>
-        <button
-          type="button"
+    <section className="mb-8 pt-5 border-t border-[color:var(--line)]">
+      <div className="flex items-baseline justify-between mb-2">
+        <h3 className="text-lede font-bold">{kid.child_name}</h3>
+        <Button
+          size="sm"
+          variant="ghost"
           onClick={onSync}
           disabled={busy}
-          className="text-xs px-2 py-1 border border-gray-300 hover:bg-gray-50 rounded disabled:opacity-50"
+          loading={busy}
         >
-          {busy ? "syncing…" : "↻ sync this kid"}
-        </button>
+          {busy ? "syncing…" : "sync this kid"}
+        </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 text-sm">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500">Sessions</div>
-          <div className="text-xl font-mono">{totals.session_count}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500">Questions</div>
-          <div className="text-xl font-mono">{totals.questions}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500">Accuracy</div>
-          <div className="text-xl font-mono">{fmtPct(totals.accuracy_pct)}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500">Time</div>
-          <div className="text-xl font-mono">{totals.time_min} min</div>
-        </div>
+      {/* One-line stats strip — number-first, no giant text. */}
+      <div className="flex items-baseline gap-x-5 gap-y-1 text-body flex-wrap mb-3">
+        <span>
+          <span className="font-semibold text-gray-900 tabular-nums">{totals.session_count}</span>
+          <span className="text-gray-500 ml-1">sessions</span>
+        </span>
+        <span>
+          <span className="font-semibold text-gray-900 tabular-nums">{totals.questions}</span>
+          <span className="text-gray-500 ml-1">questions</span>
+        </span>
+        <span>
+          <span
+            className={
+              "font-semibold tabular-nums " +
+              (totals.accuracy_pct != null && totals.accuracy_pct < 70
+                ? "text-red-700"
+                : "text-emerald-700")
+            }
+          >
+            {fmtPct(totals.accuracy_pct)}
+          </span>
+          <span className="text-gray-500 ml-1">accuracy</span>
+        </span>
+        <span>
+          <span className="font-semibold text-gray-900 tabular-nums">{totals.time_min}</span>
+          <span className="text-gray-500 ml-1">min</span>
+        </span>
       </div>
 
-      {topicsByAccuracy.length === 0 ? (
-        <div className="text-sm text-gray-500 italic mb-4">
-          No topic data yet — run a sync.
-        </div>
-      ) : (
-        <>
-          <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">
-            Topics · sorted by accuracy (weakest first)
-          </div>
-          <ul className="text-sm divide-y divide-gray-100 mb-5">
-            {topicsByAccuracy.map((t) => (
-              <li key={t.id} className="py-1.5 flex items-center gap-3">
-                <span className="text-xs uppercase tracking-wider text-gray-500 w-24 flex-shrink-0">
+      {/* Weakest topics — auto-shows top 3, expand for more. */}
+      {topicsByAccuracy.length > 0 && (
+        <Tray
+          title="🎯 Weakest topics"
+          count={topicsByAccuracy.length}
+          summary={
+            topicsByAccuracy.length > weakestThree.length
+              ? `showing weakest ${weakestThree.length}`
+              : undefined
+          }
+          tone="amber"
+          defaultCollapsed={false}
+        >
+          <ul className="space-y-0.5">
+            {(topicsByAccuracy.length > 3 ? topicsByAccuracy : weakestThree).map((t) => (
+              <li key={t.id} className={trayLineClass("amber") + " flex items-baseline gap-2"}>
+                <span className="text-meta uppercase tracking-wider text-gray-500 shrink-0 w-20 truncate">
                   {t.subject}
                 </span>
-                <span className="flex-1 truncate">{t.topic_name}</span>
+                <span className="flex-1 truncate text-body">{t.topic_name}</span>
                 {t.mastery_level && (
                   <span
-                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border ${
+                    className={`inline-flex items-center px-1.5 py-0 rounded text-meta border ${
                       MASTERY_TONE[t.mastery_level] || "border-gray-200 bg-gray-50 text-gray-700"
                     }`}
                   >
                     {t.mastery_level}
                   </span>
                 )}
-                <span className="text-xs text-gray-500 whitespace-nowrap font-mono">
+                <span className="text-meta text-gray-500 whitespace-nowrap tabular-nums">
                   {fmtPct(t.accuracy_pct)}
                   {t.questions_attempted != null && (
                     <span className="text-gray-400"> · {t.questions_attempted}q</span>
@@ -239,35 +263,47 @@ function KidSection({
               </li>
             ))}
           </ul>
-        </>
+        </Tray>
       )}
 
+      {/* Recent sessions — collapsed by default; the totals strip
+          above already gives the gestalt. Open if you want to look
+          at individual practice runs. */}
       {kid.sessions.length > 0 && (
-        <>
-          <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">
-            Recent sessions
-          </div>
-          <ul className="text-sm divide-y divide-gray-100">
-            {kid.sessions.map((s) => (
-              <li key={s.id} className="py-1.5 flex items-center gap-3">
-                <span className="text-xs text-gray-500 w-16 flex-shrink-0">
+        <Tray
+          title="🕒 Recent sessions"
+          count={kid.sessions.length}
+          summary={kid.sessions.length > 5 ? "first 5 shown" : undefined}
+          tone="gray"
+          defaultCollapsed
+        >
+          <ul className="space-y-0.5">
+            {recentSessions.map((s) => (
+              <li key={s.id} className={trayLineClass("gray") + " flex items-baseline gap-2"}>
+                <span className="text-meta text-gray-500 shrink-0 w-12">
                   {fmtDate(s.started_at)}
                 </span>
                 {s.subject && (
-                  <span className="text-xs uppercase tracking-wider text-gray-500 w-20 flex-shrink-0">
+                  <span className="text-meta uppercase tracking-wider text-gray-500 shrink-0 w-20 truncate">
                     {s.subject}
                   </span>
                 )}
-                <span className="flex-1 truncate text-gray-800">
+                <span className="flex-1 truncate text-body text-gray-800">
                   {s.topic_name || "(general)"}
                 </span>
-                <span className="text-xs text-gray-500 font-mono whitespace-nowrap">
+                <span className="text-meta text-gray-500 whitespace-nowrap tabular-nums">
                   {s.questions_correct ?? "?"}/{s.questions_total ?? "?"} · {fmtPct(s.accuracy_pct)} · {fmtMin(s.duration_sec)}
                 </span>
               </li>
             ))}
           </ul>
-        </>
+        </Tray>
+      )}
+
+      {topicsByAccuracy.length === 0 && kid.sessions.length === 0 && (
+        <div className="text-meta text-gray-500 italic">
+          No data yet — run a sync.
+        </div>
       )}
     </section>
   );

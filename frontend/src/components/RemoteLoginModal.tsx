@@ -163,7 +163,7 @@ export default function RemoteLoginModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center fade-in"
+      className="fixed inset-0 z-fullscreen flex items-center justify-center fade-in"
       style={{ background: "rgba(0,0,0,0.6)" }}
     >
       <div className="bg-white rounded-xl shadow-2xl border border-[color:var(--line)] flex flex-col"

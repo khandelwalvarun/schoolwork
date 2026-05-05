@@ -119,7 +119,7 @@ export function TopicDetailPanel({
 
   return (
     <div
-      className="fixed inset-0 z-50"
+      className="fixed inset-0 z-drawer"
       onClick={onClose}
       style={{ background: "oklch(0% 0 0 / 0.18)" }}
     >

@@ -1,42 +1,43 @@
 import { useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Assignment } from "../api";
+import { Assignment, ParentStatus } from "../api";
 import TitleBlock from "./TitleBlock";
 import Attachments from "./Attachments";
 import QuickActions from "./QuickActions";
 import { ReviewPracticeButton } from "./ReviewPracticeButton";
 import { EffectiveStatusChip } from "./StatusPopover";
+import { CategoryChip, WorthAChatChip } from "./StatusChips";
+import { useOptimisticPatch } from "./useOptimisticPatch";
+import { useItemCommentCounts } from "./useItemCommentCounts";
 import { formatDate } from "../util/dates";
 
 function PriorityStar({ n }: { n: number }) {
   if (n <= 0) return null;
-  return <span className="text-amber-500 text-xs mr-1">{"★".repeat(n)}</span>;
-}
-
-/** Phase 26 — solid colour-coded leading badge in the subject
- *  column on EVERY row, sourced from Veracross's own `type` field
- *  (mapped server-side). The intent: scan the left edge of the list
- *  and see at a glance which rows are homework / review / classwork
- *  without reading any text. Three colours, each with a one-letter
- *  monogram so the badge stays readable when squeezed.
- */
-function CategoryBadge({ category }: { category: string | null | undefined }) {
-  const cat = category || "homework";
-  const meta =
-    cat === "review"   ? { letter: "R", bg: "bg-purple-600", label: "Review" }
-  : cat === "classwork"? { letter: "C", bg: "bg-gray-500",   label: "Classwork (in class)" }
-  :                       { letter: "H", bg: "bg-blue-600",  label: "Homework" };
+  // Single star, opacity-graded by priority. Three stacked stars
+  // visually screamed even when nothing was overdue. One star, darker
+  // = higher priority, reads as a pellet rather than a row of asterisks.
+  const tone =
+    n >= 3 ? "text-amber-600" : n === 2 ? "text-amber-500" : "text-amber-400";
   return (
     <span
-      className={
-        "shrink-0 inline-flex items-center justify-center w-5 h-5 rounded text-white text-[10px] font-bold mr-2 " +
-        meta.bg
-      }
-      title={meta.label}
-      aria-label={meta.label}
+      className={`${tone} text-xs mr-1`}
+      title={`Priority ${n}`}
+      aria-label={`Priority ${n}`}
     >
-      {meta.letter}
+      ★
+    </span>
+  );
+}
+
+/** Category leading badge — solid H/R/C letter so the left edge of
+ *  the list reads as a colour-coded skim. Canonical implementation
+ *  lives in StatusChips.tsx (CategoryChip); we wrap it here to keep
+ *  the row's `mr-2` spacing without polluting the canonical chip. */
+function CategoryBadge({ category }: { category: string | null | undefined }) {
+  return (
+    <span className="mr-2 inline-flex">
+      <CategoryChip category={category as "homework" | "review" | "classwork" | null | undefined} />
     </span>
   );
 }
@@ -93,22 +94,57 @@ export function AssignmentRow({
   onToggleSelect,
   onOpenAudit,
   onOpenPopover,
+  commentCount = 0,
 }: {
   a: Assignment;
   isSelected: boolean;
   onToggleSelect: (id: number) => void;
   onOpenAudit: (a: Assignment) => void;
   onOpenPopover: (a: Assignment, rect: DOMRect) => void;
+  commentCount?: number;
 }) {
   // Phase 24 — attention zone styles. Fresh: amber left-rule + soft tint.
   // Archived: muted text + line-through title. Steady: default.
   const zone = a.attention_zone || "steady";
+  // Calmer zone styling — narrower fresh accent rule, softer tint.
+  // The previous border-l-4 + bg-amber-50/30 read as a warning band
+  // even though "fresh" is just informational.
   const zoneClass =
     zone === "fresh"
-      ? " border-l-4 border-l-amber-300 bg-amber-50/30"
+      ? " border-l-2 border-l-amber-300"
       : zone === "archived"
       ? " text-gray-400"
       : "";
+  const optimisticPatch = useOptimisticPatch();
+  // Keyboard quick-mark: pressing "d" while the row is focused
+  // toggles done-at-home. "p" toggles worth-a-chat. "s" snoozes 1
+  // day. Single-key shortcuts only fire when the row itself has
+  // focus (not when typing in a child input), so they don't trip
+  // unexpectedly. See QuickActions for the same actions on click.
+  const onRowKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "d") {
+      e.preventDefault();
+      const isDone =
+        a.parent_status === "done_at_home" || a.parent_status === "submitted";
+      const next: ParentStatus | null =
+        isDone && a.parent_status === "done_at_home" ? null : "done_at_home";
+      optimisticPatch(a.id, { parent_status: next }, {
+        label: next ? "Marked done at home" : "Marked not done",
+      });
+    } else if (e.key === "p") {
+      e.preventDefault();
+      optimisticPatch(a.id, { discuss_with_teacher: !a.discuss_with_teacher_at }, {
+        label: a.discuss_with_teacher_at
+          ? "Cleared 'worth a chat'"
+          : "Flagged for PTM chat",
+      });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      onOpenAudit(a);
+    }
+  };
   return (
     <div
       className={
@@ -117,9 +153,10 @@ export function AssignmentRow({
         zoneClass
       }
       onClick={() => onOpenAudit(a)}
+      onKeyDown={onRowKey}
       role="row"
       tabIndex={0}
-      aria-label={`${a.subject ?? ""}: ${a.title ?? "assignment"}`}
+      aria-label={`${a.subject ?? ""}: ${a.title ?? "assignment"}. Press d to mark done, p to flag for PTM chat, Enter to open.`}
     >
       <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
         <SelectBox
@@ -143,22 +180,26 @@ export function AssignmentRow({
           />
           {zone === "fresh" && (
             <span
-              className="shrink-0 text-[10px] font-medium text-amber-700 uppercase tracking-wider"
+              className="shrink-0 text-[10px] text-amber-700"
               title="New within the last 48 hours"
             >
-              new
+              · new
             </span>
           )}
           {a.discuss_with_teacher_at && (
+            <WorthAChatChip note={a.discuss_with_teacher_note} compact />
+          )}
+          {commentCount > 0 && (
+            // Comment indicator — bumped to text-meta + chip-gray so
+            // it reads at the same weight as the worth-a-chat chip
+            // sibling. Previously two distinct micro-sizes
+            // (text-[11px] + text-[10px] inside) made it visually
+            // muddy.
             <span
-              className="shrink-0 inline-flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-200"
-              title={
-                a.discuss_with_teacher_note
-                  ? `Worth a chat at PTM — ${a.discuss_with_teacher_note}`
-                  : "Worth a chat at PTM"
-              }
+              className="chip-gray text-meta inline-flex items-center gap-0.5"
+              title={`${commentCount} parent comment${commentCount === 1 ? "" : "s"} on this item — open the audit drawer to read them`}
             >
-              💬 PTM
+              💭 <span className="font-semibold">{commentCount}</span>
             </span>
           )}
           <ReviewPracticeButton a={a} />
@@ -231,14 +272,23 @@ export function BucketHeader({
           onToggleCollapsed?.();
         }
       }}
-      className="w-full flex items-center gap-3 px-3 py-2 bg-[color:var(--bg-muted)] border-t border-b border-[color:var(--line-soft)] hover:bg-[color:var(--bg-sunken)] transition-colors text-left cursor-pointer select-none"
+      // Slimmer bucket header — gap-2 instead of gap-3, py-1.5
+      // instead of py-2, smaller chevron + checkbox. Sits closer in
+      // weight to the Tray strip headers above so the eye reads them
+      // as the same family. The drag handle (when present) reveals
+      // only on group-hover so the steady state is calm.
+      className="w-full group flex items-center gap-2 px-3 py-1.5 bg-[color:var(--bg-muted)] border-t border-b border-[color:var(--line-soft)] hover:bg-[color:var(--bg-sunken)] transition-colors text-left cursor-pointer select-none"
       aria-expanded={!collapsed}
       title={collapsed ? "Expand" : "Collapse"}
     >
-      {dragHandle}
+      {dragHandle && (
+        <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+          {dragHandle}
+        </span>
+      )}
       <span
         className={"inline-block text-gray-400 transition-transform " + (collapsed ? "" : "rotate-90")}
-        style={{ width: 10 }}
+        style={{ width: 8 }}
         aria-hidden
       >
         ▶
@@ -249,7 +299,7 @@ export function BucketHeader({
         onChange={allSelected ? onDeselectAll : onSelectAll}
         onClick={(e) => e.stopPropagation()}
         aria-label={allSelected ? "Deselect all" : "Select all"}
-        className="h-4 w-4 accent-blue-700 cursor-pointer"
+        className="h-3.5 w-3.5 accent-blue-700 cursor-pointer"
       />
       <h4 className={"h-section " + toneClass}>
         {label} · {count}
@@ -269,6 +319,7 @@ export function AssignmentList({
   collapsed,
   onToggleCollapsed,
   sortableId,
+  flatRender = false,
 }: {
   rows: Assignment[];
   label: string;
@@ -285,6 +336,10 @@ export function AssignmentList({
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   sortableId?: string;
+  /** When true, render rows in the order given (no FRESH/STEADY/
+   *  ARCHIVED partition). Used by the sortable Assignments page so
+   *  the user's chosen sort isn't fragmented by attention zones. */
+  flatRender?: boolean;
 }) {
   if (!rows.length) return null;
   const allSelected = rows.every((r) => selection.ids.has(r.id));
@@ -330,14 +385,60 @@ export function AssignmentList({
         dragHandle={dragHandle}
       />
       {!collapsed && (
-        <ZoneSplitRows
-          rows={rows}
-          selection={selection}
-          onOpenAudit={onOpenAudit}
-          onOpenPopover={onOpenPopover}
-        />
+        flatRender ? (
+          <FlatRows
+            rows={rows}
+            selection={selection}
+            onOpenAudit={onOpenAudit}
+            onOpenPopover={onOpenPopover}
+          />
+        ) : (
+          <ZoneSplitRows
+            rows={rows}
+            selection={selection}
+            onOpenAudit={onOpenAudit}
+            onOpenPopover={onOpenPopover}
+          />
+        )
       )}
     </div>
+  );
+}
+
+/** Flat render — used by sortable views (e.g. /child/:id/assignments)
+ *  where the parent has already ordered the rows and we shouldn't
+ *  fragment that order with FRESH/STEADY/ARCHIVED partitioning. */
+function FlatRows({
+  rows,
+  selection,
+  onOpenAudit,
+  onOpenPopover,
+}: {
+  rows: Assignment[];
+  selection: {
+    ids: Set<number>;
+    toggle: (id: number) => void;
+    selectMany: (ids: Iterable<number>) => void;
+    deselectMany: (ids: Iterable<number>) => void;
+  };
+  onOpenAudit: (a: Assignment) => void;
+  onOpenPopover: (a: Assignment, rect: DOMRect) => void;
+}) {
+  const counts = useItemCommentCounts(rows.map((r) => r.id));
+  return (
+    <>
+      {rows.map((a) => (
+        <AssignmentRow
+          key={a.id}
+          a={a}
+          isSelected={selection.ids.has(a.id)}
+          onToggleSelect={selection.toggle}
+          onOpenAudit={onOpenAudit}
+          onOpenPopover={onOpenPopover}
+          commentCount={counts[a.id] || 0}
+        />
+      ))}
+    </>
   );
 }
 
@@ -370,6 +471,11 @@ function ZoneSplitRows({
   );
   const [archiveOpen, setArchiveOpen] = useState(false);
 
+  // One bulk fetch for all rows in this bucket — much cheaper than
+  // per-row queries. The hook keys on the sorted id set so the cache
+  // dedupes across rerenders.
+  const counts = useItemCommentCounts(rows.map((r) => r.id));
+
   const renderRow = (a: Assignment) => (
     <AssignmentRow
       key={a.id}
@@ -378,6 +484,7 @@ function ZoneSplitRows({
       onToggleSelect={selection.toggle}
       onOpenAudit={onOpenAudit}
       onOpenPopover={onOpenPopover}
+      commentCount={counts[a.id] || 0}
     />
   );
 

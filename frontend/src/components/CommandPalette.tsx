@@ -120,7 +120,7 @@ export default function CommandPalette() {
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center pt-[12vh]"
+      className="fixed inset-0 z-modal flex items-start justify-center pt-[12vh]"
       style={{ background: "rgba(0,0,0,0.35)" }}
       onClick={() => setOpen(false)}
     >

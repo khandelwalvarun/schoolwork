@@ -68,7 +68,12 @@ function subNavClass({ isActive }: { isActive: boolean }): string {
   );
 }
 
-const SECTION_HEAD = "px-2.5 pt-3 pb-1 text-[10px] uppercase tracking-wider text-gray-500 font-semibold";
+// Section header: text-meta (11px) + ink-tertiary so it reads as a
+// clear divider, not just slightly-smaller body. Extra top padding
+// gives each section room to breathe — Miller's 7±2 needs visible
+// groupings, not a flat list. See plan Layer 3.
+const SECTION_HEAD =
+  "px-2.5 pt-4 pb-1 text-meta uppercase tracking-wider text-[color:var(--ink-tertiary)] font-semibold";
 
 export function Sidebar({ children, onOpenSearch, onOpenHelp }: Props) {
   const { isCollapsed, toggleCollapsed } = useUiPrefs();
@@ -101,12 +106,35 @@ export function Sidebar({ children, onOpenSearch, onOpenHelp }: Props) {
         <NavLink to="/" end className={navClass}>
           <Icon name="Calendar" size={16} className="text-gray-500" /> Today
         </NavLink>
-        <NavLink to="/notifications" className={navClass}>
-          <Icon name="Bell" size={16} className="text-gray-500" /> Notifications
-        </NavLink>
-        <NavLink to="/messages" className={navClass}>
-          <Icon name="Inbox" size={16} className="text-gray-500" /> Messages
-        </NavLink>
+        {/* Inbox: groups Messages + Notifications under one parent
+            so the sidebar reads as a small set of trees (Inbox, kid,
+            kid, school-wide, ...) instead of a flat list of 14 items.
+            Default-expanded — these are top-of-mind. */}
+        {(() => {
+          const inboxId = "sidebar:inbox";
+          const collapsed = isCollapsed(inboxId, /*defaultCollapsed=*/ false);
+          return (
+            <div>
+              <button
+                onClick={() => toggleCollapsed(inboxId, false)}
+                className="w-full flex items-center gap-1 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-white/60 rounded"
+                aria-expanded={!collapsed}
+              >
+                <span className={"text-gray-400 transition-transform inline-block " + (collapsed ? "" : "rotate-90")} aria-hidden>
+                  ▶
+                </span>
+                <Icon name="Inbox" size={16} className="text-gray-500" />
+                <span className="font-semibold">Inbox</span>
+              </button>
+              {!collapsed && (
+                <div>
+                  <NavLink to="/messages" className={subNavClass}>Messages</NavLink>
+                  <NavLink to="/notifications" className={subNavClass}>Notifications</NavLink>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {children.map((c) => {
           const collapseId = `sidebar:kid:${c.id}`;
@@ -127,8 +155,11 @@ export function Sidebar({ children, onOpenSearch, onOpenHelp }: Props) {
               </button>
               {!collapsed && (
                 <div>
+                  {/* Five tabs (within Miller 7±2). Board route still
+                      works at /child/:id/board and via CommandPalette,
+                      but it's been unlinked from this sub-nav per the
+                      design plan Layer 3. */}
                   <NavLink to={`/child/${c.id}`} end className={subNavClass}>Overview</NavLink>
-                  <NavLink to={`/child/${c.id}/board`} className={subNavClass}>Board</NavLink>
                   <NavLink to={`/child/${c.id}/assignments`} className={subNavClass}>Assignments</NavLink>
                   <NavLink to={`/child/${c.id}/grades`} className={subNavClass}>Grades</NavLink>
                   <NavLink to={`/child/${c.id}/comments`} className={subNavClass}>Comments</NavLink>
@@ -139,7 +170,9 @@ export function Sidebar({ children, onOpenSearch, onOpenHelp }: Props) {
           );
         })}
 
-        <div className={SECTION_HEAD}>School-wide</div>
+        {/* From the school: read-only data the school posted. Four
+            items — under Miller 7±2. */}
+        <div className={SECTION_HEAD}>From school</div>
         <NavLink to="/attachments" className={navClass}>
           <Icon name="Files" size={16} className="text-gray-500" /> Files
         </NavLink>
@@ -152,6 +185,11 @@ export function Sidebar({ children, onOpenSearch, onOpenHelp }: Props) {
         <NavLink to="/events" className={navClass}>
           <Icon name="Library" size={16} className="text-gray-500" /> Events
         </NavLink>
+
+        {/* Practice: external practice platforms + spelling lists.
+            Distinct mental category from "from school" — these are
+            things the kid does, not things the school posted. */}
+        <div className={SECTION_HEAD}>Practice</div>
         <NavLink to="/mindspark" className={navClass}>
           <Icon name="Library" size={16} className="text-gray-500" /> Mindspark
         </NavLink>

@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Assignment } from "../api";
 import { formatDate } from "../util/dates";
 import TitleBlock from "./TitleBlock";
+import { CategoryChip } from "./StatusChips";
 
 export function RecentClassworkCard({
   childId,
@@ -41,9 +42,7 @@ export function RecentClassworkCard({
         >
           ▶
         </span>
-        <span className="inline-flex items-center justify-center w-5 h-5 rounded text-white text-[10px] font-bold bg-gray-500" title="Classwork (informational)">
-          C
-        </span>
+        <CategoryChip category="classwork" />
         <span className="font-semibold text-gray-700">Recent classwork</span>
         <span className="text-xs text-gray-500">
           · {isLoading ? "loading…" : `${count} item${count === 1 ? "" : "s"} · last ${days} days · informational, not actionable`}

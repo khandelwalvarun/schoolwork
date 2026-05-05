@@ -161,7 +161,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center fade-in"
+      className="fixed inset-0 z-fullscreen flex items-center justify-center fade-in"
       style={{ background: "rgba(0,0,0,0.5)" }}
       onClick={onClose}
     >

@@ -15,14 +15,15 @@ export function FreshnessPellet({
   onClick?: (itemId: number) => void;
 }) {
   const tone = pellet.tone;
+  // Slimmed: dropped the ring-4 glow (it gave each pellet a 4-deep
+  // halo that dominated the kid header). Now reads as a flat chip
+  // with the canonical chip colour vocab. Anomalous gets a tiny
+  // amber pulse via the chip-amber tone instead of a separate badge.
   const cls =
-    tone === "green"
-      ? "bg-emerald-50 text-emerald-800 border-emerald-300 ring-emerald-100"
-      : tone === "amber"
-      ? "bg-amber-50 text-amber-800 border-amber-300 ring-amber-100"
-      : tone === "red"
-      ? "bg-rose-50 text-rose-800 border-rose-300 ring-rose-100"
-      : "bg-gray-50 text-gray-700 border-gray-300 ring-gray-100";
+    tone === "green"  ? "chip-emerald"
+    : tone === "amber"  ? "chip-amber"
+    : tone === "red"    ? "chip-red"
+    : "chip-gray";
 
   const arrow =
     tone === "green" ? "✓"
@@ -52,26 +53,22 @@ export function FreshnessPellet({
     <button
       type="button"
       onClick={onClick ? () => onClick(pellet.item_id) : undefined}
-      className={
-        "inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 " +
-        "rounded-full border ring-4 transition-shadow cursor-pointer hover:ring-[6px] " +
-        cls
-      }
+      className={cls + " cursor-pointer hover:opacity-80"}
       title={tooltip}
       aria-label={`Recent grade: ${pellet.subject} ${pellet.pct.toFixed(0)}%${
         pellet.anomalous ? " (off-trend)" : ""
       }`}
     >
-      <span aria-hidden>{arrow}</span>
+      <span aria-hidden className="mr-1">{arrow}</span>
       <span>{pellet.subject ?? "—"}</span>
-      <span className="font-semibold">
+      <span className="font-semibold ml-1">
         {pellet.score_text ?? `${pellet.pct.toFixed(0)}%`}
       </span>
-      {ageLabel && (
-        <span className="text-[10px] font-normal opacity-75">· {ageLabel}</span>
-      )}
-      {pellet.anomalous && (
-        <span className="text-[10px] font-normal opacity-75">· anomaly</span>
+      {/* Trailing anomaly mark only when the leading arrow isn't already
+          a warning — otherwise the same ⚠ shows twice on red anomalous
+          pellets. */}
+      {pellet.anomalous && tone !== "red" && (
+        <span aria-hidden className="ml-1">⚠</span>
       )}
     </button>
   );

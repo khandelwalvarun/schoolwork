@@ -24,94 +24,151 @@ import { Sparkline } from "../components/Sparkline";
 import { ShakyTopicsTray } from "../components/ShakyTopicsTray";
 import { DailyBriefCard } from "../components/DailyBriefCard";
 import { FreshnessPelletStrip } from "../components/FreshnessPellet";
-import { formatDate, formatRelative } from "../util/dates";
+import { AnomalyTray } from "../components/AnomalyTray";
+import { Tray } from "../components/Tray";
+import { ClassworkTodayStrip } from "../components/ClassworkTodayStrip";
+import { MindsparkPendingTray } from "../components/MindsparkPendingTray";
+import { formatDate } from "../util/dates";
 
+// Bucket labels — sentence case + short. The bucket header has the
+// tone colour, count, and chevron; the label only needs to name the
+// bucket. Earlier `Upcoming · next 14 days` made the header heavy
+// once the count was appended (`UPCOMING · NEXT 14 DAYS · 4`).
 const BUCKET_DEFS: Record<string, { key: keyof ChildBlock; label: string; tone: "red" | "amber" | "blue" }> = {
   overdue:   { key: "overdue",   label: "Overdue",    tone: "red"   },
   due_today: { key: "due_today", label: "Due today",  tone: "amber" },
-  upcoming:  { key: "upcoming",  label: "Upcoming · next 14 days", tone: "blue" },
+  upcoming:  { key: "upcoming",  label: "Upcoming",   tone: "blue"  },
 };
 const DEFAULT_BUCKET_ORDER = ["overdue", "due_today", "upcoming"];
 
 function HeroBand({
   totals,
-  lastSync,
   onSync,
   onSendDigest,
 }: {
   totals: { overdue: number; due_today: number; upcoming: number };
-  lastSync: {
-    status: string | null;
-    ended_at: string | null;
-  } | null;
   onSync: () => void;
   onSendDigest: () => void;
 }) {
-  const ok = lastSync?.status === "ok";
-  const never = !lastSync?.ended_at;
-  const chipCls =
-    never ? "chip-gray"
-  : ok ? "chip-green"
-  : "chip-red";
   return (
     <section className="mb-6">
-      <div className="flex items-end justify-between mb-3">
-        <div>
-          <h2 className="text-2xl font-bold">Today</h2>
-          <div className="mt-1 flex items-center gap-2 text-xs">
-            <span className={chipCls}>
-              {never ? "Never synced" : ok ? "✓ Synced" : "✗ Sync failed"}
-            </span>
-            {lastSync?.ended_at && (
-              <span className="text-gray-500" title={lastSync.ended_at}>
-                {formatRelative(lastSync.ended_at)}
-              </span>
-            )}
-          </div>
-        </div>
+      {/* The global SyncStatusBar (mounted in App.tsx) already shows
+          the synced/last-sync state at the very top of every page —
+          the in-page chip was a duplicate. Removed for calm. */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 sm:gap-0 mb-3">
+        <h2 className="text-xl sm:text-2xl font-bold">Today</h2>
         <div className="flex gap-2">
-          {/* Things 3 rule: one primary action per page. Sync is the day-to-day,
-              Send digest is a less frequent admin action. */}
-          <Button variant="primary" size="sm" onClick={onSync}>Sync now</Button>
-          <Button variant="secondary" size="sm" onClick={onSendDigest}>Send digest</Button>
+          {/* Both demoted to ghost — Today's primary action is
+              READING the trays, not running a sync. The global
+              SyncStatusBar already shows "✓ Synced 23 min ago"; the
+              user only clicks ↻ when something feels stale. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onSync}
+            title="Sync now (also runs hourly automatically)"
+          >
+            ↻ Sync
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onSendDigest}
+            title="Send the digest email"
+          >
+            Send digest
+          </Button>
         </div>
       </div>
-      <div className="surface p-5 flex items-center gap-10">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500">Overdue</div>
-          <div className="text-4xl font-bold text-red-700 leading-tight">{totals.overdue}</div>
+      {/* Totals strip — only shown when there's something to look
+          at. When overdue + due-today are both 0, the absence of the
+          red/amber tray strips below already communicates "nothing
+          urgent"; repeating it here as zeros adds noise without
+          information. The "upcoming · 14 days" count alone isn't
+          actionable enough to justify keeping the strip alive. */}
+      {(totals.overdue > 0 || totals.due_today > 0) && (
+        <div className="flex items-baseline gap-x-5 gap-y-1 text-body flex-wrap">
+          <span className="text-gray-500 hidden sm:inline">Across both kids:</span>
+          {totals.overdue > 0 && (
+            <span>
+              <span className="font-semibold text-red-700 tabular-nums">{totals.overdue}</span>
+              <span className="text-gray-500 ml-1">overdue</span>
+            </span>
+          )}
+          {totals.due_today > 0 && (
+            <span>
+              <span className="font-semibold text-amber-700 tabular-nums">{totals.due_today}</span>
+              <span className="text-gray-500 ml-1">due today</span>
+            </span>
+          )}
+          {totals.upcoming > 0 && (
+            <span>
+              <span className="font-semibold text-blue-700 tabular-nums">{totals.upcoming}</span>
+              <span className="text-gray-500 ml-1">upcoming · 14 days</span>
+            </span>
+          )}
         </div>
-        <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500">Due today</div>
-          <div className="text-4xl font-bold text-amber-700 leading-tight">{totals.due_today}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500">Upcoming · 14 days</div>
-          <div className="text-4xl font-bold text-blue-700 leading-tight">{totals.upcoming}</div>
-        </div>
-      </div>
+      )}
     </section>
   );
 }
 
 function KidBacklog({ sparkline, latest }: { sparkline: string; latest: number }) {
   if (!sparkline) return null;
+  // Number-first layout: the count is the answer to "how big is the
+  // backlog right now?", so it gets the prominent position. The
+  // sparkline + label are context. Earlier order (`14-day backlog ▁▂▃ now 36`)
+  // buried the most useful number at the end.
   return (
-    <div className="text-xs text-gray-600 flex items-center gap-2">
-      <span>14-day backlog</span>
-      <Sparkline bars={sparkline} tone="red" width={84} height={18}
+    <div className="text-meta text-gray-600 flex items-center gap-2">
+      <span>
+        <span className={"font-semibold tabular-nums " + (latest > 0 ? "text-red-700" : "text-gray-700")}>
+          {latest}
+        </span>
+        <span className="text-gray-500"> overdue</span>
+      </span>
+      <Sparkline bars={sparkline} tone="red" width={84} height={14}
                  title={`Overdue, last 14 days. Currently ${latest}.`} />
-      <span className="text-gray-500">now {latest}</span>
+      <span className="text-gray-500">14d</span>
     </div>
   );
 }
 
-function GradeTrendsMini({ trends }: { trends: GradeTrend[] }) {
+function GradeTrendsMini({ trends, childId }: { trends: GradeTrend[]; childId: number }) {
   if (!trends || trends.length === 0) return null;
+  // Compute a one-line summary for the collapsed Tray header — most
+  // recent direction across subjects (so the parent sees a hint
+  // without expanding).
+  const ups = trends.filter((t) => t.arrow === "↑").length;
+  const downs = trends.filter((t) => t.arrow === "↓").length;
+  const summary =
+    downs > 0
+      ? `${downs} down · ${ups} up · ${trends.length - downs - ups} flat`
+      : ups > 0
+      ? `${ups} up · ${trends.length - ups} flat`
+      : "all flat";
   return (
-    <div className="mt-3 px-3 py-2 bg-[color:var(--bg-muted)] border-t border-[color:var(--line-soft)]">
-      <div className="h-section mb-1 text-purple-700">Grade trend</div>
-      <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+    <Tray
+      title="📈 Grade trend"
+      count={trends.length}
+      summary={summary}
+      tone="purple"
+      defaultCollapsed={false}
+      rightSlot={
+        <Link
+          to={`/child/${childId}/grades`}
+          onClick={(e) => e.stopPropagation()}
+          className="text-meta text-purple-700 hover:underline"
+        >
+          all grades →
+        </Link>
+      }
+    >
+      {/* Subject-per-line grid (Tufte: small multiples, one tight row
+          per subject). On narrow screens it stays single-column; on
+          wide it goes 2-up. Previous flex-wrap rendered subjects +
+          sparklines + arrows in an unscannable run-on. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5 text-body pl-2">
         {trends.map((t) => {
           const arrowColor =
             t.arrow === "↑" ? "text-emerald-700"
@@ -121,23 +178,33 @@ function GradeTrendsMini({ trends }: { trends: GradeTrend[] }) {
             .map((r) => r.grade_pct)
             .filter((p): p is number => typeof p === "number");
           return (
-            <div key={t.subject} className="flex items-center gap-2 whitespace-nowrap">
-              <span className="text-gray-700">{t.subject}</span>
+            <Link
+              key={t.subject}
+              to={`/child/${childId}/grades?subject=${encodeURIComponent(t.subject)}`}
+              className="flex items-center gap-2 hover:bg-gray-50 rounded px-1 -mx-1"
+              title={`Open ${t.subject} grades`}
+            >
+              <span className="text-gray-700 w-32 truncate" title={t.subject}>
+                {t.subject}
+              </span>
               <Sparkline
                 points={recentPts.length > 0 ? recentPts : undefined}
                 bars={recentPts.length === 0 ? t.sparkline : undefined}
                 tone="purple"
-                width={56}
+                width={64}
                 height={14}
                 title={`${t.subject}: ${recentPts.join(", ")}%`}
               />
-              <span className={arrowColor}>{t.arrow}</span>
-              <span className="text-gray-500">{t.latest.toFixed(0)}%</span>
-            </div>
+              <span className={arrowColor + " w-3 text-center"}>{t.arrow}</span>
+              <span className="text-gray-700 font-medium w-10 text-right tabular-nums">
+                {t.latest.toFixed(0)}%
+              </span>
+              <span className="text-meta text-gray-500">(n={t.count})</span>
+            </Link>
           );
         })}
       </div>
-    </div>
+    </Tray>
   );
 }
 
@@ -150,34 +217,12 @@ function CycleBadge({ cycle }: { cycle: SyllabusCycle | null }) {
   );
 }
 
-/** Phase 26 — small inline chip on the Today kid header showing how
- *  much classwork the school has reported in the last 14 days. Click
- *  to jump to the kid detail's classwork section, expanded. Hidden
- *  when there's no classwork — keeps the header tight on quiet days. */
-function ClassworkChip({ childId }: { childId: number }) {
-  const { data } = useQuery({
-    queryKey: ["classwork-count", childId],
-    queryFn: () =>
-      fetch(`/api/classwork?child_id=${childId}&days=14`).then(
-        (r) => r.json() as Promise<unknown[]>,
-      ),
-    staleTime: 60_000,
-  });
-  const count = data?.length ?? 0;
-  if (count === 0) return null;
-  return (
-    <Link
-      to={`/child/${childId}#classwork`}
-      className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-      title={`${count} classwork item${count === 1 ? "" : "s"} reported in the last 14 days — informational, not actionable`}
-    >
-      <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded text-white text-[8px] font-bold bg-gray-500">
-        C
-      </span>
-      <span>{count} this fortnight</span>
-    </Link>
-  );
-}
+// ClassworkChip — removed from the kid header. The ClassworkTodayStrip
+// (rendered immediately below the header) already surfaces classwork
+// status with the same C-badge and a link to /child/:id#classwork, so
+// the chip was visual duplication that forced the pellet row to wrap.
+// Component intentionally deleted; if you re-add a fortnightly count
+// somewhere later, prefer compact inline text in ClassworkTodayStrip.
 
 function KidSection({
   kid,
@@ -205,29 +250,55 @@ function KidSection({
     prefs.setBucketOrder(kid.child.id, nextOrder);
   };
 
+  // Kid block: card chrome (border + shadow + rounded) removed.
+  // Top border + larger top spacing now demarcate one kid from the
+  // next, matching the lighter "tray strip" vocabulary above. The
+  // eye reads the page as a sequence of strips, not nested cards
+  // within cards.
   return (
-    <section className="surface mb-6 overflow-hidden">
-      <header className="px-4 py-3 border-b border-[color:var(--line)] flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap">
-          <Link to={`/child/${kid.child.id}`} className="text-lg font-semibold hover:text-blue-700">
+    <section className="mb-8 pt-5 border-t border-[color:var(--line)]">
+      {/* Mobile-friendly stacking: on narrow viewports the header
+          collapses into two rows (name + chips, then nav). The
+          backlog sparkline is hidden on mobile (it's a glanceable
+          luxury, not actionable). Touch targets bumped to 32px min. */}
+      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 mb-2">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap min-w-0">
+          <Link
+            to={`/child/${kid.child.id}`}
+            className="text-base sm:text-lg font-semibold hover:text-blue-700 truncate min-h-[32px] inline-flex items-center"
+          >
             {kid.child.display_name}
           </Link>
-          <span className="text-sm text-gray-500">· {kid.child.class_section}</span>
+          <span className="text-xs sm:text-sm text-gray-500 whitespace-nowrap">· {kid.child.class_section}</span>
           <CycleBadge cycle={kid.syllabus_cycle} />
           <FreshnessPelletStrip pellets={kid.fresh_pellets} />
-          <ClassworkChip childId={kid.child.id} />
+          {/* ClassworkChip removed from the header: the
+              ClassworkTodayStrip immediately below already shows
+              "In class · today · N · subjects" + a link to all
+              classwork. The chip duplicated that information and
+              forced the pellet row to wrap. */}
         </div>
-        <div className="flex items-center gap-4">
-          <KidBacklog sparkline={kid.overdue_sparkline}
-            latest={kid.overdue_trend[kid.overdue_trend.length - 1]?.count ?? 0} />
-          <nav className="text-xs text-gray-500 flex gap-3">
-            <Link to={`/child/${kid.child.id}/board`} className="hover:text-blue-700">Board</Link>
-            <Link to={`/child/${kid.child.id}/assignments`} className="hover:text-blue-700">All</Link>
-            <Link to={`/child/${kid.child.id}/grades`} className="hover:text-blue-700">Grades</Link>
-            <Link to={`/child/${kid.child.id}/syllabus`} className="hover:text-blue-700">Syllabus</Link>
+        {/* Stack the nav above the backlog sparkline so neither
+            truncates. Previous side-by-side layout cut "Syllabus" to
+            "Sylla…" on tighter widths. */}
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <nav className="text-meta text-gray-600 flex gap-3 whitespace-nowrap">
+            <Link to={`/child/${kid.child.id}/assignments`} className="hover:text-blue-700 py-0.5">All</Link>
+            <Link to={`/child/${kid.child.id}/grades`} className="hover:text-blue-700 py-0.5">Grades</Link>
+            <Link to={`/child/${kid.child.id}/syllabus`} className="hover:text-blue-700 py-0.5">Syllabus</Link>
           </nav>
+          <div className="hidden sm:block">
+            <KidBacklog sparkline={kid.overdue_sparkline}
+              latest={kid.overdue_trend[kid.overdue_trend.length - 1]?.count ?? 0} />
+          </div>
         </div>
       </header>
+      <ClassworkTodayStrip childId={kid.child.id} />
+      {/* Mindspark pending practice — surfaces weak / decaying
+          topics as practice todos. Reads as another tray sibling so
+          the parent sees "what's pending" as one concern, not split
+          across school assignments and Mindspark practice. */}
+      <MindsparkPendingTray childId={kid.child.id} />
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onEnd}>
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
           {order.map((bk) => {
@@ -254,7 +325,7 @@ function KidSection({
           })}
         </SortableContext>
       </DndContext>
-      <GradeTrendsMini trends={kid.grade_trends} />
+      <GradeTrendsMini trends={kid.grade_trends} childId={kid.child.id} />
     </section>
   );
 }
@@ -287,11 +358,11 @@ export default function Today() {
     <div>
       <HeroBand
         totals={data.totals}
-        lastSync={data.last_sync}
         onSync={sync}
         onSendDigest={sendDigest}
       />
       <DailyBriefCard />
+      <AnomalyTray />
       <ShakyTopicsTray />
 
       {data.children.map((kid) => (
