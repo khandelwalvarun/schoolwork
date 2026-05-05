@@ -15,6 +15,7 @@ import { Assignment } from "../api";
 import { Link } from "react-router-dom";
 import { CategoryChip } from "./StatusChips";
 import { Tray, trayLineClass } from "./Tray";
+import { formatDate } from "../util/dates";
 
 export function ClassworkTodayStrip({ childId }: { childId: number }) {
   // Pull last 7 days of classwork. 7 days hits the right balance:
@@ -68,13 +69,15 @@ export function ClassworkTodayStrip({ childId }: { childId: number }) {
     >
       <ul className="space-y-0.5">
         {todayRows.map((r) => (
-          <ClassworkLine key={r.id} r={r} dateLabel="today" />
+          <ClassworkLine key={r.id} r={r} dateLabel="Today" />
         ))}
         {earlierRows.slice(0, 6).map((r) => (
           <ClassworkLine
             key={r.id}
             r={r}
-            dateLabel={r.due_or_date || ""}
+            // Use the cockpit's standard formatDate (e.g. "Yesterday",
+            // "3 days ago", "Mon 5 May") instead of the raw ISO.
+            dateLabel={formatDate(r.due_or_date)}
           />
         ))}
         {earlierRows.length > 6 && (
@@ -96,7 +99,10 @@ export function ClassworkTodayStrip({ childId }: { childId: number }) {
 function ClassworkLine({ r, dateLabel }: { r: Assignment; dateLabel: string }) {
   return (
     <li className={trayLineClass("gray") + " flex items-baseline gap-2"}>
-      <span className="text-meta text-gray-500 shrink-0 w-12 truncate" title={dateLabel}>
+      <span
+        className="text-meta text-gray-500 shrink-0 w-24 truncate"
+        title={r.due_or_date ?? ""}
+      >
         {dateLabel}
       </span>
       <span className="text-meta text-gray-500 shrink-0 w-20 truncate">{r.subject}</span>
